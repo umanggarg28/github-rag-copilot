@@ -1,0 +1,26 @@
+# Web framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Vector database
+qdrant-client
+
+# Embeddings
+sentence-transformers  # will use nomic-embed-code
+
+# Repo fetching
+gitpython
+requests
+
+# Code parsing
+tree-sitter          # multi-language AST parsing
+tree-sitter-python   # Python grammar for tree-sitter
+
+# LLM providers
+groq
+anthropic
+
+# Utilities
+python-dotenv
+pydantic

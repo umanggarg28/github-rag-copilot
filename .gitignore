@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+chroma_db/
+repos/          # cloned repos (temp)
+node_modules/
+dist/
+build/
+*.egg-info/
+.DS_Store
