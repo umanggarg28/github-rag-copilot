@@ -51,6 +51,7 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    PayloadSchemaType,
 )
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -117,7 +118,15 @@ class QdrantStore:
                 )
             },
         )
-        print(f"  → Collection created")
+        # Create payload indices for fields we filter by.
+        # Without an index, Qdrant rejects filter queries on that field.
+        for field in ["repo", "filepath", "language", "chunk_type"]:
+            self.client.create_payload_index(
+                collection_name=self.collection,
+                field_name=field,
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+        print(f"  → Collection and payload indices created")
 
     def upsert_chunks(self, chunks: list[dict], dense_vectors: list[list[float]]):
         """

@@ -27,10 +27,12 @@ class Settings:
     github_token: str       = os.getenv("GITHUB_TOKEN", "")
 
     # ── Embedding model ───────────────────────────────────────────────────────
-    # nomic-embed-code is fine-tuned on code and produces 768-dim vectors.
-    # It uses a prefix convention for passages vs queries (see embedder.py).
-    embedding_model: str    = os.getenv("EMBEDDING_MODEL", "nomic-ai/nomic-embed-code")
-    embedding_dim: int      = 768  # nomic-embed-code output dimension
+    # Default: all-MiniLM-L6-v2 (384-dim, general text, small/fast, already cached).
+    # Upgrade to nomic-ai/nomic-embed-code (768-dim, code-optimised) when disk
+    # space allows — set EMBEDDING_MODEL in .env and update QDRANT_COLLECTION
+    # to a fresh collection (different dim = incompatible with existing points).
+    embedding_model: str    = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    embedding_dim: int      = int(os.getenv("EMBEDDING_DIM", "384"))
 
     # ── Chunking ──────────────────────────────────────────────────────────────
     # Used as fallback for non-Python files (markdown, config, plain text).

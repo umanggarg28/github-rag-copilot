@@ -59,26 +59,35 @@ class Embedder:
         self.embedding_dim = self.model.get_sentence_embedding_dimension()
         print(f"  → {self.embedding_dim}-dim embeddings ready")
 
+    # nomic models use task prefixes to improve retrieval quality.
+    # all-MiniLM-L6-v2 does not — prefixes are applied only when the model
+    # name contains "nomic" to avoid adding noise for other models.
+    @property
+    def _is_nomic(self) -> bool:
+        return "nomic" in self.model_name.lower()
+
     def embed_chunks(self, chunks: list[dict]) -> list[list[float]]:
         """
         Embed a list of chunk dicts for indexing.
 
-        Prepends "search_document:" prefix — tells the model these are
-        passages to be stored, not queries to be matched.
-
-        Returns a list of float vectors in the same order as input chunks.
+        nomic models: prepends "search_document:" prefix (passage role)
+        other models: uses text as-is
         """
-        texts = [f"search_document: {c['text']}" for c in chunks]
+        if self._is_nomic:
+            texts = [f"search_document: {c['text']}" for c in chunks]
+        else:
+            texts = [c["text"] for c in chunks]
         return self._encode(texts)
 
     def embed_query(self, query: str) -> list[float]:
         """
         Embed a single user query for retrieval.
 
-        Prepends "search_query:" prefix — tells the model this is a question
-        to match against stored passages.
+        nomic models: prepends "search_query:" prefix (query role)
+        other models: uses text as-is
         """
-        return self._encode([f"search_query: {query}"])[0]
+        text = f"search_query: {query}" if self._is_nomic else query
+        return self._encode([text])[0]
 
     def _encode(self, texts: list[str]) -> list[list[float]]:
         """
