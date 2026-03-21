@@ -35,7 +35,7 @@ LEARN.md            ← Learning guide, updated as features are built
 - Each new concept gets a docstring explaining it from first principles
 - Prefer explicit over implicit — avoid magic
 - No LangChain, no LlamaIndex — build from scratch so concepts are visible
-- Match the style of `rag-research-copilot/` (the sibling project)
+- Write comments explaining **why**, not what
 
 ---
 
