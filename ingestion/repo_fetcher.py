@@ -43,16 +43,32 @@ def parse_github_url(url: str) -> tuple[str, str]:
 
     Handles formats:
       https://github.com/owner/repo
+      https://www.github.com/owner/repo
       https://github.com/owner/repo.git
       https://github.com/owner/repo/tree/main
       github.com/owner/repo
+      owner/repo  (bare slug)
     """
-    # Strip protocol and trailing slashes
     url = url.strip().rstrip("/")
+    # Strip protocol
     url = re.sub(r"^https?://", "", url)
+    # Strip www. prefix
+    url = re.sub(r"^www\.", "", url)
 
     parts = url.split("/")
-    if len(parts) < 2 or parts[0] != "github.com":
+
+    # Bare "owner/repo" slug — no domain
+    if parts[0] != "github.com":
+        if len(parts) >= 2:
+            owner = parts[0]
+            repo  = parts[1].removesuffix(".git")
+            return owner, repo
+        raise ValueError(
+            f"Invalid GitHub URL: {url!r}\n"
+            "Expected format: https://github.com/owner/repo or owner/repo"
+        )
+
+    if len(parts) < 3:
         raise ValueError(
             f"Invalid GitHub URL: {url!r}\n"
             "Expected format: https://github.com/owner/repo"

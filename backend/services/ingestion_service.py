@@ -64,22 +64,13 @@ class IngestionService:
             deleted = self.store.delete_repo(repo_slug)
             print(f"  Deleted {deleted} existing chunks for {repo_slug}")
 
-        # ── Step 2: Download repo ─────────────────────────────────────────────
+        # ── Step 2: Download repo (filtering happens inside fetch_repo_files) ────
         print("Fetching repo files from GitHub...")
-        raw_files = fetch_repo_files(owner, name)
-        print(f"  Downloaded {len(raw_files)} files")
+        raw_files = fetch_repo_files(repo_url, should_index)
+        # raw_files is a list of dicts: [{"path": "...", "content": "...", "size": N}, ...]
+        print(f"  Downloaded {len(raw_files)} indexable files")
 
-        # ── Step 3: Filter ────────────────────────────────────────────────────
-        # Each item in raw_files is (path, content_str).
-        # should_index checks extension + excluded dirs.
-        filtered = [
-            (path, content)
-            for path, content in raw_files
-            if should_index(path)
-        ]
-        print(f"  {len(filtered)} files pass the filter (skipped {len(raw_files) - len(filtered)})")
-
-        if not filtered:
+        if not raw_files:
             return {
                 "repo":          repo_slug,
                 "files_indexed": 0,
@@ -87,16 +78,16 @@ class IngestionService:
                 "message":       "No indexable files found in this repository.",
             }
 
-        # ── Step 4: Build file dicts with metadata ────────────────────────────
+        # ── Step 3: Build file dicts with metadata ─────────────────────────────
         # chunk_files() expects dicts with keys: filepath, content, language, repo
         file_dicts = [
             {
-                "filepath": path,
-                "content":  content,
-                "language": language_from_path(path),
+                "filepath": f["path"],
+                "content":  f["content"],
+                "language": language_from_path(f["path"]),
                 "repo":     repo_slug,
             }
-            for path, content in filtered
+            for f in raw_files
         ]
 
         # ── Step 5: Chunk ─────────────────────────────────────────────────────
@@ -107,7 +98,7 @@ class IngestionService:
         if not chunks:
             return {
                 "repo":          repo_slug,
-                "files_indexed": len(filtered),
+                "files_indexed": len(raw_files),
                 "chunks_stored": 0,
                 "message":       "Files found but no chunks produced (files may be empty).",
             }
