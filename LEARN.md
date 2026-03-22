@@ -11,8 +11,8 @@ corresponding feature is built. Read it alongside the code and `notes/` entries.
 2. [AST-Based Chunking](#2-ast-based-chunking) ← _coming in Phase 1_
 3. [Code Embeddings](#3-code-embeddings) ← _coming in Phase 1_
 4. [Qdrant — A Hosted Vector Database](#4-qdrant) ← _coming in Phase 1_
-5. [Native Hybrid Search in Qdrant](#5-native-hybrid-search) ← _coming in Phase 2_
-6. [Generation for Code Queries](#6-generation-for-code-queries) ← _coming in Phase 2_
+5. [Native Hybrid Search in Qdrant](#5-native-hybrid-search) ✓
+6. [Generation for Code Queries](#6-generation-for-code-queries) ✓
 7. [Live Deployment](#7-live-deployment) ← _coming in Phase 4_
 8. [Claude Code Features](#8-claude-code-features) ← _built throughout_
    - 8a. CLAUDE.md
@@ -108,6 +108,204 @@ And enables powerful filters you can't do with documents:
 - "Only search in test files"
 - "Only search in the `auth/` directory"
 - "Only search in Python files"
+
+---
+
+# 5. Native Hybrid Search in Qdrant
+
+## What is hybrid search?
+
+A single query can be interpreted two ways:
+- **Semantic** ("what does this *mean*?") — find code that's conceptually related
+- **Keyword** ("does this *exact string* appear?") — find code with this identifier
+
+A pure semantic search misses exact function names. A pure keyword search misses
+related-but-differently-named code. Hybrid search runs both and fuses the results.
+
+## How it works in Qdrant
+
+Every chunk is stored with **two** vectors:
+
+```
+Dense vector (768 floats):  [0.12, -0.44, 0.93, ...]   ← semantic meaning
+Sparse vector (indices+values): {42314: 1.0, 8821: 2.0}  ← BM25 term frequencies
+```
+
+When you search, Qdrant runs both in one request and fuses results with **RRF**
+(Reciprocal Rank Fusion):
+
+```python
+results = client.query_points(
+    collection_name=self.collection,
+    prefetch=[
+        Prefetch(query=dense_vector,  using="code", limit=top_k * 2),  # semantic
+        Prefetch(query=sparse_vector, using="bm25", limit=top_k * 2),  # keyword
+    ],
+    query=FusionQuery(fusion=Fusion.RRF),   # fuse on server
+    limit=top_k,
+)
+```
+
+The `Prefetch` fetches `top_k * 2` from each system before fusion — a result
+ranked 6th semantically and 6th by keyword would rank 1st by RRF, but would be
+missed if you only fetched `top_k`.
+
+## What is RRF (Reciprocal Rank Fusion)?
+
+RRF converts raw scores (which are in incompatible units — cosine similarity vs
+BM25) into ranks, then combines them:
+
+```
+RRF score = 1/(60 + rank_semantic) + 1/(60 + rank_keyword)
+```
+
+The constant 60 dampens the effect of very high ranks — position 1 isn't 60x
+better than position 2. The final ranking puts highest-RRF-score first.
+
+**Example:**
+- Result A: rank 3 semantic, rank 1 keyword → 1/63 + 1/61 ≈ 0.032
+- Result B: rank 1 semantic, rank 8 keyword → 1/61 + 1/68 ≈ 0.031
+
+Both ranked highly in at least one system — RRF surfaces them both.
+
+## Sparse vectors: how BM25 terms become vectors
+
+BM25 is a keyword ranking function. We convert text to a sparse vector by:
+
+```python
+tokens = re.findall(r"[a-zA-Z_]\w*", text.lower())
+token_counts = Counter(tokens)           # {"embed": 2, "text": 1, ...}
+indices = [abs(hash(token)) % 2**20 for token in token_counts]  # integer IDs
+values  = [float(count) for count in token_counts.values()]
+```
+
+Qdrant applies IDF weighting (how rare is this term across all documents?)
+at query time — the BM25 "magic" happens on the server.
+
+Why 2^20 dimensions? Sparse vectors can have any number of dimensions. We use
+2^20 = 1 million possible positions to reduce hash collisions without
+wasting memory (only non-zero positions are stored).
+
+See `ingestion/qdrant_store.py:_text_to_sparse()` for the full implementation.
+
+---
+
+# 6. Generation for Code Queries
+
+## The full RAG pipeline
+
+```
+Question
+   ↓  (classify: technical or creative?)
+   ↓  (embed question → dense + sparse vectors)
+   ↓  Qdrant hybrid search → top-K chunks
+   ↓  format_context() → numbered source list
+   ↓  LLM (Groq / Anthropic)
+Answer with source citations
+```
+
+## Conditional LLM parameters
+
+Not all code questions need the same answer style:
+
+| Query type | Example | Temperature | Max tokens |
+|------------|---------|-------------|------------|
+| Technical  | "trace the backward pass of ReLU" | 0.1 (precise) | 1024 |
+| Creative   | "explain intuitively what a Value node is" | 0.7 (expressive) | 1536 |
+
+We detect query type with weighted keyword signals:
+
+```python
+_CREATIVE_SIGNALS  = {"explain": 1, "intuitively": 3, "analogy": 3, "eli5": 3, ...}
+_TECHNICAL_SIGNALS = {"implement": 2, "trace": 2, "formula": 3, "algorithm": 2, ...}
+
+creative_score  = sum(w for s, w in _CREATIVE_SIGNALS.items()  if s in question)
+technical_score = sum(w for s, w in _TECHNICAL_SIGNALS.items() if s in question)
+# Technical wins ties — better to be precise than creatively wrong
+return "creative" if creative_score > technical_score else "technical"
+```
+
+**Why weighted signals instead of a classifier?**
+A classifier needs training data. Weighted keyword matching is instant,
+interpretable ("why did it choose creative? because 'intuitively' scored 3"),
+and tunable without retraining.
+
+## System prompt structure
+
+The LLM is given one of two system prompts:
+
+```
+Base: "You are a code assistant. Answer from context only. Cite sources by number."
+
+Technical adds: "Be precise. Show exact signatures and return values."
+Creative adds:  "Explain clearly. Use analogies where they help."
+```
+
+This framing changes how the model responds without changing the model itself —
+the same 70B Llama can write a textbook explanation or a concise technical doc.
+
+## Why two LLM providers?
+
+- **Groq** (primary): `llama-3.3-70b-versatile`, free tier, very fast (~100 tok/s)
+- **Anthropic** (fallback): `claude-haiku-4-5`, if no Groq key is set
+
+In `GenerationService.__init__()`, we check which key is available and set
+`self.provider`. All subsequent calls go through the same `answer()`/`stream()`
+interface — the router doesn't care which provider runs under the hood.
+
+## Streaming with Server-Sent Events (SSE)
+
+For the `/query/stream` endpoint, we use SSE to push tokens as they arrive:
+
+```
+Browser → GET /query/stream?question=...
+Server  → text/event-stream
+          data: The\n\n
+          data: Value\n\n
+          data:  class\n\n
+          ...
+          data: [DONE]\n\n
+```
+
+Each `data: ...\n\n` is one SSE event. The browser's `EventSource` API splits
+on the double newline and fires `onmessage` per event.
+
+**Important:** literal newlines inside a token would break the SSE format
+(the parser would treat it as an event boundary). We escape them:
+```python
+safe_token = token.replace("\n", "\\n")
+yield f"data: {safe_token}\n\n"
+```
+
+The frontend then unescapes `\\n` back to `\n` before rendering.
+
+See `backend/main.py:query_stream()` and `backend/services/generation.py`.
+
+## FastAPI architecture
+
+```
+main.py                  ← lifespan (startup), routes, CORS, SSE
+  ↓ Depends()
+backend/services/
+  ingestion_service.py   ← pipeline orchestrator (fetch → filter → chunk → embed → store)
+  generation.py          ← LLM wrapper, query classifier, streaming
+retrieval/retrieval.py   ← Qdrant hybrid/semantic/keyword search
+backend/models/schemas.py ← Pydantic request/response models (auto-docs at /docs)
+```
+
+**Lifespan** (vs old @on_event):
+```python
+@asynccontextmanager
+async def lifespan(app):
+    # STARTUP: load models once
+    _ingestion_service = IngestionService()   # loads 600MB embedding model
+    _retrieval_service = RetrievalService()
+    _generation_service = GenerationService()
+    yield
+    # SHUTDOWN: cleanup if needed
+```
+
+Models load once and are shared via `Depends()` — not reloaded per request.
 
 ---
 
