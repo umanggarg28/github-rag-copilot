@@ -56,13 +56,18 @@ class RetrievalService:
     Uses the same Embedder as ingestion so queries live in the same vector space
     as the indexed chunks. Mixing embedding models breaks retrieval entirely —
     vectors from different models are incomparable.
+
+    Why accept embedder as an argument?
+      IngestionService and RetrievalService both need the same 600MB model.
+      Instantiating it twice wastes ~600MB RAM. main.py creates one Embedder
+      and passes it to both services. Shared state, one load.
     """
 
     DENSE_VECTOR_NAME  = "code"
     SPARSE_VECTOR_NAME = "bm25"
 
-    def __init__(self):
-        self.embedder = Embedder()
+    def __init__(self, embedder: Embedder | None = None):
+        self.embedder = embedder or Embedder()
         self.client   = QdrantClient(
             url=settings.qdrant_url,
             api_key=settings.qdrant_api_key or None,

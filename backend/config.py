@@ -48,5 +48,11 @@ class Settings:
     # so CORS allows the deployed frontend to call the backend.
     frontend_url: str       = os.getenv("FRONTEND_URL", "")
 
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    # Max /ingest requests per IP per minute. Each ingestion downloads a repo,
+    # runs the embedding model, and writes to Qdrant — it's expensive.
+    # Set to 0 to disable rate limiting (e.g. in local dev).
+    ingest_rate_limit: int  = int(os.getenv("INGEST_RATE_LIMIT", "5"))
+
 
 settings = Settings()

@@ -37,11 +37,16 @@ class IngestionService:
     Shared state:
       - self.embedder  — kept alive so the model isn't reloaded per request
       - self.store     — keeps the Qdrant client open (HTTP connection pooling)
+
+    Why accept store as an argument?
+      main.py creates one QdrantStore and shares it across IngestionService,
+      GraphService, and the MCP server. A single client means one connection
+      pool, one auth handshake, and consistent state across all services.
     """
 
-    def __init__(self):
-        self.embedder = Embedder()
-        self.store    = QdrantStore()
+    def __init__(self, store: QdrantStore | None = None, embedder=None):
+        self.embedder = embedder or Embedder()
+        self.store    = store or QdrantStore()
 
     def ingest(self, repo_url: str, force: bool = False) -> dict:
         """

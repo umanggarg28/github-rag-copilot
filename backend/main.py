@@ -31,10 +31,13 @@ Endpoints:
   POST /mcp                      — MCP protocol endpoint (for MCP clients)
 """
 
+import asyncio
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -54,6 +57,7 @@ from backend.mcp_server import mcp, init_services as init_mcp_services
 from backend.mcp_client import MCPClient
 from retrieval.retrieval import RetrievalService
 from ingestion.qdrant_store import QdrantStore
+from ingestion.embedder import Embedder
 
 
 # ── Shared service instances ───────────────────────────────────────────────────
@@ -77,15 +81,28 @@ async def lifespan(app: FastAPI):
 
     print("Starting up — loading models and connecting to Qdrant...")
 
-    # Core services (unchanged)
-    _retrieval_service  = RetrievalService()
-    _ingestion_service  = IngestionService()
-    _graph_service      = GraphService(QdrantStore())
+    # ── Single shared Embedder ─────────────────────────────────────────────────
+    # The embedding model is 600MB. Loading it twice wastes ~600MB RAM.
+    # We create one instance and pass it to both IngestionService (for indexing)
+    # and RetrievalService (for query embedding). Same model, one load.
+    _embedder = Embedder()
+
+    # ── Single shared QdrantStore ──────────────────────────────────────────────
+    # One client, one connection pool. All services use this same instance.
+    # Previously we created 3 separate QdrantStore() calls — each opened its
+    # own HTTP connection pool and auth session, wasting resources and making
+    # it harder to reason about state.
+    _qdrant_store = QdrantStore()
+
+    # Core services — all share the same store + embedder instances
+    _retrieval_service  = RetrievalService(embedder=_embedder)
+    _ingestion_service  = IngestionService(store=_qdrant_store, embedder=_embedder)
+    _graph_service      = GraphService(_qdrant_store)
     _generation_service = GenerationService()
 
     # ── MCP server setup ───────────────────────────────────────────────────────
     # Inject shared service instances into the MCP server's tool functions.
-    init_mcp_services(_retrieval_service, QdrantStore())
+    init_mcp_services(_retrieval_service, _qdrant_store)
 
     # ── MCP client + agent setup ───────────────────────────────────────────────
     if settings.groq_api_key or settings.anthropic_api_key:
@@ -149,6 +166,44 @@ app.add_middleware(
 # connect to http://localhost:8000/mcp and discover + use our tools.
 
 app.mount("/mcp", mcp.streamable_http_app())
+
+
+# ── Rate limiter ───────────────────────────────────────────────────────────────
+# Sliding window counter: track timestamps of recent requests per IP.
+# On each request, drop timestamps older than 60s, then check the count.
+# No external dependency — a deque per IP in a defaultdict is sufficient
+# for a single-process server. For multi-process deployments, use Redis.
+
+_rate_windows: dict[str, deque] = defaultdict(deque)
+
+
+def _check_rate_limit(request: Request) -> None:
+    """
+    Raise 429 if the caller has exceeded INGEST_RATE_LIMIT requests/minute.
+
+    Uses the X-Forwarded-For header when behind a proxy (e.g. Render),
+    falling back to request.client.host for direct connections.
+    """
+    limit = settings.ingest_rate_limit
+    if limit <= 0:
+        return  # disabled
+
+    ip  = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    ip  = ip or (request.client.host if request.client else "unknown")
+    now = time.monotonic()
+
+    window = _rate_windows[ip]
+    # Drop timestamps older than 60 seconds
+    while window and window[0] < now - 60:
+        window.popleft()
+
+    if len(window) >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded: max {limit} ingestion requests per minute.",
+        )
+
+    window.append(now)
 
 
 # ── Dependency providers ───────────────────────────────────────────────────────
@@ -238,6 +293,7 @@ async def mcp_status():
 async def ingest_repo(
     request: IngestRequest,
     svc: Annotated[IngestionService, Depends(get_ingestion_service)],
+    _: None = Depends(_check_rate_limit),
 ):
     """
     Ingest a GitHub repository into the vector index.
@@ -247,7 +303,10 @@ async def ingest_repo(
     Set force=true to delete and re-index from scratch.
     """
     try:
-        result = svc.ingest(request.repo_url, force=request.force)
+        # Ingestion is CPU+IO bound: downloads zip, runs AST parsing, embeds 600MB model.
+        # Running it in the main event loop would block ALL other requests for minutes.
+        # asyncio.to_thread() offloads it to a thread pool — the loop stays responsive.
+        result = await asyncio.to_thread(svc.ingest, request.repo_url, request.force)
         return IngestResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

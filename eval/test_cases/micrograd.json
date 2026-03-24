@@ -1,0 +1,42 @@
+[
+  {
+    "question": "How does backward propagation work?",
+    "expected_files": ["micrograd/engine.py"],
+    "expected_names": ["backward", "_backward"]
+  },
+  {
+    "question": "What does the Value class do?",
+    "expected_files": ["micrograd/engine.py"],
+    "expected_names": ["Value"]
+  },
+  {
+    "question": "How is the neural network MLP implemented?",
+    "expected_files": ["micrograd/nn.py"],
+    "expected_names": ["MLP", "Layer"]
+  },
+  {
+    "question": "How does the tanh activation function work?",
+    "expected_files": ["micrograd/engine.py"],
+    "expected_names": ["tanh"]
+  },
+  {
+    "question": "How is the training loop and loss function set up?",
+    "expected_files": ["demo.ipynb", "test.py"],
+    "expected_names": []
+  },
+  {
+    "question": "How does gradient accumulation work in the backward pass?",
+    "expected_files": ["micrograd/engine.py"],
+    "expected_names": ["backward", "_backward"]
+  },
+  {
+    "question": "What is the Neuron class and how does it compute output?",
+    "expected_files": ["micrograd/nn.py"],
+    "expected_names": ["Neuron"]
+  },
+  {
+    "question": "How is topological sort used in autograd?",
+    "expected_files": ["micrograd/engine.py"],
+    "expected_names": ["backward"]
+  }
+]

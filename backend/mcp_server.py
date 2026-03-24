@@ -180,23 +180,31 @@ def find_callers(function_name: str, repo: Optional[str] = None) -> str:
     Essential for understanding HOW something is used, not just what it does.
     Use this after search_code when you need usage patterns and call sites.
 
+    Uses the 'calls' payload field populated during AST chunking — this is
+    a structural lookup, not text search, so it finds exact call sites only.
+
     Args:
         function_name: The exact function or class name to find callers of
         repo:          Optional 'owner/repo' to restrict search
     """
-    if _retrieval is None:
+    if _store is None:
         return "Search service not ready."
 
-    results = _retrieval.search(
-        query=function_name,
-        top_k=8,
-        repo_filter=repo,
-        mode="keyword",
-    )
-    callers = [r for r in results if function_name in r["text"]]
+    callers = _store.find_callers(function_name, repo=repo)
     if not callers:
-        return f"No call sites found for '{function_name}'."
-    return _retrieval.format_context(callers)
+        return f"No call sites found for '{function_name}' in the 'calls' index."
+
+    # Format the same way as retrieval.format_context for consistency
+    parts = []
+    for i, c in enumerate(callers[:8], 1):
+        citation = c.get("filepath", "")
+        if c.get("name"):
+            citation += f" — {c['name']}()"
+        citation += f" | lines {c.get('start_line', '?')}–{c.get('end_line', '?')}"
+        parts.append(f"[Source {i} | {c.get('repo', '')} | {citation}]\n{c.get('text', '')}")
+
+    return f"Found {len(callers)} caller(s) of '{function_name}':\n\n" + \
+           "\n\n" + "─" * 40 + "\n\n".join(parts)
 
 
 @mcp.tool()

@@ -249,6 +249,46 @@ class QdrantStore:
                 break
         return results
 
+    def find_callers(self, function_name: str, repo: Optional[str] = None) -> list[dict]:
+        """
+        Find all chunks that call a specific function by searching the 'calls' payload.
+
+        During AST chunking, _CallExtractor records every function/method call made
+        within each chunk and stores the list in the 'calls' payload field.
+        This lets us do an exact structural lookup instead of fuzzy text search —
+        "find all functions that call backward()" is a filter, not a search.
+
+        Args:
+            function_name: Exact function name to look for in callers
+            repo:          Optional 'owner/name' to restrict scope
+
+        Returns:
+            List of payload dicts for chunks that contain a call to function_name
+        """
+        conditions = [
+            FieldCondition(key="calls", match=MatchValue(value=function_name))
+        ]
+        if repo:
+            conditions.append(FieldCondition(key="repo", match=MatchValue(value=repo)))
+
+        filt = Filter(must=conditions)
+        results = []
+        offset = None
+        while True:
+            points, offset = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=filt,
+                limit=100,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for p in points:
+                results.append(p.payload)
+            if offset is None:
+                break
+        return results
+
     def delete_repo(self, repo: str) -> int:
         """Delete all chunks for a repo. Returns number of points deleted."""
         before = self.count(repo=repo)
@@ -286,12 +326,18 @@ def _text_to_sparse(text: str) -> SparseVector:
     Example:
       text = "def embed_text(self, text):"
       tokens = {"def": 1, "embed_text": 1, "self": 1, "text": 2}
-      → indices = [hash("def"), hash("embed_text"), ...]
+      → indices = [md5("def") % 1M, md5("embed_text") % 1M, ...]
         values  = [1.0, 1.0, 1.0, 2.0, ...]
 
     Qdrant uses these sparse vectors for BM25-style keyword matching.
     The actual BM25 ranking (IDF weighting, document length normalisation)
     is applied at query time by Qdrant.
+
+    WHY NOT hash(token)?
+      Python's built-in hash() is randomised per process (PYTHONHASHSEED).
+      The same token gets a different integer in each run, so query vectors
+      and stored vectors would map to completely different dimensions —
+      keyword search would return random noise. hashlib.md5 is stable.
     """
     from collections import Counter
     import re
@@ -300,11 +346,12 @@ def _text_to_sparse(text: str) -> SparseVector:
     tokens = re.findall(r"[a-zA-Z_]\w*", text.lower())
     token_counts = Counter(tokens)
 
-    # Map tokens to integer indices using hash (consistent across calls)
+    # Map tokens to stable integer indices using MD5 (process-invariant)
+    # Using the first 8 hex chars = 32-bit integer, then mod 1M dimensions.
     indices = []
     values  = []
     for token, count in token_counts.items():
-        idx = abs(hash(token)) % (2 ** 20)  # 1M possible dimensions
+        idx = int(hashlib.md5(token.encode()).hexdigest()[:8], 16) % (2 ** 20)
         indices.append(idx)
         values.append(float(count))
 

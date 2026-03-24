@@ -195,6 +195,13 @@ class AgentService:
           Tool calls are async (await mcp.call_tool). Using 'async def' with
           'yield' creates an AsyncIterator — FastAPI's StreamingResponse and
           async for loops both consume it natively.
+
+        Real token streaming:
+          For the tool-calling iterations, we use non-streaming LLM calls —
+          we need the FULL response to decide what tool to call next.
+          Once the agent decides to give a final answer (no tool calls),
+          we re-run with stream=True so tokens arrive in real time.
+          This is one extra LLM call but delivers genuine streaming UX.
         """
         # Discover tools from MCP server (cached after first call)
         mcp_tools = await self.mcp.list_tools()
@@ -206,10 +213,12 @@ class AgentService:
             step = await asyncio.to_thread(self._call_llm, messages, tools_llm)
 
             if step["done"]:
-                # Stream answer word by word
-                # TODO: real token streaming requires stream=True in LLM call
-                for word in step["answer"].split(" "):
-                    yield {"type": "token", "text": word + " "}
+                # Stream the final answer with real token-by-token delivery.
+                # We pass messages (with all tool results) to the streaming call
+                # and tell the LLM not to use tools (tool_choice="none") so it
+                # goes straight to answering.
+                async for token in self._stream_final_answer(messages):
+                    yield {"type": "token", "text": token}
                 yield {"type": "done", "iterations": iteration + 1}
                 return
 
@@ -228,6 +237,65 @@ class AgentService:
                 messages.append(self._build_tool_result(tc["id"], tc["name"], result))
 
         yield {"type": "done", "iterations": self.MAX_ITERATIONS}
+
+    async def _stream_final_answer(self, messages: list) -> AsyncIterator[str]:
+        """
+        Stream the final answer token by token using the LLM's native streaming.
+
+        The challenge: Groq/Anthropic SDKs are synchronous (blocking iteration).
+        We bridge sync → async using asyncio.Queue:
+          1. A background thread runs the sync streaming loop, pushing tokens to a queue
+          2. This async generator reads from the queue as tokens arrive
+          3. A None sentinel signals the end of the stream
+
+        This is the standard pattern for wrapping sync iterators in async code
+        without blocking the event loop. Any async generator that needs to consume
+        a sync blocking iterator should use this approach.
+        """
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _run_sync():
+            try:
+                if self._provider == "groq":
+                    stream = self._client.chat.completions.create(
+                        model=self._model,
+                        max_tokens=2048,
+                        messages=[{"role": "system", "content": SYSTEM_PROMPT}] + messages,
+                        # No tools parameter → model goes straight to answering
+                        stream=True,
+                    )
+                    for chunk in stream:
+                        delta = chunk.choices[0].delta.content
+                        if delta:
+                            loop.call_soon_threadsafe(queue.put_nowait, delta)
+                else:
+                    # Anthropic: omit tools entirely for the final answer
+                    with self._client.messages.stream(
+                        model=self._model,
+                        max_tokens=2048,
+                        system=SYSTEM_PROMPT,
+                        messages=messages,
+                    ) as stream:
+                        for text in stream.text_stream:
+                            loop.call_soon_threadsafe(queue.put_nowait, text)
+            finally:
+                # Always send the sentinel so the consumer loop ends
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        # Schedule the sync call in the default thread pool without blocking.
+        # run_in_executor returns an asyncio.Future — we await it at the end
+        # to propagate any exception raised inside _run_sync.
+        task = loop.run_in_executor(None, _run_sync)
+
+        # Consume tokens as they arrive from the background thread
+        while True:
+            token = await queue.get()
+            if token is None:
+                break
+            yield token
+
+        await task  # re-raises any exception from the streaming thread
 
     # ── LLM dispatch ───────────────────────────────────────────────────────────
 
