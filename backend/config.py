@@ -43,5 +43,10 @@ class Settings:
     # ── Retrieval ─────────────────────────────────────────────────────────────
     top_k: int              = int(os.getenv("TOP_K", "8"))
 
+    # ── Deployment ────────────────────────────────────────────────────────────
+    # Set FRONTEND_URL in Render to your Vercel URL (https://your-app.vercel.app)
+    # so CORS allows the deployed frontend to call the backend.
+    frontend_url: str       = os.getenv("FRONTEND_URL", "")
+
 
 settings = Settings()

@@ -1,0 +1,94 @@
+# ci.yml — Run on every push and PR to main
+#
+# Why CI for a learning project?
+#   Without CI, broken code only gets caught when you run it locally.
+#   CI catches problems before they reach main — import errors, syntax
+#   errors, obvious config mistakes — in under 2 minutes.
+#
+# Jobs:
+#   lint-backend  — Python syntax check + import validation
+#   lint-frontend — Node/npm install + Vite build (catches broken JSX)
+#
+# Deployment (Render + Vercel) is handled by their own GitHub integrations:
+#   - Render: connect repo in dashboard → auto-deploys on push to main
+#   - Vercel: connect repo in dashboard → auto-deploys on push to main
+#   Both have free GitHub integrations that are simpler than Actions deploy steps.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-backend:
+    name: Backend — lint & import check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        working-directory: github-rag-copilot
+        run: pip install -r requirements.txt
+
+      - name: Check syntax (py_compile)
+        working-directory: github-rag-copilot
+        run: |
+          python -m py_compile backend/config.py
+          python -m py_compile backend/models/schemas.py
+          python -m py_compile backend/services/generation.py
+          python -m py_compile backend/services/ingestion_service.py
+          python -m py_compile backend/main.py
+          python -m py_compile ingestion/repo_fetcher.py
+          python -m py_compile ingestion/file_filter.py
+          python -m py_compile ingestion/code_chunker.py
+          python -m py_compile ingestion/embedder.py
+          python -m py_compile ingestion/qdrant_store.py
+          python -m py_compile retrieval/retrieval.py
+
+      - name: Validate imports (no runtime errors on import)
+        working-directory: github-rag-copilot
+        env:
+          # Provide dummy env vars so config.py doesn't raise on missing keys
+          QDRANT_URL: https://dummy.qdrant.io
+          QDRANT_API_KEY: dummy
+          GROQ_API_KEY: dummy
+        run: |
+          python -c "from backend.config import settings; print('config OK')"
+          python -c "from backend.models.schemas import QueryRequest; print('schemas OK')"
+          python -c "from backend.services.generation import classify_query; print('generation OK')"
+          python -c "from ingestion.file_filter import should_index; print('file_filter OK')"
+          python -c "from ingestion.code_chunker import chunk_file; print('code_chunker OK')"
+
+  lint-frontend:
+    name: Frontend — install & build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: github-rag-copilot/ui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: github-rag-copilot/ui
+        run: npm ci
+
+      - name: Build (catches broken JSX and missing imports)
+        working-directory: github-rag-copilot/ui
+        env:
+          VITE_API_URL: https://dummy.onrender.com
+        run: npm run build

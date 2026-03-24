@@ -45,6 +45,7 @@ from backend.models.schemas import (
     QueryRequest, QueryResponse,
     ReposResponse, RepoInfo,
 )
+from backend.config import settings
 from backend.services.ingestion_service import IngestionService
 from backend.services.generation import GenerationService, classify_query
 from retrieval.retrieval import RetrievalService
@@ -90,9 +91,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Build allowed origins list.
+# Always include local dev ports; add the production Vercel URL when set.
+_origins = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:3000",
+]
+if settings.frontend_url:
+    _origins.append(settings.frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:3000"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

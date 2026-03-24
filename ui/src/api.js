@@ -1,4 +1,6 @@
-const BASE = "http://localhost:8000";
+// In development: http://localhost:8000
+// In production:  set VITE_API_URL in Vercel environment variables
+const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export async function fetchRepos() {
   const res = await fetch(`${BASE}/repos`);

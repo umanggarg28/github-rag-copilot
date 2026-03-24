@@ -1,0 +1,49 @@
+# render.yaml — Render deployment config
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Free tier limits (as of 2026):
+#   - 512 MB RAM
+#   - Shared CPU
+#   - Spins down after 15 min inactivity (cold start ~30s)
+#   - 100 GB outbound bandwidth / month
+#
+# Our backend fits because:
+#   - all-MiniLM-L6-v2 is only ~90MB on disk, ~200MB RAM when loaded
+#   - Qdrant is hosted externally (Qdrant Cloud) — no local disk needed
+#   - No GPU required for inference
+
+services:
+  - type: web
+    name: github-rag-copilot
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: QDRANT_URL
+        sync: false          # set manually in Render dashboard
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: EMBEDDING_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: EMBEDDING_DIM
+        value: "384"
+      - key: TOP_K
+        value: "6"
+      # HuggingFace cache dir — Render gives 1GB ephemeral disk
+      - key: HF_HOME
+        value: /opt/render/project/src/.cache/huggingface
+      - key: SENTENCE_TRANSFORMERS_HOME
+        value: /opt/render/project/src/.cache/sentence_transformers
+      # Python output buffering — always set this for deployed servers
+      # Without it, print() calls buffer and logs appear delayed or not at all
+      - key: PYTHONUNBUFFERED
+        value: "1"
