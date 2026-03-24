@@ -26,6 +26,12 @@ export async function fetchGraph(slug) {
   return res.json();
 }
 
+export async function fetchMcpStatus() {
+  const res = await fetch(`${BASE}/mcp-status`);
+  if (!res.ok) throw new Error("Failed to fetch MCP status");
+  return res.json();
+}
+
 export async function deleteRepo(slug) {
   const [owner, name] = slug.split("/");
   const res = await fetch(`${BASE}/repos/${owner}/${name}`, { method: "DELETE" });

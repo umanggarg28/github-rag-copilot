@@ -1,10 +1,17 @@
-import { useState } from "react";
-import { ingestRepo, deleteRepo } from "../api";
+import { useState, useEffect } from "react";
+import { ingestRepo, deleteRepo, fetchMcpStatus } from "../api";
 
 export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange }) {
   const [url, setUrl]         = useState("");
   const [status, setStatus]   = useState(null); // {type, text}
   const [loading, setLoading] = useState(false);
+  const [mcpInfo, setMcpInfo] = useState(null); // MCP server status
+  const [mcpOpen, setMcpOpen] = useState(false); // expand/collapse panel
+
+  // Load MCP status once on mount
+  useEffect(() => {
+    fetchMcpStatus().then(setMcpInfo).catch(() => setMcpInfo({ connected: false }));
+  }, []);
 
   async function handleIngest(e) {
     e.preventDefault();
@@ -100,6 +107,61 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
           </div>
         </div>
       )}
+
+      {/* ── MCP Server Status ── */}
+      <div className="mcp-panel">
+        <button className="mcp-panel-header" onClick={() => setMcpOpen(o => !o)}>
+          <span className={`mcp-dot ${mcpInfo?.connected ? "connected" : "disconnected"}`} />
+          <span className="mcp-panel-title">MCP Server</span>
+          {mcpInfo?.connected && (
+            <span className="mcp-counts">
+              {mcpInfo.tools.length}T · {mcpInfo.resources.length}R · {mcpInfo.prompts.length}P
+            </span>
+          )}
+          <span className="mcp-chevron">{mcpOpen ? "▴" : "▾"}</span>
+        </button>
+
+        {mcpOpen && mcpInfo && (
+          <div className="mcp-panel-body">
+            {!mcpInfo.connected ? (
+              <p className="mcp-error">Not connected — is the backend running?</p>
+            ) : (
+              <>
+                {mcpInfo.tools.length > 0 && (
+                  <div className="mcp-section">
+                    <div className="mcp-section-label">Tools</div>
+                    {mcpInfo.tools.map(t => (
+                      <div key={t.name} className="mcp-item">
+                        <span className="mcp-item-name">{t.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {mcpInfo.resources.length > 0 && (
+                  <div className="mcp-section">
+                    <div className="mcp-section-label">Resources</div>
+                    {mcpInfo.resources.map(r => (
+                      <div key={r.uri} className="mcp-item">
+                        <span className="mcp-item-name mcp-uri">{r.uri}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {mcpInfo.prompts.length > 0 && (
+                  <div className="mcp-section">
+                    <div className="mcp-section-label">Prompts</div>
+                    {mcpInfo.prompts.map(p => (
+                      <div key={p.name} className="mcp-item">
+                        <span className="mcp-item-name">/{p.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── Repos ── */}
       <div style={{ flex: 1 }}>

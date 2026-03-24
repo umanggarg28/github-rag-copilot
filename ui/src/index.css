@@ -793,3 +793,75 @@ body {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── MCP Server Status Panel ─────────────────────────────────── */
+.mcp-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.mcp-panel-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  text-align: left;
+}
+.mcp-panel-header:hover { background: var(--surface); }
+
+.mcp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mcp-dot.connected    { background: var(--green); }
+.mcp-dot.disconnected { background: var(--muted); }
+
+.mcp-panel-title { font-weight: 600; flex: 1; }
+
+.mcp-counts {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mcp-chevron { font-size: 10px; color: var(--muted); }
+
+.mcp-panel-body {
+  border-top: 1px solid var(--border);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-error { color: var(--muted); font-size: 11px; margin: 0; }
+
+.mcp-section { display: flex; flex-direction: column; gap: 3px; }
+
+.mcp-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.mcp-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+
+.mcp-item-name {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.mcp-uri { color: var(--green); }
