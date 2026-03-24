@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { ingestRepo, deleteRepo, fetchMcpStatus } from "../api";
 
-export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange }) {
+export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange, isOpen, onClose }) {
   const [url, setUrl]         = useState("");
   const [status, setStatus]   = useState(null); // {type, text}
   const [loading, setLoading] = useState(false);
   const [mcpInfo, setMcpInfo] = useState(null); // MCP server status
   const [mcpOpen, setMcpOpen] = useState(false); // expand/collapse panel
+  const [confirming, setConfirming] = useState(null); // slug being confirmed for delete
 
   // Load MCP status once on mount
   useEffect(() => {
@@ -23,6 +24,8 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
       setStatus({ type: "success", text: `✓ ${result.chunks_stored} chunks indexed` });
       setUrl("");
       onReposChange();
+      // Auto-select the newly indexed repo
+      if (result.repo) onSelectRepo(result.repo);
     } catch (err) {
       setStatus({ type: "error", text: err.message });
     } finally {
@@ -32,7 +35,6 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
 
   async function handleDelete(e, slug) {
     e.stopPropagation();
-    if (!confirm(`Delete all chunks for ${slug}?`)) return;
     try {
       await deleteRepo(slug);
       if (activeRepo === slug) onSelectRepo(null);
@@ -42,9 +44,22 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
     }
   }
 
+  const SEARCH_MODE_TITLES = {
+    hybrid: "Combines text matching + semantic similarity (recommended)",
+    semantic: "Finds conceptually similar code",
+    keyword: "Exact identifier matching",
+  };
+
   return (
-    <div className="sidebar">
-      <h1><span>⚡</span> GitHub RAG</h1>
+    <div className={`sidebar ${isOpen ? "open" : ""}`}>
+      {/* ── Brand ── */}
+      <div className="sidebar-brand">
+        <div className="sidebar-brand-icon">⚡</div>
+        <div>
+          <div className="sidebar-brand-name">GitHub RAG</div>
+          <div className="sidebar-brand-tag">Code Copilot</div>
+        </div>
+      </div>
 
       {/* ── Ingest ── */}
       <div>
@@ -77,6 +92,7 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
             className={`pill ${!agentMode ? "active" : ""}`}
             onClick={() => onAgentModeChange(false)}
             title="Single retrieval, fast answer"
+            aria-pressed={!agentMode}
           >
             RAG
           </button>
@@ -84,6 +100,7 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
             className={`pill ${agentMode ? "active" : ""}`}
             onClick={() => onAgentModeChange(true)}
             title="Multi-step reasoning, more thorough"
+            aria-pressed={agentMode}
           >
             Agent ✦
           </button>
@@ -100,6 +117,8 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
                 key={m}
                 className={`pill ${mode === m ? "active" : ""}`}
                 onClick={() => onModeChange(m)}
+                aria-pressed={mode === m}
+                title={SEARCH_MODE_TITLES[m]}
               >
                 {m}
               </button>
@@ -108,9 +127,63 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
         </div>
       )}
 
-      {/* ── MCP Server Status ── */}
+      {/* ── Repos ── */}
+      <div style={{ flex: 1 }}>
+        <div className="section-label">Indexed Repos ({repos.length})</div>
+        {repos.length === 0 ? (
+          <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
+            No repos indexed yet. Add one above.
+          </p>
+        ) : (
+          <div className="repo-list">
+            <div
+              className={`repo-item ${activeRepo === null ? "active" : ""}`}
+              onClick={() => onSelectRepo(null)}
+            >
+              <span className="repo-slug" style={{ color: "var(--muted)" }}>All repos</span>
+            </div>
+            {repos.map((r) => (
+              <div
+                key={r.slug}
+                className={`repo-item ${activeRepo === r.slug ? "active" : ""}`}
+                onClick={() => onSelectRepo(r.slug)}
+              >
+                <span className="repo-slug">{r.slug}</span>
+                <span className="repo-count">{r.chunks}</span>
+                {confirming === r.slug ? (
+                  <span style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
+                    <button
+                      className="repo-delete"
+                      style={{ color: "var(--red)", fontWeight: 600, fontSize: 11 }}
+                      onClick={(e) => { e.stopPropagation(); handleDelete(e, r.slug); setConfirming(null); }}
+                    >Delete</button>
+                    <button
+                      className="repo-delete"
+                      onClick={(e) => { e.stopPropagation(); setConfirming(null); }}
+                    >Cancel</button>
+                  </span>
+                ) : (
+                  <button
+                    className="repo-delete"
+                    onClick={(e) => { e.stopPropagation(); setConfirming(r.slug); }}
+                    title="Remove from index"
+                    aria-label={`Remove ${r.slug} from index`}
+                  >×</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── MCP Server Status — infrastructure panel, kept below primary UX ── */}
       <div className="mcp-panel">
-        <button className="mcp-panel-header" onClick={() => setMcpOpen(o => !o)}>
+        <button
+          className="mcp-panel-header"
+          onClick={() => setMcpOpen(o => !o)}
+          aria-expanded={mcpOpen}
+          aria-controls="mcp-panel-body"
+        >
           <span className={`mcp-dot ${mcpInfo?.connected ? "connected" : "disconnected"}`} />
           <span className="mcp-panel-title">MCP Server</span>
           {mcpInfo?.connected && (
@@ -122,7 +195,7 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
         </button>
 
         {mcpOpen && mcpInfo && (
-          <div className="mcp-panel-body">
+          <div id="mcp-panel-body" className="mcp-panel-body">
             {!mcpInfo.connected ? (
               <p className="mcp-error">Not connected — is the backend running?</p>
             ) : (
@@ -159,42 +232,6 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
                 )}
               </>
             )}
-          </div>
-        )}
-      </div>
-
-      {/* ── Repos ── */}
-      <div style={{ flex: 1 }}>
-        <div className="section-label">Indexed Repos ({repos.length})</div>
-        {repos.length === 0 ? (
-          <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-            No repos indexed yet. Add one above.
-          </p>
-        ) : (
-          <div className="repo-list">
-            <div
-              className={`repo-item ${activeRepo === null ? "active" : ""}`}
-              onClick={() => onSelectRepo(null)}
-            >
-              <span className="repo-slug" style={{ color: "var(--muted)" }}>All repos</span>
-            </div>
-            {repos.map((r) => (
-              <div
-                key={r.slug}
-                className={`repo-item ${activeRepo === r.slug ? "active" : ""}`}
-                onClick={() => onSelectRepo(r.slug)}
-              >
-                <span className="repo-slug">{r.slug}</span>
-                <span className="repo-count">{r.chunks}</span>
-                <button
-                  className="repo-delete"
-                  onClick={(e) => handleDelete(e, r.slug)}
-                  title="Remove from index"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
           </div>
         )}
       </div>

@@ -21,7 +21,11 @@ const mdComponents = {
     if (lang) {
       // Block code with a language tag → syntax-highlighted
       return (
-        <SyntaxHighlighter language={lang} style={oneDark} customStyle={{ fontSize: 13 }}>
+        <SyntaxHighlighter
+          language={lang}
+          style={oneDark}
+          customStyle={{ fontSize: 13, background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}
+        >
           {String(children).replace(/\n$/, "")}
         </SyntaxHighlighter>
       );
@@ -86,6 +90,7 @@ function ToolCallTrace({ steps, streaming }) {
       <button
         className="agent-trace-toggle"
         onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
       >
         {expanded ? "▼" : "▶"} Reasoning trace · {steps.length} step{steps.length !== 1 ? "s" : ""}
       </button>
@@ -103,46 +108,53 @@ export default function Message({ msg }) {
         <div className="bubble">{msg.content}</div>
       ) : (
         <>
-          {/* Agent reasoning trace — live during streaming, collapsible after */}
-          {msg.toolCalls && msg.toolCalls.length > 0 && (
-            <ToolCallTrace steps={msg.toolCalls} streaming={msg.streaming} />
-          )}
+          {/* Assistant avatar */}
+          <div className="message-avatar assistant" aria-hidden="true">⚡</div>
 
-          {/* "Thinking…" shown before the first tool call fires */}
-          {msg.streaming && msg.currentTool === null && !msg.content && (!msg.toolCalls || msg.toolCalls.length === 0) && (
-            <div className="agent-thinking">
-              <span className="spinner" />
-              Thinking…
-            </div>
-          )}
+          {/* All assistant content in a column wrapper */}
+          <div className="message-content">
+            {/* Agent reasoning trace */}
+            {msg.toolCalls && msg.toolCalls.length > 0 && (
+              <ToolCallTrace steps={msg.toolCalls} streaming={msg.streaming} />
+            )}
 
-          {/* Answer bubble */}
-          <div className="bubble">
-            <ReactMarkdown components={mdComponents}>
-              {msg.content || " "}
-            </ReactMarkdown>
-            {msg.streaming && !msg.currentTool && <span className="cursor" />}
-          </div>
-
-          {/* Query type badge or agent iterations badge */}
-          {!msg.streaming && msg.iterations && (
-            <span className="query-type-badge">agent · {msg.iterations} step{msg.iterations !== 1 ? "s" : ""}</span>
-          )}
-          {!msg.streaming && msg.queryType && !msg.iterations && (
-            <span className="query-type-badge">{msg.queryType}</span>
-          )}
-
-          {/* Sources (only for non-agent RAG) */}
-          {msg.sources && msg.sources.length > 0 && !msg.streaming && (
-            <div className="sources">
-              <div className="sources-header">
-                {msg.sources.length} source{msg.sources.length > 1 ? "s" : ""}
+            {/* "Thinking…" shown before first tool call */}
+            {msg.streaming && msg.currentTool === null && !msg.content && (!msg.toolCalls || msg.toolCalls.length === 0) && (
+              <div className="agent-thinking">
+                <span className="spinner" role="status" aria-label="Thinking" />
+                Thinking…
               </div>
-              {msg.sources.map((s, i) => (
-                <SourceCard key={i} source={s} index={i + 1} />
-              ))}
+            )}
+
+            {/* Answer bubble */}
+            <div className="bubble">
+              <ReactMarkdown components={mdComponents}>
+                {msg.content || " "}
+              </ReactMarkdown>
+              {/* Show cursor whenever streaming, not just when no tool active */}
+              {msg.streaming && <span className="cursor" aria-hidden="true" />}
             </div>
-          )}
+
+            {/* Badges */}
+            {!msg.streaming && msg.iterations && (
+              <span className="query-type-badge">agent · {msg.iterations} step{msg.iterations !== 1 ? "s" : ""}</span>
+            )}
+            {!msg.streaming && msg.queryType && !msg.iterations && (
+              <span className="query-type-badge">{msg.queryType}</span>
+            )}
+
+            {/* Sources */}
+            {msg.sources && msg.sources.length > 0 && !msg.streaming && (
+              <div className="sources">
+                <div className="sources-header">
+                  {msg.sources.length} source{msg.sources.length > 1 ? "s" : ""}
+                </div>
+                {msg.sources.map((s, i) => (
+                  <SourceCard key={i} source={s} index={i + 1} />
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>

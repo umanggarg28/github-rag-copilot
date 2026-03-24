@@ -269,8 +269,30 @@ function _renderGraph(svgEl, data, setTooltip, onAskAbout) {
         })
     )
     .on("mouseover", (event, d) => {
-      d3.select(event.currentTarget).attr("fill-opacity", 1).attr("stroke", "#ffffff88");
-      // Get position relative to the graph-container div
+      // Find all connected node IDs
+      const connectedIds = new Set(
+        edges
+          .filter(e => e.source.id === d.id || e.target.id === d.id)
+          .flatMap(e => [e.source.id, e.target.id])
+      );
+      connectedIds.add(d.id);
+
+      // Highlight connected edges, fade others
+      link
+        .attr("stroke-opacity", e =>
+          (e.source.id === d.id || e.target.id === d.id) ? 0.9 : 0.04)
+        .attr("stroke", e =>
+          (e.source.id === d.id || e.target.id === d.id) ? EDGE_HOVER : EDGE_COLOR)
+        .attr("stroke-width", e =>
+          (e.source.id === d.id || e.target.id === d.id) ? 2 : 1.2);
+
+      // Highlight connected nodes, dim others
+      node
+        .attr("fill-opacity", n => connectedIds.has(n.id) ? 1.0 : 0.12)
+        .attr("stroke", n => n.id === d.id ? "#ffffff99" : "#ffffff22")
+        .attr("stroke-width", n => n.id === d.id ? 2 : 1);
+
+      // Tooltip
       const rect = svgEl.parentElement.getBoundingClientRect();
       setTooltip({ x: event.clientX - rect.left, y: event.clientY - rect.top, node: d });
     })
@@ -278,8 +300,17 @@ function _renderGraph(svgEl, data, setTooltip, onAskAbout) {
       const rect = svgEl.parentElement.getBoundingClientRect();
       setTooltip(prev => prev ? { ...prev, x: event.clientX - rect.left, y: event.clientY - rect.top } : null);
     })
-    .on("mouseout",  (event) => {
-      d3.select(event.currentTarget).attr("fill-opacity", 0.85).attr("stroke", "#ffffff22");
+    .on("mouseout", () => {
+      // Reset all edges
+      link
+        .attr("stroke-opacity", 0.6)
+        .attr("stroke", EDGE_COLOR)
+        .attr("stroke-width", 1.2);
+      // Reset all nodes
+      node
+        .attr("fill-opacity", 0.85)
+        .attr("stroke", "#ffffff22")
+        .attr("stroke-width", 1);
       setTooltip(null);
     })
     .on("click", (event, d) => {

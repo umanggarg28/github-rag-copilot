@@ -13,6 +13,7 @@ export default function App() {
   const [messages, setMessages]     = useState([]);
   const [input, setInput]           = useState("");
   const [streaming, setStreaming]   = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   // Prompt autocomplete: shown when input starts with "/"
   const [prompts, setPrompts]         = useState([]);      // MCP prompt list
   const [promptMenu, setPromptMenu]   = useState(false);   // dropdown visible
@@ -224,6 +225,11 @@ export default function App() {
 
   return (
     <div className="layout">
+      {/* Sidebar overlay for mobile — closes sidebar when clicking outside */}
+      {sidebarOpen && (
+        <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
+      )}
+
       <Sidebar
         repos={repos}
         activeRepo={activeRepo}
@@ -233,11 +239,24 @@ export default function App() {
         onModeChange={setMode}
         agentMode={agentMode}
         onAgentModeChange={setAgentMode}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       <div className="main">
         {/* Header */}
         <div className="chat-header">
+          {/* Hamburger button — only visible on mobile */}
+          <button
+            className="mobile-menu-btn"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open navigation"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M1 2.75A.75.75 0 011.75 2h12.5a.75.75 0 010 1.5H1.75A.75.75 0 011 2.75zm0 5A.75.75 0 011.75 7h12.5a.75.75 0 010 1.5H1.75A.75.75 0 011 7.75zM1.75 12a.75.75 0 000 1.5h12.5a.75.75 0 000-1.5H1.75z"/>
+            </svg>
+          </button>
+
           {activeRepo
             ? <span className="repo-badge">{activeRepo}</span>
             : <span className="no-repo">All indexed repos</span>
@@ -347,7 +366,13 @@ export default function App() {
                 )}
               </div>
             ) : (
-              <div className="messages" ref={scrollRef}>
+              <div
+                className="messages"
+                ref={scrollRef}
+                role="log"
+                aria-live="polite"
+                aria-label="Chat messages"
+              >
                 {messages.map((msg, i) => <Message key={msg.id ?? i} msg={msg} />)}
                 <div ref={bottomRef} />
               </div>
