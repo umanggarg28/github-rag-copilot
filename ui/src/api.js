@@ -26,6 +26,14 @@ export async function fetchGraph(slug) {
   return res.json();
 }
 
+export async function fetchMcpPrompt(name, args = {}) {
+  const res = await fetch(
+    `${BASE}/mcp-prompt?name=${encodeURIComponent(name)}&arguments=${encodeURIComponent(JSON.stringify(args))}`
+  );
+  if (!res.ok) throw new Error("Failed to fetch prompt");
+  return res.json(); // { name, text }
+}
+
 export async function fetchMcpStatus() {
   const res = await fetch(`${BASE}/mcp-status`);
   if (!res.ok) throw new Error("Failed to fetch MCP status");

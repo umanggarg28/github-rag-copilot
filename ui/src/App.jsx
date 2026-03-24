@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Sidebar from "./components/Sidebar";
 import Message from "./components/Message";
 import CodeGraph from "./components/CodeGraph";
-import { fetchRepos, streamQuery, streamAgentQuery } from "./api";
+import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpPrompt } from "./api";
 
 export default function App() {
   const [repos, setRepos]           = useState([]);
@@ -13,6 +13,10 @@ export default function App() {
   const [messages, setMessages]     = useState([]);
   const [input, setInput]           = useState("");
   const [streaming, setStreaming]   = useState(false);
+  // Prompt autocomplete: shown when input starts with "/"
+  const [prompts, setPrompts]         = useState([]);      // MCP prompt list
+  const [promptMenu, setPromptMenu]   = useState(false);   // dropdown visible
+  const [promptFilter, setPromptFilter] = useState("");    // text after "/"
 
   const bottomRef   = useRef(null);
   const scrollRef   = useRef(null);
@@ -38,6 +42,13 @@ export default function App() {
   }, []);
 
   useEffect(() => { loadRepos(); }, [loadRepos]);
+
+  // Load MCP prompts once on mount for the "/" autocomplete
+  useEffect(() => {
+    fetchMcpStatus()
+      .then(info => setPrompts(info.prompts || []))
+      .catch(() => {});
+  }, []);
 
   // Auto-scroll: instant during streaming, smooth otherwise
   useEffect(() => {
@@ -164,7 +175,37 @@ export default function App() {
     stopStream.current = stop;
   }
 
+  function handleInputChange(e) {
+    const val = e.target.value;
+    setInput(val);
+    // Show prompt menu when input is just "/" or "/partial"
+    if (val.startsWith("/") && !val.includes(" ")) {
+      setPromptFilter(val.slice(1).toLowerCase());
+      setPromptMenu(true);
+    } else {
+      setPromptMenu(false);
+    }
+  }
+
+  async function handleSelectPrompt(prompt) {
+    setPromptMenu(false);
+    // Build arguments: pass activeRepo if we have one
+    const args = activeRepo ? { repo: activeRepo } : {};
+    try {
+      const result = await fetchMcpPrompt(prompt.name, args);
+      setInput(result.text);
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    } catch {
+      // Fallback: just fill with the prompt name as a question
+      setInput(`/${prompt.name}`);
+    }
+  }
+
   function handleKeyDown(e) {
+    if (promptMenu && e.key === "Escape") {
+      setPromptMenu(false);
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
@@ -319,14 +360,36 @@ export default function App() {
                   ✦ Agent — searches multiple times, shows reasoning
                 </div>
               )}
+              {/* Prompt autocomplete dropdown — shown when input starts with "/" */}
+              {promptMenu && prompts.length > 0 && (() => {
+                const filtered = prompts.filter(p =>
+                  p.name.toLowerCase().includes(promptFilter)
+                );
+                return filtered.length > 0 ? (
+                  <div className="prompt-menu">
+                    <div className="prompt-menu-label">MCP Prompts</div>
+                    {filtered.map(p => (
+                      <button
+                        key={p.name}
+                        className="prompt-menu-item"
+                        onMouseDown={(e) => { e.preventDefault(); handleSelectPrompt(p); }}
+                      >
+                        <span className="prompt-menu-name">/{p.name}</span>
+                        <span className="prompt-menu-desc">{p.description?.slice(0, 60)}…</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
               <div className="input-row">
                 <textarea
                   ref={textareaRef}
                   rows={1}
-                  placeholder={agentMode ? "Ask a complex question — the agent will reason step by step…" : placeholder}
+                  placeholder={agentMode ? "Ask a complex question — the agent will reason step by step…" : `${placeholder} (type / for prompts)`}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
+                  onBlur={() => setTimeout(() => setPromptMenu(false), 150)}
                   disabled={streaming}
                 />
                 <button

@@ -37,6 +37,14 @@ LEARN.md            ← Learning guide, updated as features are built
 - No LangChain, no LlamaIndex — build from scratch so concepts are visible
 - Write comments explaining **why**, not what
 
+## File Hygiene (enforce strictly)
+
+- **Delete superseded files immediately** when a module is replaced or renamed — don't leave orphans
+- **No dead routers/modules** — if `backend/routers/` has no active router files, remove it
+- **One canonical location per concern** — if two files do the same thing, one must go
+- **Before creating a file**, check whether an existing file can be extended instead
+- After any refactor, run `find . -name "*.py" | grep -v __pycache__ | grep -v .venv` and confirm every file is still imported or is a valid entry point
+
 ---
 
 ## Notes Convention

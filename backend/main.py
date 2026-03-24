@@ -184,6 +184,33 @@ def get_agent_service() -> AgentService:
 
 # ── Routes: MCP status ─────────────────────────────────────────────────────────
 
+@app.get("/mcp-prompt", tags=["mcp"])
+async def get_mcp_prompt(name: str, arguments: str = "{}"):
+    """
+    Expand an MCP prompt template and return the resulting text.
+
+    Called by the frontend when a user selects a /prompt from the autocomplete.
+    The prompt text is inserted into the chat textarea, ready to send.
+
+    Args:
+        name:      Prompt name (e.g. 'analyze_repo', 'explain_function')
+        arguments: JSON-encoded dict of arguments (e.g. '{"repo":"karpathy/micrograd"}')
+    """
+    import json as _json
+    try:
+        args = _json.loads(arguments)
+        result = await mcp.get_prompt(name, args)
+        # Extract text from the first user message in the prompt
+        text = ""
+        for msg in result.messages:
+            if hasattr(msg.content, "text"):
+                text = msg.content.text
+                break
+        return {"name": name, "text": text}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Prompt error: {e}")
+
+
 @app.get("/mcp-status", tags=["mcp"])
 async def mcp_status():
     """
