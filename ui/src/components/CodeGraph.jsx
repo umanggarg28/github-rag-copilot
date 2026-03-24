@@ -62,17 +62,18 @@
 import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 
-// ── Color scheme ──────────────────────────────────────────────────────────────
+// ── Color scheme — aligned with Developer Tool/IDE palette ────────────────────
+// ui-ux-pro-max-skill #81: slate darks, green accent, semantic node colors
 const COLORS = {
-  class:    "#c97a60",   // terracotta
-  function: "#5c8fbd",   // muted blue
-  module:   "#7a7a7a",   // grey
+  class:    "#F59E0B",   // amber — classes (warm, distinct from functions)
+  function: "#22C55E",   // green accent — functions (matches UI accent "run green")
+  module:   "#94A3B8",   // slate-400 muted — file/module nodes
 };
 
-const EDGE_COLOR    = "#3a3a4a";
-const EDGE_HOVER    = "#58a6ff";
-const BG_COLOR      = "#0d0d14";
-const TOOLTIP_BG    = "#1a1a2e";
+const EDGE_COLOR    = "#334155";   // slate-700 — subtle edges
+const EDGE_HOVER    = "#4ADE80";   // lighter green — highlighted edges on hover
+const BG_COLOR      = "#0F172A";   // slate-900 — matches --bg
+const TOOLTIP_BG    = "#1E293B";   // slate-800 — matches --surface
 
 // Node radius: base + bonus for each caller (hub detection)
 function nodeRadius(d) {
