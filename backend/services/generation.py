@@ -140,13 +140,19 @@ class GenerationService:
         self.provider = self._init_provider()
 
     def _init_provider(self) -> str:
-        """Pick Groq or Anthropic based on which key is configured."""
+        """Pick Groq or Anthropic, and create the client once for reuse.
+
+        Creating a client per-request wastes resources — each instantiation
+        sets up an httpx session. We store it on self and reuse across all calls.
+        """
         if settings.groq_api_key:
-            import groq as groq_sdk  # noqa: F401 — check it's importable
+            from groq import Groq
+            self._client = Groq(api_key=settings.groq_api_key)
             print("Generation: using Groq (llama-3.3-70b-versatile)")
             return "groq"
         elif settings.anthropic_api_key:
-            import anthropic as anthropic_sdk  # noqa: F401
+            import anthropic
+            self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             print("Generation: using Anthropic (claude-haiku-4-5)")
             return "anthropic"
         else:
@@ -200,9 +206,7 @@ class GenerationService:
     # ── Groq implementation ────────────────────────────────────────────────────
 
     def _groq_complete(self, system: str, prompt: str, params: dict) -> str:
-        from groq import Groq
-        client = Groq(api_key=settings.groq_api_key)
-        response = client.chat.completions.create(
+        response = self._client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system},
@@ -214,9 +218,7 @@ class GenerationService:
         return response.choices[0].message.content
 
     def _groq_stream(self, system: str, prompt: str, params: dict) -> Iterator[str]:
-        from groq import Groq
-        client = Groq(api_key=settings.groq_api_key)
-        stream = client.chat.completions.create(
+        stream = self._client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system},
@@ -234,9 +236,7 @@ class GenerationService:
     # ── Anthropic implementation ───────────────────────────────────────────────
 
     def _anthropic_complete(self, system: str, prompt: str, params: dict) -> str:
-        import anthropic
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        response = client.messages.create(
+        response = self._client.messages.create(
             model="claude-haiku-4-5-20251001",
             system=system,
             messages=[{"role": "user", "content": prompt}],
@@ -246,9 +246,7 @@ class GenerationService:
         return response.content[0].text
 
     def _anthropic_stream(self, system: str, prompt: str, params: dict) -> Iterator[str]:
-        import anthropic
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        with client.messages.stream(
+        with self._client.messages.stream(
             model="claude-haiku-4-5-20251001",
             system=system,
             messages=[{"role": "user", "content": prompt}],

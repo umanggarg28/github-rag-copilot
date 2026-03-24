@@ -300,9 +300,18 @@ async def query_stream(
     context = retrieval_svc.format_context(results)
 
     def token_stream():
+        import json
+        # First event: send sources + query_type as structured JSON so the
+        # frontend gets everything in one SSE connection (no second POST /query call).
+        meta = {
+            "sources":    [CodeChunk(**r).model_dump() for r in results],
+            "query_type": query_type,
+        }
+        yield f"event: meta\ndata: {json.dumps(meta)}\n\n"
+
+        # Subsequent events: stream tokens
         for token in generation_svc.stream(question, context, query_type):
-            # Escape newlines: SSE uses \n\n as event delimiter.
-            # A bare newline in the token would split the event prematurely.
+            # Escape newlines — SSE uses \n\n as event delimiter
             safe_token = token.replace("\n", "\\n")
             yield f"data: {safe_token}\n\n"
         yield "data: [DONE]\n\n"

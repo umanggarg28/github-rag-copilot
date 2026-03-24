@@ -105,10 +105,10 @@ class RetrievalService:
         else:
             results = self._hybrid_search(query, top_k, qdrant_filter)
 
-        # Relevance gate — skip when repo_filter is set (user explicitly chose a repo)
-        if relevance_threshold > 0 and not repo_filter and results:
-            if results[0]["score"] < relevance_threshold:
-                return []
+        # Per-result relevance gate — filter out low-scoring chunks individually.
+        # Only applied when no repo_filter (user explicitly chose a repo means any score is valid).
+        if relevance_threshold > 0 and not repo_filter:
+            results = [r for r in results if r["score"] >= relevance_threshold]
 
         return results
 

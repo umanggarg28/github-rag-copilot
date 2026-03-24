@@ -11,9 +11,18 @@ export default function App() {
   const [input, setInput]           = useState("");
   const [streaming, setStreaming]   = useState(false);
 
-  const bottomRef  = useRef(null);
-  const scrollRef  = useRef(null);
-  const stopStream = useRef(null); // cleanup fn for active SSE
+  const bottomRef   = useRef(null);
+  const scrollRef   = useRef(null);
+  const textareaRef = useRef(null);
+  const stopStream  = useRef(null); // cleanup fn for active SSE
+
+  // Auto-grow textarea as user types
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
 
   // Load repos on mount
   const loadRepos = useCallback(async () => {
@@ -159,6 +168,7 @@ export default function App() {
         {/* Input */}
         <div className="input-bar">
           <textarea
+            ref={textareaRef}
             rows={1}
             placeholder={placeholder}
             value={input}

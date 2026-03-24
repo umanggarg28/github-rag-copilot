@@ -28,8 +28,13 @@ export async function deleteRepo(slug) {
 
 /**
  * Stream a query response via SSE.
- * Calls onToken(token) for each chunk, onSources(sources) when done,
- * and onDone(queryType) at the end.
+ *
+ * The server sends two event types:
+ *   event: meta   → JSON with { sources, query_type } (arrives before tokens)
+ *   (default)     → token text, or "[DONE]" to signal completion
+ *
+ * This avoids the previous double-LLM-call pattern where we fired both
+ * POST /query and GET /query/stream simultaneously. Now one connection does both.
  */
 export function streamQuery({ question, repo, mode, onToken, onSources, onDone, onError }) {
   const params = new URLSearchParams({
@@ -39,34 +44,21 @@ export function streamQuery({ question, repo, mode, onToken, onSources, onDone, 
     ...(repo ? { repo } : {}),
   });
 
-  // First fetch sources via POST /query (non-streaming) to get structured data,
-  // then stream the answer via GET /query/stream for the text tokens.
-  // We run both in parallel — sources arrive slightly later but the stream starts immediately.
-
-  let queryType = "technical";
-
-  // Kick off the source fetch
-  fetch(`${BASE}/query`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, repo: repo || null, mode: mode || "hybrid", top_k: 6 }),
-  })
-    .then((r) => r.json())
-    .then((data) => {
-      onSources(data.sources || [], data.query_type || "technical");
-    })
-    .catch(() => onSources([], "technical"));
-
-  // Stream the answer tokens
   const es = new EventSource(`${BASE}/query/stream?${params}`);
 
+  // Named event: sources + query_type arrive in the first frame
+  es.addEventListener("meta", (e) => {
+    const { sources, query_type } = JSON.parse(e.data);
+    onSources(sources || [], query_type || "technical");
+  });
+
+  // Default events: token text
   es.onmessage = (e) => {
     if (e.data === "[DONE]") {
       es.close();
-      onDone(queryType);
+      onDone();
       return;
     }
-    // Unescape newlines that were escaped server-side
     const token = e.data.replace(/\\n/g, "\n");
     onToken(token);
   };
@@ -76,5 +68,5 @@ export function streamQuery({ question, repo, mode, onToken, onSources, onDone, 
     onError("Connection lost");
   };
 
-  return () => es.close(); // return cleanup fn
+  return () => es.close();
 }

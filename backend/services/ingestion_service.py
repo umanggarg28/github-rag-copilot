@@ -115,13 +115,13 @@ class IngestionService:
         total_stored = self.store.count(repo=repo_slug)
         message = (
             f"Ingested {repo_slug}: "
-            f"{len(filtered)} files → {len(chunks)} chunks → {total_stored} total stored"
+            f"{len(raw_files)} files → {len(chunks)} chunks → {total_stored} total stored"
         )
         print(f"\n✓ {message}")
 
         return {
             "repo":          repo_slug,
-            "files_indexed": len(filtered),
+            "files_indexed": len(raw_files),
             "chunks_stored": len(chunks),
             "message":       message,
         }
