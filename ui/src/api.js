@@ -19,6 +19,13 @@ export async function ingestRepo(repoUrl, force = false) {
   return data;
 }
 
+export async function fetchGraph(slug) {
+  const [owner, name] = slug.split("/");
+  const res = await fetch(`${BASE}/repos/${owner}/${name}/graph`);
+  if (!res.ok) throw new Error("Failed to fetch graph");
+  return res.json();
+}
+
 export async function deleteRepo(slug) {
   const [owner, name] = slug.split("/");
   const res = await fetch(`${BASE}/repos/${owner}/${name}`, { method: "DELETE" });

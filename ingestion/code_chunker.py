@@ -20,19 +20,74 @@ Two strategies depending on file type:
 
 Chunk shape (returned by both strategies):
   {
-    "text":          str,   # the actual code/text content
-    "language":      str,   # "python", "typescript", etc.
-    "filepath":      str,   # "src/auth/middleware.py"
-    "chunk_type":    str,   # "function", "class", "module", "text"
-    "name":          str,   # function/class name (or "" for text chunks)
-    "start_line":    int,   # 1-indexed line where chunk starts
-    "end_line":      int,   # 1-indexed line where chunk ends
+    "text":          str,        # the actual code/text content
+    "language":      str,        # "python", "typescript", etc.
+    "filepath":      str,        # "src/auth/middleware.py"
+    "chunk_type":    str,        # "function", "class", "module", "text"
+    "name":          str,        # function/class name (or "" for text chunks)
+    "start_line":    int,        # 1-indexed line where chunk starts
+    "end_line":      int,        # 1-indexed line where chunk ends
+    "calls":         list[str],  # names called by this function (AST only)
   }
+
+The `calls` field is used to build the Code Knowledge Graph — an interactive
+D3 visualization of how functions call each other across files. It's extracted
+by the CallExtractor visitor which walks ast.Call nodes inside each function body.
 """
 
 import ast
 import textwrap
 from pathlib import Path
+
+
+# ── Call extractor ────────────────────────────────────────────────────────────
+
+class _CallExtractor(ast.NodeVisitor):
+    """
+    AST visitor that collects the names of all functions/methods called
+    inside a function or class body.
+
+    How ast.NodeVisitor works:
+      - Subclass it and define visit_<NodeType> methods.
+      - Call self.visit(node) to start traversal from any node.
+      - self.generic_visit(node) continues the walk into child nodes.
+
+    Two kinds of calls in Python's AST:
+      ast.Name:      direct calls — foo(), bar()
+                     → node.func is an ast.Name, name is node.func.id
+      ast.Attribute: method/attr calls — self.foo(), obj.method()
+                     → node.func is an ast.Attribute, name is node.func.attr
+
+    We collect only the leaf name (not the full dotted path) because we match
+    against function names in the index, not fully-qualified paths.
+    """
+    def __init__(self):
+        self.calls: list[str] = []
+
+    def visit_Call(self, node: ast.Call):
+        if isinstance(node.func, ast.Attribute):
+            self.calls.append(node.func.attr)          # self.embed() → "embed"
+        elif isinstance(node.func, ast.Name):
+            self.calls.append(node.func.id)            # embed() → "embed"
+        self.generic_visit(node)                       # recurse into nested calls
+
+
+def _extract_calls(node: ast.AST) -> list[str]:
+    """Extract unique called names from an AST node (function or class)."""
+    extractor = _CallExtractor()
+    extractor.visit(node)
+    # Deduplicate while preserving order; filter builtins that add noise
+    _NOISE = {"print", "len", "range", "isinstance", "str", "int", "list",
+               "dict", "set", "tuple", "super", "hasattr", "getattr", "setattr",
+               "append", "extend", "format", "join", "split", "strip", "get",
+               "items", "keys", "values", "zip", "enumerate", "map", "filter"}
+    seen = set()
+    result = []
+    for name in extractor.calls:
+        if name not in seen and name not in _NOISE:
+            seen.add(name)
+            result.append(name)
+    return result
 
 
 # ── AST Chunking (Python) ─────────────────────────────────────────────────────
@@ -86,6 +141,7 @@ def chunk_python(content: str, filepath: str) -> list[dict]:
             "name":       "",
             "start_line": 1,
             "end_line":   len(lines),
+            "calls":      [],
         })
 
     # ── Function and class chunks ─────────────────────────────────────────────
@@ -115,6 +171,7 @@ def chunk_python(content: str, filepath: str) -> list[dict]:
                 "name":       name,
                 "start_line": start,
                 "end_line":   end,
+                "calls":      _extract_calls(node),
             })
 
     return chunks if chunks else chunk_by_window(content, filepath, language="python")
@@ -153,6 +210,7 @@ def _split_class(class_node: ast.ClassDef, lines: list[str], filepath: str) -> l
             "name":       f"{class_node.name}.{node.name}",
             "start_line": start,
             "end_line":   end,
+            "calls":      _extract_calls(node),
         })
 
     # Also include the class-level code (class variables, docstring)
@@ -166,6 +224,7 @@ def _split_class(class_node: ast.ClassDef, lines: list[str], filepath: str) -> l
         "name":       class_node.name,
         "start_line": class_start,
         "end_line":   class_end,
+        "calls":      _extract_calls(class_node),
     })
 
     return chunks
@@ -216,6 +275,7 @@ def chunk_by_window(
             "name":       "",
             "start_line": start_line,
             "end_line":   end_line,
+            "calls":      [],
         })
 
         if end == len(content):

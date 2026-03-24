@@ -168,6 +168,10 @@ class QdrantStore:
                     "name":        chunk.get("name", ""),
                     "start_line":  chunk.get("start_line", 0),
                     "end_line":    chunk.get("end_line", 0),
+                    # Call graph: names of functions/methods called by this chunk.
+                    # Extracted by _CallExtractor during AST chunking.
+                    # Empty list for non-Python or window chunks.
+                    "calls":       chunk.get("calls", []),
                 },
             ))
 
@@ -214,6 +218,36 @@ class QdrantStore:
             if offset is None:
                 break
         return sorted(repos - {""})
+
+    def scroll_repo(self, repo: str, with_payload: list[str] | None = None) -> list[dict]:
+        """
+        Fetch all points for a repo as plain dicts.
+
+        Used by the graph service to build the call graph without going through
+        the retrieval/embedding pipeline. We scroll (paginate) through all
+        points because Qdrant limits a single query to 10,000 results.
+
+        Args:
+            repo:         "owner/name" slug
+            with_payload: list of payload field names to include (None = all)
+        """
+        results = []
+        offset = None
+        filt = Filter(must=[FieldCondition(key="repo", match=MatchValue(value=repo))])
+        while True:
+            points, offset = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=filt,
+                limit=1000,
+                offset=offset,
+                with_payload=with_payload or True,
+                with_vectors=False,
+            )
+            for p in points:
+                results.append(p.payload)
+            if offset is None:
+                break
+        return results
 
     def delete_repo(self, repo: str) -> int:
         """Delete all chunks for a repo. Returns number of points deleted."""

@@ -52,7 +52,9 @@ from backend.config import settings
 from backend.services.ingestion_service import IngestionService
 from backend.services.generation import GenerationService, classify_query
 from backend.services.agent import AgentService
+from backend.services.graph_service import GraphService
 from retrieval.retrieval import RetrievalService
+from ingestion.qdrant_store import QdrantStore
 
 
 # ── Shared service instances ───────────────────────────────────────────────────
@@ -63,6 +65,7 @@ _ingestion_service: IngestionService | None = None
 _retrieval_service: RetrievalService | None = None
 _generation_service: GenerationService | None = None
 _agent_service: AgentService | None = None
+_graph_service: GraphService | None = None
 
 
 @asynccontextmanager
@@ -76,10 +79,11 @@ async def lifespan(app: FastAPI):
     Loading models here (not at import time) means startup errors are visible
     in the server log, not buried in a traceback from a module-level call.
     """
-    global _ingestion_service, _retrieval_service, _generation_service, _agent_service
+    global _ingestion_service, _retrieval_service, _generation_service, _agent_service, _graph_service
     print("Starting up — loading models and connecting to Qdrant...")
     _ingestion_service = IngestionService()
     _retrieval_service = RetrievalService()
+    _graph_service = GraphService(QdrantStore())
     _generation_service = GenerationService()
     # AgentService is optional — only initialised when ANTHROPIC_API_KEY is set.
     # If no key, the /agent/* endpoints return a clear error rather than crashing.
@@ -142,6 +146,11 @@ def get_generation_service() -> GenerationService:
         raise RuntimeError("GenerationService not initialised")
     return _generation_service
 
+def get_graph_service() -> GraphService:
+    if _graph_service is None:
+        raise RuntimeError("GraphService not initialised")
+    return _graph_service
+
 def get_agent_service() -> AgentService:
     if _agent_service is None:
         raise HTTPException(
@@ -197,6 +206,36 @@ async def delete_repo(
     slug = f"{owner}/{name}"
     deleted = svc.delete_repo(slug)
     return {"repo": slug, "chunks_deleted": deleted}
+
+
+# ── Routes: Code Graph ────────────────────────────────────────────────────────
+
+@app.get("/repos/{owner}/{name}/graph", tags=["graph"])
+async def get_repo_graph(
+    owner: str,
+    name: str,
+    graph_svc: Annotated[GraphService, Depends(get_graph_service)],
+):
+    """
+    Build and return the call graph for an indexed repository.
+
+    Returns a graph in D3-ready format:
+      nodes — functions and classes with metadata (name, file, line numbers)
+      edges — call relationships ("A calls B")
+
+    Node size in the UI is proportional to caller_count (in-degree):
+    functions called by many others appear larger — the "hub" functions.
+
+    NOTE: Call data requires re-ingestion after upgrading to this version.
+    Repos indexed before call extraction was added will have nodes but no edges.
+    Re-ingest with force=true to get the full graph.
+    """
+    repo = f"{owner}/{name}"
+    try:
+        graph = graph_svc.build_graph(repo)
+        return graph
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph build failed: {e}")
 
 
 # ── Routes: Search ─────────────────────────────────────────────────────────────

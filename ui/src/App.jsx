@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Sidebar from "./components/Sidebar";
 import Message from "./components/Message";
+import CodeGraph from "./components/CodeGraph";
 import { fetchRepos, streamQuery, streamAgentQuery } from "./api";
 
 export default function App() {
@@ -8,6 +9,7 @@ export default function App() {
   const [activeRepo, setActiveRepo] = useState(null);
   const [mode, setMode]             = useState("hybrid");
   const [agentMode, setAgentMode]   = useState(false);
+  const [view, setView]             = useState("chat");  // "chat" | "graph"
   const [messages, setMessages]     = useState([]);
   const [input, setInput]           = useState("");
   const [streaming, setStreaming]   = useState(false);
@@ -199,48 +201,80 @@ export default function App() {
             ? <span className="repo-badge">{activeRepo}</span>
             : <span className="no-repo">All indexed repos</span>
           }
-          {messages.length > 0 && (
-            <button className="clear-btn" onClick={handleClear}>Clear chat</button>
-          )}
+          <div className="header-actions">
+            {/* View toggle: Chat ↔ Graph */}
+            {activeRepo && (
+              <div className="view-toggle">
+                <button
+                  className={`view-btn ${view === "chat" ? "active" : ""}`}
+                  onClick={() => setView("chat")}
+                >Chat</button>
+                <button
+                  className={`view-btn ${view === "graph" ? "active" : ""}`}
+                  onClick={() => setView("graph")}
+                >Graph ✦</button>
+              </div>
+            )}
+            {view === "chat" && messages.length > 0 && (
+              <button className="clear-btn" onClick={handleClear}>Clear</button>
+            )}
+          </div>
         </div>
 
-        {/* Messages */}
-        {messages.length === 0 ? (
-          <div className="empty-state">
-            <div className="icon">💬</div>
-            <h2>Ask about a codebase</h2>
-            <p>
-              {repos.length === 0
-                ? "Index a GitHub repo using the sidebar, then ask questions about it."
-                : "Select a repo from the sidebar or ask across all indexed repos."}
-            </p>
-          </div>
-        ) : (
-          <div className="messages" ref={scrollRef}>
-            {messages.map((msg, i) => <Message key={msg.id ?? i} msg={msg} />)}
-            <div ref={bottomRef} />
-          </div>
+        {/* ── Graph view ── */}
+        {view === "graph" && activeRepo && (
+          <CodeGraph
+            repo={activeRepo}
+            onAskAbout={(question) => {
+              setView("chat");
+              setInput(question);
+              // Small delay so textarea is rendered before focus
+              setTimeout(() => textareaRef.current?.focus(), 50);
+            }}
+          />
         )}
 
-        {/* Input */}
-        <div className="input-bar">
-          <textarea
-            ref={textareaRef}
-            rows={1}
-            placeholder={placeholder}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={streaming}
-          />
-          <button
-            className="btn"
-            onClick={handleSubmit}
-            disabled={!input.trim() || streaming}
-          >
-            {streaming ? <span className="spinner" /> : "Ask"}
-          </button>
-        </div>
+        {/* ── Chat view ── */}
+        {view === "chat" && (
+          <>
+            {messages.length === 0 ? (
+              <div className="empty-state">
+                <div className="icon">💬</div>
+                <h2>Ask about a codebase</h2>
+                <p>
+                  {repos.length === 0
+                    ? "Index a GitHub repo using the sidebar, then ask questions about it."
+                    : "Select a repo from the sidebar or ask across all indexed repos."}
+                </p>
+              </div>
+            ) : (
+              <div className="messages" ref={scrollRef}>
+                {messages.map((msg, i) => <Message key={msg.id ?? i} msg={msg} />)}
+                <div ref={bottomRef} />
+              </div>
+            )}
+
+            {/* Input */}
+            <div className="input-bar">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                placeholder={placeholder}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={streaming}
+              />
+              <button
+                className="btn"
+                onClick={handleSubmit}
+                disabled={!input.trim() || streaming}
+              >
+                {streaming ? <span className="spinner" /> : "Ask"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

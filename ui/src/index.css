@@ -428,6 +428,160 @@ body {
 }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
+/* ── View toggle (Chat | Graph) ──────────────────────────────── */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.view-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  transition: background 0.15s, color 0.15s;
+}
+.view-btn:hover  { background: var(--pill-bg); color: var(--text); }
+.view-btn.active { background: var(--accent); color: #fff; }
+
+/* ── Code graph ──────────────────────────────────────────────── */
+.graph-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.graph-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: "JetBrains Mono", monospace;
+}
+
+.graph-stats {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.graph-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.graph-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #0d0d14;
+}
+
+.graph-loading, .graph-error {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.graph-error { color: var(--red); }
+
+/* Tooltip — absolutely positioned over the graph canvas */
+.graph-tooltip {
+  position: absolute;
+  background: #1a1a2e;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  pointer-events: none;  /* don't block mouse events on graph */
+  z-index: 100;
+  min-width: 200px;
+  max-width: 280px;
+  box-shadow: 0 4px 16px #00000066;
+}
+
+.graph-tooltip-name {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 3px;
+}
+
+.graph-tooltip-path {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.graph-tooltip-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+/* "Ask about this" button — appears in tooltip, re-enables pointer events */
+.graph-tooltip-ask {
+  pointer-events: all;
+  background: var(--accent);
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  transition: opacity 0.15s;
+  width: 100%;
+}
+.graph-tooltip-ask:hover { opacity: 0.85; }
+
 /* ── Agent trace ─────────────────────────────────────────────── */
 /* The collapsible "Reasoning trace" block shown above the answer
    in agent mode — lets users see exactly what the LLM searched. */
