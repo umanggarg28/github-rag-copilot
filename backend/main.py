@@ -457,25 +457,36 @@ async def agent_stream(
     import json
 
     def event_stream():
-        for event in agent_svc.stream(question, repo_filter=repo):
-            etype = event["type"]
+        try:
+            for event in agent_svc.stream(question, repo_filter=repo):
+                etype = event["type"]
 
-            if etype == "tool_call":
-                payload = json.dumps({"tool": event["tool"], "input": event["input"]})
-                yield f"event: tool_call\ndata: {payload}\n\n"
+                if etype == "tool_call":
+                    payload = json.dumps({"tool": event["tool"], "input": event["input"]})
+                    yield f"event: tool_call\ndata: {payload}\n\n"
 
-            elif etype == "tool_result":
-                payload = json.dumps({"tool": event["tool"], "output": event["output"]})
-                yield f"event: tool_result\ndata: {payload}\n\n"
+                elif etype == "tool_result":
+                    payload = json.dumps({"tool": event["tool"], "output": event["output"]})
+                    yield f"event: tool_result\ndata: {payload}\n\n"
 
-            elif etype == "token":
-                safe = event["text"].replace("\n", "\\n")
-                yield f"data: {safe}\n\n"
+                elif etype == "token":
+                    safe = event["text"].replace("\n", "\\n")
+                    yield f"data: {safe}\n\n"
 
-            elif etype == "done":
-                payload = json.dumps({"iterations": event["iterations"]})
-                yield f"event: done\ndata: {payload}\n\n"
-                yield "data: [DONE]\n\n"
+                elif etype == "done":
+                    payload = json.dumps({"iterations": event["iterations"]})
+                    yield f"event: done\ndata: {payload}\n\n"
+                    yield "data: [DONE]\n\n"
+        except Exception as e:
+            # Surface the real error to the frontend instead of silently closing
+            err_msg = str(e)
+            if "credit" in err_msg.lower() or "billing" in err_msg.lower():
+                err_msg = "Anthropic API credits exhausted. Add credits at console.anthropic.com."
+            elif "api_key" in err_msg.lower():
+                err_msg = "ANTHROPIC_API_KEY not configured on this server."
+            payload = json.dumps({"message": err_msg})
+            yield f"event: error\ndata: {payload}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 

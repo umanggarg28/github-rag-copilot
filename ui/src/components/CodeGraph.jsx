@@ -89,32 +89,40 @@ export default function CodeGraph({ repo, onAskAbout }) {
   useEffect(() => {
     if (!repo || !svgRef.current) return;
 
-    // ── Fetch graph data ────────────────────────────────────────────────────
+    // cancelled flag prevents StrictMode's double-invoke from rendering twice.
+    // React StrictMode in dev runs effects twice (mount → cleanup → mount) to
+    // detect side effects. Without this flag, both fetches complete and both
+    // call _renderGraph, appending duplicate SVG elements.
+    let cancelled = false;
+
     setLoading(true);
     setError(null);
+    d3.select(svgRef.current).selectAll("*").remove();
 
     import("../api").then(({ fetchGraph }) =>
       fetchGraph(repo)
         .then(data => {
+          if (cancelled) return;
           setStats(data.stats);
           setLoading(false);
           if (data.nodes.length === 0) {
-            setError("No function/class nodes found. Re-ingest the repo to extract call data.");
+            setError("No function/class nodes found. Re-ingest the repo to get call data.");
             return;
           }
           _renderGraph(svgRef.current, data, setTooltip, onAskAbout);
         })
         .catch(err => {
+          if (cancelled) return;
           setLoading(false);
           setError(err.message);
         })
     );
 
-    // Cleanup: stop any running simulation when repo changes or component unmounts
     return () => {
-      if (svgRef.current) d3.select(svgRef.current).selectAll("*").remove();
+      cancelled = true;
+      d3.select(svgRef.current).selectAll("*").remove();
     };
-  }, [repo]);  // re-render whenever active repo changes
+  }, [repo]);
 
   return (
     <div className="graph-container">

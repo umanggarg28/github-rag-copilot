@@ -123,6 +123,16 @@ export function streamAgentQuery({ question, repo, onToolCall, onToolResult, onT
     onDone?.(iterations);
   });
 
+  // Named event: server-side error (API credits, config issues, etc.)
+  es.addEventListener("error", (e) => {
+    try {
+      const { message } = JSON.parse(e.data);
+      onError?.(message);
+    } catch {
+      onError?.("Agent error — check server logs.");
+    }
+  });
+
   // Default events: token text (or [DONE] sentinel)
   es.onmessage = (e) => {
     if (e.data === "[DONE]") {

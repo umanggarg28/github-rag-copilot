@@ -239,13 +239,71 @@ export default function App() {
           <>
             {messages.length === 0 ? (
               <div className="empty-state">
-                <div className="icon">💬</div>
-                <h2>Ask about a codebase</h2>
-                <p>
-                  {repos.length === 0
-                    ? "Index a GitHub repo using the sidebar, then ask questions about it."
-                    : "Select a repo from the sidebar or ask across all indexed repos."}
-                </p>
+                {repos.length === 0 ? (
+                  // Step 1: no repos yet
+                  <>
+                    <div className="onboarding-steps">
+                      <div className="onboarding-step active">
+                        <span className="step-num">1</span>
+                        <div>
+                          <strong>Paste a GitHub URL in the sidebar</strong>
+                          <p>e.g. <code>github.com/karpathy/micrograd</code></p>
+                          <p>The app downloads and indexes every function and class.</p>
+                        </div>
+                      </div>
+                      <div className="onboarding-step">
+                        <span className="step-num">2</span>
+                        <div>
+                          <strong>Ask a question</strong>
+                          <p>e.g. <em>"How does backward() work?"</em></p>
+                          <p>The app finds the relevant code and an AI explains it with citations.</p>
+                        </div>
+                      </div>
+                      <div className="onboarding-step">
+                        <span className="step-num">3</span>
+                        <div>
+                          <strong>Try Agent mode or the Graph view</strong>
+                          <p><strong>Agent</strong> — the AI searches multiple times, shows its reasoning step by step.</p>
+                          <p><strong>Graph</strong> — a visual map of which functions call which.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  // Step 2: repos indexed, suggest questions
+                  <div className="suggest-state">
+                    <h2>What do you want to know?</h2>
+                    <p>Try one of these or ask your own:</p>
+                    <div className="suggestions">
+                      {[
+                        "Give me a high-level overview of this repo",
+                        "How does the main class work?",
+                        "What does the training loop do?",
+                        "How is backpropagation implemented?",
+                        "What are the entry points to this codebase?",
+                      ].map(q => (
+                        <button
+                          key={q}
+                          className="suggestion-btn"
+                          onClick={() => { setInput(q); textareaRef.current?.focus(); }}
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                    {agentMode && (
+                      <div className="mode-hint">
+                        <strong>Agent mode on</strong> — the AI will search the codebase multiple times
+                        and show you each step before answering. Slower but more thorough.
+                      </div>
+                    )}
+                    {activeRepo && (
+                      <button className="graph-hint-btn" onClick={() => setView("graph")}>
+                        Or view the call graph for {activeRepo} →
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="messages" ref={scrollRef}>
@@ -256,22 +314,29 @@ export default function App() {
 
             {/* Input */}
             <div className="input-bar">
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                placeholder={placeholder}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={streaming}
-              />
-              <button
-                className="btn"
-                onClick={handleSubmit}
-                disabled={!input.trim() || streaming}
-              >
-                {streaming ? <span className="spinner" /> : "Ask"}
-              </button>
+              {agentMode && (
+                <div className="input-mode-badge">
+                  ✦ Agent — searches multiple times, shows reasoning
+                </div>
+              )}
+              <div className="input-row">
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  placeholder={agentMode ? "Ask a complex question — the agent will reason step by step…" : placeholder}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={streaming}
+                />
+                <button
+                  className="btn"
+                  onClick={handleSubmit}
+                  disabled={!input.trim() || streaming}
+                >
+                  {streaming ? <span className="spinner" /> : agentMode ? "Run Agent" : "Ask"}
+                </button>
+              </div>
             </div>
           </>
         )}

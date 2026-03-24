@@ -349,9 +349,14 @@ body {
 
 /* ── Input bar ───────────────────────────────────────────────── */
 .input-bar {
-  padding: 12px 20px;
+  padding: 10px 20px 12px;
   border-top: 1px solid var(--border);
   background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+
+.input-row {
   display: flex;
   gap: 10px;
   align-items: flex-end;
@@ -384,15 +389,111 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  color: var(--muted);
-  text-align: center;
-  padding: 40px;
+  padding: 40px 20px;
+  overflow-y: auto;
 }
 
-.empty-state .icon { font-size: 40px; }
-.empty-state h2 { font-size: 18px; color: var(--text); }
-.empty-state p { font-size: 14px; max-width: 320px; line-height: 1.6; }
+/* Onboarding: 3-step guide shown when no repos indexed yet */
+.onboarding-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 480px;
+  width: 100%;
+}
+
+.onboarding-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  opacity: 0.5;
+}
+.onboarding-step.active { opacity: 1; border-color: var(--accent); }
+
+.step-num {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 50%;
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.onboarding-step strong { font-size: 14px; color: var(--text); display: block; margin-bottom: 4px; }
+.onboarding-step p { font-size: 12px; color: var(--muted); margin: 2px 0; line-height: 1.5; }
+.onboarding-step code { font-family: "JetBrains Mono", monospace; color: var(--accent); font-size: 11px; }
+
+/* Suggest state: shown when repos exist but no messages yet */
+.suggest-state { max-width: 520px; width: 100%; text-align: center; }
+.suggest-state h2 { font-size: 17px; color: var(--text); margin-bottom: 6px; }
+.suggest-state > p { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+
+.suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 16px;
+}
+
+.suggestion-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 9px 14px;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s;
+}
+.suggestion-btn:hover { border-color: var(--accent); background: var(--accent-dim); }
+
+.mode-hint {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+  padding: 9px 14px;
+  text-align: left;
+}
+
+.graph-hint-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+.graph-hint-btn:hover { color: var(--text); }
+
+/* ── Input bar ── mode badge + row layout ────────────────────── */
+.input-mode-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 4px 0 6px;
+  letter-spacing: 0.03em;
+}
+
+.input-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
 
 /* ── Status bar ──────────────────────────────────────────────── */
 .status-bar {
