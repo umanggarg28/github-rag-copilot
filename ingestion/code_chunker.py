@@ -299,7 +299,7 @@ def chunk_file(file: dict) -> list[dict]:
     """
     from ingestion.file_filter import language_from_path
 
-    filepath = file["path"]
+    filepath = file.get("path") or file.get("filepath", "")
     content  = file["content"]
     language = language_from_path(filepath)
     repo     = file.get("repo", "")
@@ -322,6 +322,6 @@ def chunk_files(files: list[dict]) -> list[dict]:
     for file in files:
         file_chunks = chunk_file(file)
         all_chunks.extend(file_chunks)
-        print(f"  {file['path']} → {len(file_chunks)} chunks")
+        print(f"  {file.get('path') or file.get('filepath', '?')} → {len(file_chunks)} chunks")
     print(f"Total: {len(all_chunks)} chunks from {len(files)} files")
     return all_chunks
