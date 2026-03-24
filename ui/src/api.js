@@ -70,3 +70,66 @@ export function streamQuery({ question, repo, mode, onToken, onSources, onDone, 
 
   return () => es.close();
 }
+
+/**
+ * Stream the agentic RAG loop via SSE.
+ *
+ * Unlike streamQuery (one retrieval → tokens), this endpoint shows the
+ * agent's full ReAct reasoning loop in real time:
+ *
+ *   1. agent decides to search → event: tool_call
+ *   2. result comes back       → event: tool_result
+ *   3. agent decides to search again (or answer)
+ *   4. when done, answer streams token-by-token (default events)
+ *   5. event: done signals completion with iteration count
+ *
+ * Callbacks:
+ *   onToolCall(tool, input)    — agent is calling a tool
+ *   onToolResult(tool, output) — tool returned a result
+ *   onToken(text)              — token of the final answer
+ *   onDone(iterations)         — agent finished
+ *   onError(msg)               — connection or server error
+ */
+export function streamAgentQuery({ question, repo, onToolCall, onToolResult, onToken, onDone, onError }) {
+  const params = new URLSearchParams({
+    question,
+    ...(repo ? { repo } : {}),
+  });
+
+  const es = new EventSource(`${BASE}/agent/stream?${params}`);
+
+  // Named event: agent is about to call a tool
+  es.addEventListener("tool_call", (e) => {
+    const { tool, input } = JSON.parse(e.data);
+    onToolCall?.(tool, input);
+  });
+
+  // Named event: tool returned a result
+  es.addEventListener("tool_result", (e) => {
+    const { tool, output } = JSON.parse(e.data);
+    onToolResult?.(tool, output);
+  });
+
+  // Named event: agent finished
+  es.addEventListener("done", (e) => {
+    const { iterations } = JSON.parse(e.data);
+    onDone?.(iterations);
+  });
+
+  // Default events: token text (or [DONE] sentinel)
+  es.onmessage = (e) => {
+    if (e.data === "[DONE]") {
+      es.close();
+      return;
+    }
+    const token = e.data.replace(/\\n/g, "\n");
+    onToken?.(token);
+  };
+
+  es.onerror = () => {
+    es.close();
+    onError?.("Agent connection lost");
+  };
+
+  return () => es.close();
+}

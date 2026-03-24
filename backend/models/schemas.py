@@ -133,3 +133,56 @@ class ReposResponse(BaseModel):
     """Response from GET /repos — list all indexed repos."""
     repos: list[RepoInfo]
     total_chunks: int
+
+
+# ── Agent (Agentic RAG) ───────────────────────────────────────────────────────
+#
+# These schemas describe the agent's inputs and outputs.
+#
+# The key difference from plain RAG:
+#   Plain RAG: one retrieval → one answer (deterministic, fast)
+#   Agentic RAG: N retrievals → N observations → one answer (adaptive, slower)
+#
+# The tool_calls list is the "trace" — a record of every search the agent made
+# and what it found. This is the crucial insight that makes agents explainable:
+# you can see exactly WHY the agent answered what it did, step by step.
+
+class AgentToolCall(BaseModel):
+    """
+    A single tool call made by the agent during its ReAct loop.
+
+    This is one step in the agent's reasoning trace:
+      - tool:   which tool it called (search_code, get_file_chunk, find_callers)
+      - input:  what arguments it passed (shows WHAT it was looking for)
+      - output: truncated result (shows WHAT it found)
+
+    The sequence of these calls tells the story of the agent's reasoning.
+    """
+    tool:   str   # tool name
+    input:  dict  # arguments passed to the tool
+    output: str   # first 500 chars of the result (truncated for display)
+
+
+class AgentRequest(BaseModel):
+    """Request body for POST /agent/query — run the agentic RAG loop."""
+    question: str = Field(..., description="Question about the codebase")
+    repo: Optional[str] = Field(
+        default=None,
+        description="Restrict search to a specific repo slug (e.g. 'karpathy/micrograd')",
+    )
+
+
+class AgentResponse(BaseModel):
+    """
+    Response from POST /agent/query.
+
+    In addition to the answer, we return:
+      - tool_calls: the agent's full reasoning trace (what it searched + found)
+      - iterations: how many ReAct steps it took (capped at MAX_ITERATIONS=8)
+
+    This transparency is intentional — it shows users HOW the agent reasoned,
+    not just what it concluded. Makes debugging and trust much easier.
+    """
+    answer:     str
+    tool_calls: list[AgentToolCall]
+    iterations: int

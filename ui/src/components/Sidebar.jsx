@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ingestRepo, deleteRepo } from "../api";
 
-export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange, mode, onModeChange }) {
+export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange }) {
   const [url, setUrl]         = useState("");
   const [status, setStatus]   = useState(null); // {type, text}
   const [loading, setLoading] = useState(false);
@@ -61,21 +61,45 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
         )}
       </div>
 
-      {/* ── Search mode ── */}
+      {/* ── Query mode (RAG vs Agent) ── */}
       <div>
-        <div className="section-label">Search Mode</div>
+        <div className="section-label">Query Mode</div>
+        {/* Agent mode toggle — switches between plain RAG and agentic ReAct loop */}
         <div className="mode-pills">
-          {["hybrid", "semantic", "keyword"].map((m) => (
-            <button
-              key={m}
-              className={`pill ${mode === m ? "active" : ""}`}
-              onClick={() => onModeChange(m)}
-            >
-              {m}
-            </button>
-          ))}
+          <button
+            className={`pill ${!agentMode ? "active" : ""}`}
+            onClick={() => onAgentModeChange(false)}
+            title="Single retrieval, fast answer"
+          >
+            RAG
+          </button>
+          <button
+            className={`pill ${agentMode ? "active" : ""}`}
+            onClick={() => onAgentModeChange(true)}
+            title="Multi-step reasoning, more thorough"
+          >
+            Agent ✦
+          </button>
         </div>
       </div>
+
+      {/* ── Search mode (only visible in RAG mode) ── */}
+      {!agentMode && (
+        <div>
+          <div className="section-label">Search Mode</div>
+          <div className="mode-pills">
+            {["hybrid", "semantic", "keyword"].map((m) => (
+              <button
+                key={m}
+                className={`pill ${mode === m ? "active" : ""}`}
+                onClick={() => onModeChange(m)}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Repos ── */}
       <div style={{ flex: 1 }}>

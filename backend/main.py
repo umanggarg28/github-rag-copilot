@@ -30,6 +30,8 @@ Endpoints:
   POST /search              — retrieve chunks (no generation)
   POST /query               — RAG: retrieve + generate answer
   GET  /query/stream        — RAG with streaming SSE response
+  POST /agent/query         — Agentic RAG: ReAct loop (synchronous)
+  GET  /agent/stream        — Agentic RAG: ReAct loop with SSE progress stream
 """
 
 from contextlib import asynccontextmanager
@@ -44,10 +46,12 @@ from backend.models.schemas import (
     SearchRequest, SearchResponse, CodeChunk,
     QueryRequest, QueryResponse,
     ReposResponse, RepoInfo,
+    AgentRequest, AgentResponse, AgentToolCall,
 )
 from backend.config import settings
 from backend.services.ingestion_service import IngestionService
 from backend.services.generation import GenerationService, classify_query
+from backend.services.agent import AgentService
 from retrieval.retrieval import RetrievalService
 
 
@@ -58,6 +62,7 @@ from retrieval.retrieval import RetrievalService
 _ingestion_service: IngestionService | None = None
 _retrieval_service: RetrievalService | None = None
 _generation_service: GenerationService | None = None
+_agent_service: AgentService | None = None
 
 
 @asynccontextmanager
@@ -71,11 +76,18 @@ async def lifespan(app: FastAPI):
     Loading models here (not at import time) means startup errors are visible
     in the server log, not buried in a traceback from a module-level call.
     """
-    global _ingestion_service, _retrieval_service, _generation_service
+    global _ingestion_service, _retrieval_service, _generation_service, _agent_service
     print("Starting up — loading models and connecting to Qdrant...")
     _ingestion_service = IngestionService()
     _retrieval_service = RetrievalService()
     _generation_service = GenerationService()
+    # AgentService is optional — only initialised when ANTHROPIC_API_KEY is set.
+    # If no key, the /agent/* endpoints return a clear error rather than crashing.
+    if settings.anthropic_api_key:
+        _agent_service = AgentService(_retrieval_service)
+        print("AgentService ready (agentic RAG enabled).")
+    else:
+        print("No ANTHROPIC_API_KEY — /agent/* endpoints disabled.")
     print("All services ready.\n")
     yield
     # Cleanup on shutdown (if needed) goes here
@@ -129,6 +141,14 @@ def get_generation_service() -> GenerationService:
     if _generation_service is None:
         raise RuntimeError("GenerationService not initialised")
     return _generation_service
+
+def get_agent_service() -> AgentService:
+    if _agent_service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Agentic RAG requires ANTHROPIC_API_KEY — not configured on this server.",
+        )
+    return _agent_service
 
 
 # ── Routes: Ingestion ──────────────────────────────────────────────────────────
@@ -317,6 +337,108 @@ async def query_stream(
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(token_stream(), media_type="text/event-stream")
+
+
+# ── Routes: Agentic RAG ────────────────────────────────────────────────────────
+#
+# These endpoints wrap AgentService, which runs a ReAct loop:
+#   question → think → search → observe → think → search → ... → answer
+#
+# Why two endpoints?
+#   POST /agent/query  — synchronous. Wait for the full answer, return JSON.
+#                        Simple to integrate, but slow (the whole loop runs first).
+#   GET  /agent/stream — streaming SSE. Watch the agent's thinking in real time.
+#                        Shows each tool call as it happens (like watching AI think).
+#
+# The streaming endpoint is the "wow" version — users can see the agent reasoning
+# live: "Searching for backward()... found engine.py... now looking for callers..."
+
+@app.post("/agent/query", response_model=AgentResponse, tags=["agent"])
+async def agent_query(
+    request: AgentRequest,
+    agent_svc: Annotated[AgentService, Depends(get_agent_service)],
+):
+    """
+    Run the agentic RAG loop synchronously.
+
+    The agent searches the codebase multiple times, from different angles,
+    until it has enough evidence to answer confidently. Returns the full
+    reasoning trace (tool_calls) alongside the answer.
+
+    Slower than /query but more thorough — the agent decides what to search,
+    not a fixed single retrieval. Best for complex multi-hop questions like
+    "how does the training loop interact with the optimizer?" that require
+    understanding how multiple pieces connect.
+    """
+    try:
+        result = agent_svc.run(request.question, repo_filter=request.repo)
+        return AgentResponse(
+            answer=result["answer"],
+            tool_calls=[AgentToolCall(**tc) for tc in result["tool_calls"]],
+            iterations=result["iterations"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agent error: {e}")
+
+
+@app.get("/agent/stream", tags=["agent"])
+async def agent_stream(
+    question: Annotated[str, Query(description="Question about the codebase")],
+    agent_svc: Annotated[AgentService, Depends(get_agent_service)],
+    repo: str | None = None,
+):
+    """
+    Run the agentic RAG loop with real-time SSE progress streaming.
+
+    Unlike /query/stream (which just streams tokens), this endpoint lets you
+    watch the agent's full reasoning process as it happens:
+
+      event: tool_call   → agent is about to call a tool (shows name + args)
+      event: tool_result → tool returned, agent is reading the result
+      (default event)    → text token of the final answer
+      event: done        → agent finished (includes iteration count)
+
+    This is the "glass box" view of the agent — users can see exactly what
+    it searched for and what it found, not just the final answer. Critical
+    for trust and debugging in production RAG systems.
+
+    SSE event format for each type:
+      event: tool_call
+      data: {"tool": "search_code", "input": {"query": "backward pass"}}
+
+      event: tool_result
+      data: {"tool": "search_code", "output": "Source 1: engine.py..."}
+
+      (default)
+      data: According to the code...
+
+      event: done
+      data: {"iterations": 3}
+    """
+    import json
+
+    def event_stream():
+        for event in agent_svc.stream(question, repo_filter=repo):
+            etype = event["type"]
+
+            if etype == "tool_call":
+                payload = json.dumps({"tool": event["tool"], "input": event["input"]})
+                yield f"event: tool_call\ndata: {payload}\n\n"
+
+            elif etype == "tool_result":
+                payload = json.dumps({"tool": event["tool"], "output": event["output"]})
+                yield f"event: tool_result\ndata: {payload}\n\n"
+
+            elif etype == "token":
+                safe = event["text"].replace("\n", "\\n")
+                yield f"data: {safe}\n\n"
+
+            elif etype == "done":
+                payload = json.dumps({"iterations": event["iterations"]})
+                yield f"event: done\ndata: {payload}\n\n"
+                yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

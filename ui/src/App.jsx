@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Sidebar from "./components/Sidebar";
 import Message from "./components/Message";
-import { fetchRepos, streamQuery } from "./api";
+import { fetchRepos, streamQuery, streamAgentQuery } from "./api";
 
 export default function App() {
   const [repos, setRepos]           = useState([]);
   const [activeRepo, setActiveRepo] = useState(null);
   const [mode, setMode]             = useState("hybrid");
+  const [agentMode, setAgentMode]   = useState(false);
   const [messages, setMessages]     = useState([]);
   const [input, setInput]           = useState("");
   const [streaming, setStreaming]   = useState(false);
@@ -54,55 +55,109 @@ export default function App() {
     if (!question || streaming) return;
     setInput("");
 
-    // Add user message
+    // Add user message + placeholder assistant message
     const userMsg = { role: "user", content: question };
-    // Add placeholder assistant message
     const assistantId = Date.now();
     const assistantMsg = {
       id: assistantId, role: "assistant",
       content: "", sources: [], queryType: null, streaming: true,
+      // Agent-mode extras:
+      toolCalls: [], currentTool: null, iterations: null,
     };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setStreaming(true);
 
-    const stop = streamQuery({
-      question,
-      repo: activeRepo,
-      mode,
-      onToken: (token) => {
-        setMessages((prev) =>
-          prev.map((m) => m.id === assistantId
-            ? { ...m, content: m.content + token }
-            : m
-          )
-        );
-      },
-      onSources: (sources, queryType) => {
-        setMessages((prev) =>
-          prev.map((m) => m.id === assistantId
-            ? { ...m, sources, queryType }
-            : m
-          )
-        );
-      },
-      onDone: () => {
-        setMessages((prev) =>
-          prev.map((m) => m.id === assistantId ? { ...m, streaming: false } : m)
-        );
-        setStreaming(false);
-        stopStream.current = null;
-      },
-      onError: (err) => {
-        setMessages((prev) =>
-          prev.map((m) => m.id === assistantId
-            ? { ...m, content: `Error: ${err}`, streaming: false }
-            : m
-          )
-        );
-        setStreaming(false);
-        stopStream.current = null;
-      },
-    });
+    // ── Common callbacks ──────────────────────────────────────────────────────
+    const onToken = (token) =>
+      setMessages((prev) =>
+        prev.map((m) => m.id === assistantId ? { ...m, content: m.content + token } : m)
+      );
+
+    const onError = (err) => {
+      setMessages((prev) =>
+        prev.map((m) => m.id === assistantId
+          ? { ...m, content: `Error: ${err}`, streaming: false }
+          : m
+        )
+      );
+      setStreaming(false);
+      stopStream.current = null;
+    };
+
+    let stop;
+
+    if (agentMode) {
+      // ── Agent mode: ReAct loop with live tool-call trace ──────────────────
+      stop = streamAgentQuery({
+        question,
+        repo: activeRepo,
+        onToolCall: (tool, input) => {
+          // Show spinner with tool name while agent is calling
+          setMessages((prev) =>
+            prev.map((m) => m.id === assistantId
+              ? { ...m, currentTool: tool }
+              : m
+            )
+          );
+          // Append to the tool call trace (output will be filled by onToolResult)
+          setMessages((prev) =>
+            prev.map((m) => m.id === assistantId
+              ? { ...m, toolCalls: [...m.toolCalls, { tool, input, output: "" }] }
+              : m
+            )
+          );
+        },
+        onToolResult: (tool, output) => {
+          // Fill in the output of the last tool call in the trace
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== assistantId) return m;
+              const calls = [...m.toolCalls];
+              // Find last call for this tool (most recent) and fill its output
+              for (let i = calls.length - 1; i >= 0; i--) {
+                if (calls[i].tool === tool && !calls[i].output) {
+                  calls[i] = { ...calls[i], output };
+                  break;
+                }
+              }
+              return { ...m, toolCalls: calls, currentTool: "thinking" };
+            })
+          );
+        },
+        onToken,
+        onDone: (iterations) => {
+          setMessages((prev) =>
+            prev.map((m) => m.id === assistantId
+              ? { ...m, streaming: false, currentTool: null, iterations }
+              : m
+            )
+          );
+          setStreaming(false);
+          stopStream.current = null;
+        },
+        onError,
+      });
+    } else {
+      // ── Plain RAG mode: single retrieval → stream tokens ──────────────────
+      stop = streamQuery({
+        question,
+        repo: activeRepo,
+        mode,
+        onToken,
+        onSources: (sources, queryType) =>
+          setMessages((prev) =>
+            prev.map((m) => m.id === assistantId ? { ...m, sources, queryType } : m)
+          ),
+        onDone: () => {
+          setMessages((prev) =>
+            prev.map((m) => m.id === assistantId ? { ...m, streaming: false } : m)
+          );
+          setStreaming(false);
+          stopStream.current = null;
+        },
+        onError,
+      });
+    }
 
     stopStream.current = stop;
   }
@@ -133,6 +188,8 @@ export default function App() {
         onReposChange={loadRepos}
         mode={mode}
         onModeChange={setMode}
+        agentMode={agentMode}
+        onAgentModeChange={setAgentMode}
       />
 
       <div className="main">
