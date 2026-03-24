@@ -423,42 +423,33 @@ async def agent_query(
 @app.get("/agent/stream", tags=["agent"])
 async def agent_stream(
     question: Annotated[str, Query(description="Question about the codebase")],
-    agent_svc: Annotated[AgentService, Depends(get_agent_service)],
     repo: str | None = None,
 ):
     """
     Run the agentic RAG loop with real-time SSE progress streaming.
 
-    Unlike /query/stream (which just streams tokens), this endpoint lets you
-    watch the agent's full reasoning process as it happens:
-
-      event: tool_call   → agent is about to call a tool (shows name + args)
-      event: tool_result → tool returned, agent is reading the result
-      (default event)    → text token of the final answer
-      event: done        → agent finished (includes iteration count)
-
-    This is the "glass box" view of the agent — users can see exactly what
-    it searched for and what it found, not just the final answer. Critical
-    for trust and debugging in production RAG systems.
-
-    SSE event format for each type:
-      event: tool_call
-      data: {"tool": "search_code", "input": {"query": "backward pass"}}
-
-      event: tool_result
-      data: {"tool": "search_code", "output": "Source 1: engine.py..."}
-
-      (default)
-      data: According to the code...
-
-      event: done
-      data: {"iterations": 3}
+    NOTE: This endpoint does NOT use Depends(get_agent_service).
+    Why? If get_agent_service() raises HTTPException (503), FastAPI returns a
+    503 HTTP error BEFORE the SSE stream starts. The browser's EventSource sees
+    a non-200 status and fires onerror — the client never receives our
+    friendly error message. By handling the None case inside the generator,
+    we always return HTTP 200 with an SSE stream, and errors arrive as
+    event: error frames that the frontend can display properly.
     """
     import json
 
+    svc = _agent_service  # may be None if ANTHROPIC_API_KEY not set
+
     def event_stream():
+        # ── Guard: agent not configured ───────────────────────────────────────
+        if svc is None:
+            msg = "Agent mode requires ANTHROPIC_API_KEY. Set it in your .env file."
+            yield f"event: agent_error\ndata: {json.dumps({'message': msg})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
         try:
-            for event in agent_svc.stream(question, repo_filter=repo):
+            for event in svc.stream(question, repo_filter=repo):
                 etype = event["type"]
 
                 if etype == "tool_call":
@@ -478,14 +469,12 @@ async def agent_stream(
                     yield f"event: done\ndata: {payload}\n\n"
                     yield "data: [DONE]\n\n"
         except Exception as e:
-            # Surface the real error to the frontend instead of silently closing
             err_msg = str(e)
             if "credit" in err_msg.lower() or "billing" in err_msg.lower():
-                err_msg = "Anthropic API credits exhausted. Add credits at console.anthropic.com."
+                err_msg = "Anthropic API credits exhausted. Top up at console.anthropic.com → Billing."
             elif "api_key" in err_msg.lower():
                 err_msg = "ANTHROPIC_API_KEY not configured on this server."
-            payload = json.dumps({"message": err_msg})
-            yield f"event: error\ndata: {payload}\n\n"
+            yield f"event: agent_error\ndata: {json.dumps({'message': err_msg})}\n\n"
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
