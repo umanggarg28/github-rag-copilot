@@ -226,6 +226,20 @@ def get_file_chunk(
         start_line: First line to fetch, 1-indexed
         end_line:   Last line to fetch, inclusive
     """
+    # Validate repo format — LLM-supplied args must never be passed raw into URLs.
+    if "/" not in repo or repo.count("/") != 1:
+        return f"Invalid repo format '{repo}'. Expected 'owner/name'."
+
+    # Reject path traversal — an LLM (or prompt injection) could pass "../.env"
+    # which would resolve to an unintended path in the GitHub API URL.
+    from pathlib import PurePosixPath
+    try:
+        parts = PurePosixPath(filepath).parts
+    except Exception:
+        return "Invalid filepath."
+    if ".." in parts or filepath.startswith("/"):
+        return "Invalid filepath: path traversal not allowed."
+
     owner, name = repo.split("/", 1)
     url = f"https://api.github.com/repos/{owner}/{name}/contents/{filepath}"
     headers = {"Accept": "application/vnd.github.v3.raw"}

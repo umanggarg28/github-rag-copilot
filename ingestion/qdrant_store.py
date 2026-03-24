@@ -329,9 +329,21 @@ def _text_to_sparse(text: str) -> SparseVector:
       → indices = [md5("def") % 1M, md5("embed_text") % 1M, ...]
         values  = [1.0, 1.0, 1.0, 2.0, ...]
 
-    Qdrant uses these sparse vectors for BM25-style keyword matching.
-    The actual BM25 ranking (IDF weighting, document length normalisation)
-    is applied at query time by Qdrant.
+    IMPORTANT — this is TF (term frequency) only, NOT full BM25.
+    True BM25 requires IDF (inverse document frequency), which weights rare
+    terms higher than common ones (e.g. "backward" > "def"). Qdrant can apply
+    IDF automatically only if you use its built-in FastEmbed sparse vectorizer
+    (which builds a vocabulary from your corpus). When you supply raw sparse
+    vectors manually (as we do here), Qdrant treats them as-is — no IDF,
+    no document length normalisation.
+
+    Practical effect: exact identifier lookups still work well (TF alone finds
+    the chunk containing "backward" 5 times better than one mentioning it once).
+    But stop-word-heavy queries ("how does the") may score higher than they
+    should. For a code search use case this is a reasonable trade-off since
+    identifiers are the dominant signal and they're naturally rare.
+
+    Upgrade path: switch to Qdrant's FastEmbed sparse vectorizer for true BM25.
 
     WHY NOT hash(token)?
       Python's built-in hash() is randomised per process (PYTHONHASHSEED).

@@ -1,0 +1,52 @@
+[
+  {
+    "question": "where is get_batch called",
+    "expected_files": ["train.py"],
+    "expected_names": ["get_batch"]
+  },
+  {
+    "question": "How is the attention mechanism implemented?",
+    "expected_files": ["model.py"],
+    "expected_names": ["CausalSelfAttention"]
+  },
+  {
+    "question": "What does the GPT class do?",
+    "expected_files": ["model.py"],
+    "expected_names": ["GPT"]
+  },
+  {
+    "question": "How is learning rate decay scheduled?",
+    "expected_files": ["train.py"],
+    "expected_names": ["get_lr"]
+  },
+  {
+    "question": "How does the forward pass work in the transformer block?",
+    "expected_files": ["model.py"],
+    "expected_names": ["Block", "forward"]
+  },
+  {
+    "question": "How is the model configured and initialised from a checkpoint?",
+    "expected_files": ["model.py"],
+    "expected_names": ["GPTConfig", "from_pretrained"]
+  },
+  {
+    "question": "How are tokens generated after training?",
+    "expected_files": ["model.py", "sample.py"],
+    "expected_names": ["generate"]
+  },
+  {
+    "question": "How is gradient clipping applied during training?",
+    "expected_files": ["train.py"],
+    "expected_names": []
+  },
+  {
+    "question": "What is the LayerNorm implementation used?",
+    "expected_files": ["model.py"],
+    "expected_names": ["LayerNorm"]
+  },
+  {
+    "question": "How does DDP distributed training work in the training loop?",
+    "expected_files": ["train.py"],
+    "expected_names": []
+  }
+]

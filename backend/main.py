@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI):
     _qdrant_store = QdrantStore()
 
     # Core services — all share the same store + embedder instances
-    _retrieval_service  = RetrievalService(embedder=_embedder)
+    _retrieval_service  = RetrievalService(embedder=_embedder, store=_qdrant_store)
     _ingestion_service  = IngestionService(store=_qdrant_store, embedder=_embedder)
     _graph_service      = GraphService(_qdrant_store)
     _generation_service = GenerationService()
@@ -188,8 +188,12 @@ def _check_rate_limit(request: Request) -> None:
     if limit <= 0:
         return  # disabled
 
-    ip  = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    ip  = ip or (request.client.host if request.client else "unknown")
+    # Use the RIGHTMOST X-Forwarded-For entry — it's appended by the actual
+    # proxy (Render, Cloudflare, etc.) and cannot be forged by the client.
+    # The leftmost entry is user-controlled and trivially bypassable.
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    ip = forwarded.split(",")[-1].strip() if forwarded else ""
+    ip = ip or (request.client.host if request.client else "unknown")
     now = time.monotonic()
 
     window = _rate_windows[ip]

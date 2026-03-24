@@ -46,7 +46,7 @@ from qdrant_client.models import (
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from backend.config import settings
 from ingestion.embedder import Embedder
-from ingestion.qdrant_store import _text_to_sparse
+from ingestion.qdrant_store import QdrantStore, _text_to_sparse
 
 
 class RetrievalService:
@@ -57,22 +57,34 @@ class RetrievalService:
     as the indexed chunks. Mixing embedding models breaks retrieval entirely —
     vectors from different models are incomparable.
 
-    Why accept embedder as an argument?
-      IngestionService and RetrievalService both need the same 600MB model.
-      Instantiating it twice wastes ~600MB RAM. main.py creates one Embedder
-      and passes it to both services. Shared state, one load.
+    Why accept embedder and store as arguments?
+      - Embedder: IngestionService and RetrievalService both need the 600MB model.
+        Instantiating twice wastes ~600MB RAM. main.py creates one and shares it.
+      - QdrantStore: opening a second QdrantClient creates a second connection pool
+        to the same database, which wastes resources and was the "3 QdrantStore
+        instances" bug. By accepting the shared store we use its existing client.
     """
 
     DENSE_VECTOR_NAME  = "code"
     SPARSE_VECTOR_NAME = "bm25"
 
-    def __init__(self, embedder: Embedder | None = None):
-        self.embedder = embedder or Embedder()
-        self.client   = QdrantClient(
-            url=settings.qdrant_url,
-            api_key=settings.qdrant_api_key or None,
-        )
-        self.collection = settings.qdrant_collection
+    def __init__(
+        self,
+        embedder: Embedder | None = None,
+        store: QdrantStore | None = None,
+    ):
+        self.embedder   = embedder or Embedder()
+        # Use the shared store's client if provided; otherwise open a new connection.
+        # The store already validated QDRANT_URL and created payload indices.
+        if store is not None:
+            self.client     = store.client
+            self.collection = store.collection
+        else:
+            self.client     = QdrantClient(
+                url=settings.qdrant_url,
+                api_key=settings.qdrant_api_key or None,
+            )
+            self.collection = settings.qdrant_collection
 
     def search(
         self,

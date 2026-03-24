@@ -235,6 +235,11 @@ def main():
         "--verbose", action="store_true",
         help="Show per-case results including misses"
     )
+    parser.add_argument(
+        "--output", default=None, metavar="FILE",
+        help="Write results as JSON to FILE (e.g. eval_results.json). "
+             "Useful for CI: git diff eval_results.json shows regressions."
+    )
     args = parser.parse_args()
 
     # ── Load test cases ────────────────────────────────────────────────────────
@@ -273,6 +278,25 @@ def main():
         summary = compute_summary(results, args.top_k)
         all_summaries[mode] = summary
         print_report(mode, summary, results, args.top_k, args.verbose)
+
+    # ── JSON output for CI ────────────────────────────────────────────────────
+    if args.output:
+        import json as _json
+        output = {
+            "repo":   args.repo,
+            "top_k":  args.top_k,
+            "n_cases": len(cases),
+            "results": {
+                mode: {
+                    "hit_at_k": s[f"hit@{args.top_k}"],
+                    "mrr":      s["mrr"],
+                    "p_at_k":   s[f"p@{args.top_k}"],
+                }
+                for mode, s in all_summaries.items()
+            }
+        }
+        Path(args.output).write_text(_json.dumps(output, indent=2))
+        print(f"\nResults written to {args.output}")
 
     # ── Comparison table ───────────────────────────────────────────────────────
     if len(args.modes) > 1:

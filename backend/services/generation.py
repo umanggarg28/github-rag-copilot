@@ -148,12 +148,14 @@ class GenerationService:
         if settings.groq_api_key:
             from groq import Groq
             self._client = Groq(api_key=settings.groq_api_key)
-            print("Generation: using Groq (llama-3.3-70b-versatile)")
+            self._model  = "llama-3.3-70b-versatile"
+            print(f"Generation: using Groq ({self._model})")
             return "groq"
         elif settings.anthropic_api_key:
             import anthropic
             self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-            print("Generation: using Anthropic (claude-haiku-4-5)")
+            self._model  = "claude-haiku-4-5-20251001"
+            print(f"Generation: using Anthropic ({self._model})")
             return "anthropic"
         else:
             raise ValueError(
@@ -207,7 +209,7 @@ class GenerationService:
 
     def _groq_complete(self, system: str, prompt: str, params: dict) -> str:
         response = self._client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=self._model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user",   "content": prompt},
@@ -219,7 +221,7 @@ class GenerationService:
 
     def _groq_stream(self, system: str, prompt: str, params: dict) -> Iterator[str]:
         stream = self._client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=self._model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user",   "content": prompt},
@@ -237,7 +239,7 @@ class GenerationService:
 
     def _anthropic_complete(self, system: str, prompt: str, params: dict) -> str:
         response = self._client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=self._model,
             system=system,
             messages=[{"role": "user", "content": prompt}],
             temperature=params["temperature"],
@@ -247,7 +249,7 @@ class GenerationService:
 
     def _anthropic_stream(self, system: str, prompt: str, params: dict) -> Iterator[str]:
         with self._client.messages.stream(
-            model="claude-haiku-4-5-20251001",
+            model=self._model,
             system=system,
             messages=[{"role": "user", "content": prompt}],
             temperature=params["temperature"],
