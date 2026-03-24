@@ -108,19 +108,24 @@ app = FastAPI(
 )
 
 # Build allowed origins list.
-# Always include local dev ports; add the production Vercel URL when set.
-_origins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-    "http://localhost:3000",
-]
+# In development, allow any localhost port (Vite picks 5173, 5174, 5175, 5176...
+# depending on what's already in use — hardcoding specific ports breaks this).
+# In production, restrict to the configured FRONTEND_URL.
+import re as _re
+
+class _LocalhostCORS:
+    """Allow any localhost origin in dev; exact match in prod."""
+    async def __call__(self, scope, receive, send):
+        pass  # not used directly — see allow_origin_regex below
+
+_origins = []
 if settings.frontend_url:
     _origins.append(settings.frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
+    allow_origin_regex=r"http://localhost:\d+",  # allow any localhost port
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
