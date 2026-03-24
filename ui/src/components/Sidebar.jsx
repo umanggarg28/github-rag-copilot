@@ -1,36 +1,67 @@
 import { useState, useEffect } from "react";
-import { ingestRepo, deleteRepo, fetchMcpStatus } from "../api";
+import { deleteRepo, fetchMcpStatus } from "../api";
 
 export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange, isOpen, onClose }) {
-  const [url, setUrl]         = useState("");
-  const [status, setStatus]   = useState(null); // {type, text}
-  const [loading, setLoading] = useState(false);
-  const [mcpInfo, setMcpInfo] = useState(null); // MCP server status
-  const [mcpOpen, setMcpOpen] = useState(false); // expand/collapse panel
-  const [confirming, setConfirming] = useState(null); // slug being confirmed for delete
+  const [url, setUrl]                   = useState("");
+  const [status, setStatus]             = useState(null); // {type, text}
+  const [loading, setLoading]           = useState(false);
+  const [mcpInfo, setMcpInfo]           = useState(null); // MCP server status
+  const [mcpOpen, setMcpOpen]           = useState(false); // expand/collapse panel
+  const [confirming, setConfirming]     = useState(null); // slug being confirmed for delete
+  const [ingestProgress, setIngestProgress] = useState([]); // [{step, detail, done}]
+  const [isIngesting, setIsIngesting]   = useState(false);
 
   // Load MCP status once on mount
   useEffect(() => {
     fetchMcpStatus().then(setMcpInfo).catch(() => setMcpInfo({ connected: false }));
   }, []);
 
-  async function handleIngest(e) {
+  function handleIngest(e) {
     e.preventDefault();
-    if (!url.trim()) return;
-    setLoading(true);
-    setStatus({ type: "info", text: "Ingesting…" });
-    try {
-      const result = await ingestRepo(url.trim());
-      setStatus({ type: "success", text: `✓ ${result.chunks_stored} chunks indexed` });
-      setUrl("");
-      onReposChange();
-      // Auto-select the newly indexed repo
-      if (result.repo) onSelectRepo(result.repo);
-    } catch (err) {
-      setStatus({ type: "error", text: err.message });
-    } finally {
-      setLoading(false);
-    }
+    if (!url.trim() || isIngesting) return;
+
+    setIsIngesting(true);
+    setIngestProgress([]);
+    setStatus(null);
+
+    // Connect to the SSE stream — the server pushes step events as it progresses
+    // through fetching → filtering → chunking → embedding → storing → done.
+    // EventSource handles reconnection automatically on network blips, so we
+    // explicitly close it once we receive "done" or "error" to prevent that.
+    const streamUrl = `http://localhost:8000/ingest/stream?repo=${encodeURIComponent(url.trim())}`;
+    const es = new EventSource(streamUrl);
+
+    es.onmessage = (e) => {
+      const event = JSON.parse(e.data);
+
+      setIngestProgress(prev => {
+        // Mark all previous steps as completed, then append the new active step.
+        const updated = prev.map(s => ({ ...s, done: true }));
+        return [...updated, { step: event.step, detail: event.detail, done: false }];
+      });
+
+      if (event.step === "done" || event.step === "error") {
+        es.close();
+        setIsIngesting(false);
+        if (event.step === "done") {
+          // Extract owner/repo slug from the URL the user typed.
+          // Handles both "github.com/owner/repo" and "https://github.com/owner/repo".
+          const match = url.match(/github\.com\/([^/]+\/[^/]+)/);
+          if (match && onSelectRepo) onSelectRepo(match[1]);
+          setUrl("");
+          onReposChange();
+        }
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      setIsIngesting(false);
+      setIngestProgress(prev => [
+        ...prev,
+        { step: "error", detail: "Connection failed — is the backend running?", done: false },
+      ]);
+    };
   }
 
   async function handleDelete(e, slug) {
@@ -70,15 +101,30 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
             placeholder="github.com/owner/repo"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            disabled={loading}
+            disabled={isIngesting}
           />
-          <button className="btn" type="submit" disabled={loading || !url.trim()}>
-            {loading ? "Indexing…" : "Index Repo"}
+          <button className="btn" type="submit" disabled={isIngesting || !url.trim()}>
+            {isIngesting ? "Indexing…" : "Index Repo"}
           </button>
         </form>
         {status && (
           <div className={`status-bar ${status.type}`} style={{ marginTop: 8 }}>
             {status.text}
+          </div>
+        )}
+        {ingestProgress.length > 0 && (
+          <div className="ingest-progress">
+            {ingestProgress.map((p, i) => (
+              <div
+                key={i}
+                className={`ingest-step ${p.done ? "done" : "active"} ${p.step === "error" ? "error" : ""}`}
+              >
+                <span className="ingest-step-icon">
+                  {p.step === "error" ? "✗" : p.done ? "✓" : "⋯"}
+                </span>
+                <span className="ingest-step-detail">{p.detail}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>

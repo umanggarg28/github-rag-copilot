@@ -32,6 +32,7 @@ Endpoints:
 """
 
 import asyncio
+import json
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -316,6 +317,70 @@ async def ingest_repo(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}")
+
+
+@app.get("/ingest/stream", tags=["ingestion"])
+async def ingest_stream(repo: str, request: Request):
+    """
+    Stream ingestion progress as Server-Sent Events (SSE).
+
+    The client connects once and receives JSON events until the pipeline
+    finishes or errors. Each event has the shape:
+        { "step": "fetching|filtering|chunking|embedding|storing|done|error",
+          "detail": "human-readable message" }
+
+    Why SSE instead of WebSocket?
+      SSE is a one-way, text-based HTTP stream — simpler to implement and
+      natively supported by the browser EventSource API. Ingestion only needs
+      server → client updates, so full-duplex WebSockets are unnecessary.
+
+    Why asyncio.Queue + call_soon_threadsafe?
+      ingest() is synchronous (CPU+IO bound). We run it in a thread via
+      asyncio.to_thread(). The progress callback fires from that thread, but
+      queue.put_nowait() is not thread-safe. call_soon_threadsafe() schedules
+      the put on the event loop's thread, making it safe.
+    """
+    _check_rate_limit(request)
+
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def _progress(step: str, detail: str):
+        # Called from the worker thread — schedule the enqueue on the event loop.
+        loop.call_soon_threadsafe(queue.put_nowait, {"step": step, "detail": detail})
+
+    async def _run():
+        try:
+            await asyncio.to_thread(
+                _ingestion_service.ingest,
+                repo,
+                False,  # force=False
+                _progress,
+            )
+        except Exception as e:
+            loop.call_soon_threadsafe(queue.put_nowait, {"step": "error", "detail": str(e)})
+        finally:
+            # Sentinel value signals the event stream generator to stop.
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    asyncio.create_task(_run())
+
+    async def _event_stream():
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # Tells nginx/proxies not to buffer SSE — delivers events instantly.
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/repos", response_model=ReposResponse, tags=["ingestion"])

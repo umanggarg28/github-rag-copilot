@@ -1030,6 +1030,64 @@ textarea:focus-visible {
   max-width: 760px;
 }
 
+/* ── Ingestion progress stream ─────────────────────────────── */
+
+.ingest-progress {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ingest-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.78rem;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  animation: step-in var(--transition) both;
+}
+
+.ingest-step.active {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.ingest-step.done {
+  color: var(--text-muted);
+}
+
+.ingest-step.error {
+  color: #f85149;
+}
+
+.ingest-step-icon {
+  flex-shrink: 0;
+  width: 14px;
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.ingest-step.active .ingest-step-icon {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.ingest-step.done .ingest-step-icon {
+  color: #3fb950;
+}
+
+.ingest-step-detail {
+  flex: 1;
+  line-height: 1.4;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 /* ── Scrollbar ───────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -48,7 +48,7 @@ class IngestionService:
         self.embedder = embedder or Embedder()
         self.store    = store or QdrantStore()
 
-    def ingest(self, repo_url: str, force: bool = False) -> dict:
+    def ingest(self, repo_url: str, force: bool = False, progress: callable = None) -> dict:
         """
         Run the full ingestion pipeline for one repository.
 
@@ -56,10 +56,19 @@ class IngestionService:
             repo_url: GitHub URL (https://github.com/owner/repo)
             force:    If True, delete all existing chunks for this repo first.
                       Use this to re-index after the repo has changed.
+            progress: Optional callback(step: str, detail: str) called at key
+                      milestones. Used by the SSE streaming endpoint to push
+                      real-time updates to the UI without blocking the event loop.
+                      Defaults to None so existing callers don't break.
 
         Returns:
             dict with keys: repo, files_indexed, chunks_stored, message
         """
+        def _emit(step: str, detail: str) -> None:
+            # Only call the callback if one was provided — safe to skip otherwise.
+            if progress is not None:
+                progress(step, detail)
+
         # ── Step 1: Parse URL & optionally clear old data ─────────────────────
         owner, name = parse_github_url(repo_url)
         repo_slug   = f"{owner}/{name}"
@@ -70,12 +79,15 @@ class IngestionService:
             print(f"  Deleted {deleted} existing chunks for {repo_slug}")
 
         # ── Step 2: Download repo (filtering happens inside fetch_repo_files) ────
+        _emit("fetching", "Fetching file list from GitHub...")
         print("Fetching repo files from GitHub...")
         raw_files = fetch_repo_files(repo_url, should_index)
         # raw_files is a list of dicts: [{"path": "...", "content": "...", "size": N}, ...]
         print(f"  Downloaded {len(raw_files)} indexable files")
+        _emit("filtering", f"Found {len(raw_files)} files, filtering...")
 
         if not raw_files:
+            _emit("done", "No indexable files found in this repository.")
             return {
                 "repo":          repo_slug,
                 "files_indexed": 0,
@@ -96,11 +108,13 @@ class IngestionService:
         ]
 
         # ── Step 5: Chunk ─────────────────────────────────────────────────────
+        _emit("chunking", f"Chunking {len(file_dicts)} files...")
         print("Chunking files...")
         chunks = chunk_files(file_dicts)
         print(f"  Produced {len(chunks)} chunks from {len(file_dicts)} files")
 
         if not chunks:
+            _emit("done", "Files found but no chunks produced (files may be empty).")
             return {
                 "repo":          repo_slug,
                 "files_indexed": len(raw_files),
@@ -109,11 +123,13 @@ class IngestionService:
             }
 
         # ── Step 6: Embed ─────────────────────────────────────────────────────
+        _emit("embedding", f"Embedding {len(chunks)} chunks...")
         print("Embedding chunks...")
         vectors = self.embedder.embed_chunks(chunks)
         print(f"  Produced {len(vectors)} vectors ({len(vectors[0])}-dim each)")
 
         # ── Step 7: Store ─────────────────────────────────────────────────────
+        _emit("storing", f"Storing {len(chunks)} chunks in Qdrant...")
         print("Storing in Qdrant...")
         self.store.upsert_chunks(chunks, vectors)
 
@@ -123,6 +139,7 @@ class IngestionService:
             f"{len(raw_files)} files → {len(chunks)} chunks → {total_stored} total stored"
         )
         print(f"\n✓ {message}")
+        _emit("done", f"Indexed {len(chunks)} chunks from {len(raw_files)} files")
 
         return {
             "repo":          repo_slug,
