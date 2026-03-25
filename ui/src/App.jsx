@@ -26,6 +26,7 @@ export default function App() {
 
   // ⌘K / Ctrl+K — focus the input from anywhere in the app.
   // Productivity Tool must_have: keyboard-shortcuts (ui-ux-pro-max-skill #16).
+  const isMac = navigator.platform.toUpperCase().includes("MAC");
   useEffect(() => {
     function onGlobalKey(e) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -345,18 +346,26 @@ export default function App() {
                     </div>
                   </>
                 ) : (
-                  // Step 2: repos indexed, suggest questions
+                  // Step 2: repos indexed, suggest questions.
+                  // Context-aware: suggestions reference the active repo by name
+                  // (AI/Chatbot Platform must_have: context-awareness).
                   <div className="suggest-state">
-                    <h2>What do you want to know?</h2>
+                    <h2>{activeRepo ? `Ask about ${activeRepo.split("/")[1]}` : "What do you want to know?"}</h2>
                     <p>Try one of these or ask your own:</p>
                     <div className="suggestions">
-                      {[
+                      {(activeRepo ? [
+                        `Give me a high-level overview of ${activeRepo.split("/")[1]}`,
+                        "What are the main classes and their responsibilities?",
+                        "Walk me through the main entry point step by step",
+                        "What are the most important functions in this codebase?",
+                        "How does data flow through the system end-to-end?",
+                      ] : [
                         "Give me a high-level overview of this repo",
                         "How does the main class work?",
                         "What does the training loop do?",
                         "How is backpropagation implemented?",
                         "What are the entry points to this codebase?",
-                      ].map(q => (
+                      ]).map(q => (
                         <button
                           key={q}
                           className="suggestion-btn"
@@ -441,9 +450,9 @@ export default function App() {
                   {streaming ? <span className="spinner" aria-hidden="true" /> : agentMode ? "Run" : "Ask"}
                 </button>
               </div>
-              {/* ⌘K hint — shown when idle, guides users to the keyboard shortcut */}
+              {/* Keyboard shortcut hint — ⌘K on Mac, Ctrl+K on Windows/Linux */}
               {!streaming && !input && (
-                <div className="input-hint" aria-hidden="true">⌘K</div>
+                <div className="input-hint" aria-hidden="true">{isMac ? "⌘K" : "Ctrl+K"}</div>
               )}
             </div>
           </>
