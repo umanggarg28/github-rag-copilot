@@ -24,6 +24,21 @@ export default function App() {
   const textareaRef = useRef(null);
   const stopStream  = useRef(null); // cleanup fn for active SSE
 
+  // ⌘K / Ctrl+K — focus the input from anywhere in the app.
+  // Productivity Tool must_have: keyboard-shortcuts (ui-ux-pro-max-skill #16).
+  useEffect(() => {
+    function onGlobalKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        if (view === "graph") setView("chat");
+        // Small delay if we just switched views (textarea may not be mounted yet)
+        setTimeout(() => textareaRef.current?.focus(), 20);
+      }
+    }
+    window.addEventListener("keydown", onGlobalKey);
+    return () => window.removeEventListener("keydown", onGlobalKey);
+  }, [view]);
+
   // Auto-grow textarea as user types
   useEffect(() => {
     const el = textareaRef.current;
@@ -421,10 +436,15 @@ export default function App() {
                   className="btn"
                   onClick={handleSubmit}
                   disabled={!input.trim() || streaming}
+                  aria-label={streaming ? "Generating…" : agentMode ? "Run Agent" : "Ask"}
                 >
-                  {streaming ? <span className="spinner" /> : agentMode ? "Run Agent" : "Ask"}
+                  {streaming ? <span className="spinner" aria-hidden="true" /> : agentMode ? "Run" : "Ask"}
                 </button>
               </div>
+              {/* ⌘K hint — shown when idle, guides users to the keyboard shortcut */}
+              {!streaming && !input && (
+                <div className="input-hint" aria-hidden="true">⌘K</div>
+              )}
             </div>
           </>
         )}

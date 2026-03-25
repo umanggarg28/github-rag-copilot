@@ -68,6 +68,10 @@
   --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
 }
 
+/* color-scheme: dark — browser chrome (scrollbars, inputs, select) adapts.
+   Required by Dark Mode (OLED) checklist in ui-ux-pro-max-skill. */
+:root { color-scheme: dark; }
+
 body {
   font-family: var(--sans);
   background: var(--bg);
@@ -196,11 +200,16 @@ textarea:focus-visible {
   font-size: 13px;
   font-weight: 600;
   padding: 8px 12px;
-  transition: opacity var(--transition), transform var(--transition);
+  transition: opacity var(--transition), transform var(--transition), box-shadow var(--transition);
+  /* Minimal OLED glow on primary CTA */
+  box-shadow: 0 2px 8px rgba(34,197,94,0.25);
 }
 
-.btn:hover { opacity: 0.85; }
-.btn:active { transform: scale(0.97); }
+.btn:hover {
+  opacity: 0.9;
+  box-shadow: 0 4px 16px rgba(34,197,94,0.35);
+}
+.btn:active { transform: scale(0.97); box-shadow: none; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .btn.secondary {
   background: var(--pill-bg);
@@ -232,6 +241,8 @@ textarea:focus-visible {
 .repo-item.active {
   background: var(--accent-dim);
   border-color: var(--accent);
+  /* Minimal glow — OLED dark mode accent highlight (ui-ux-pro-max-skill) */
+  box-shadow: 0 0 0 1px rgba(34,197,94,0.12), inset 0 0 8px rgba(34,197,94,0.05);
 }
 
 .repo-slug {
@@ -397,9 +408,12 @@ textarea:focus-visible {
 }
 
 .message.user .bubble {
-  background: var(--accent);
+  /* Gradient instead of flat green — premium OLED look.
+     Dark-green → bright-green matches the "run" semantic. */
+  background: linear-gradient(135deg, #166534 0%, #22C55E 100%);
   color: #000;
   border-bottom-right-radius: 3px;
+  box-shadow: 0 2px 12px rgba(34,197,94,0.2);
 }
 
 .message.assistant .bubble {
@@ -596,7 +610,10 @@ textarea:focus-visible {
   transition: border-color var(--transition);
 }
 
-.input-bar textarea:focus { border-color: var(--accent); }
+.input-bar textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(34,197,94,0.12);
+}
 .input-bar textarea::placeholder { color: var(--muted); }
 
 /* ── Empty state ─────────────────────────────────────────────── */
@@ -636,7 +653,7 @@ textarea:focus-visible {
 
 .onboarding-step.active {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-dim), var(--shadow-sm);
+  box-shadow: 0 0 0 1px rgba(34,197,94,0.15), 0 0 12px rgba(34,197,94,0.08), var(--shadow-sm);
 }
 
 .step-num {
@@ -758,10 +775,12 @@ textarea:focus-visible {
 .cursor {
   display: inline-block;
   width: 2px; height: 14px;
-  background: var(--text);
+  background: var(--accent);
   margin-left: 2px;
   vertical-align: text-bottom;
   animation: blink 1s step-end infinite;
+  /* Accent glow on cursor — visible "thinking" indicator */
+  box-shadow: 0 0 6px rgba(34,197,94,0.7);
 }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
@@ -940,6 +959,7 @@ textarea:focus-visible {
   border-radius: var(--radius-md);
   padding: 8px 12px;
   background: var(--accent-dim);
+  box-shadow: 0 0 0 1px rgba(34,197,94,0.1);
 }
 
 .agent-trace-label {
@@ -1094,6 +1114,26 @@ textarea:focus-visible {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
+}
+
+/* ── Keyboard shortcut hint ──────────────────────────────────── */
+/* Shown inside the input bar when textarea is empty and not streaming.
+   Follows the Productivity Tool must_have: keyboard-shortcuts from
+   ui-ux-pro-max-skill. Inspired by Linear/Raycast/Vercel AI patterns. */
+.input-hint {
+  position: absolute;
+  right: 72px;
+  bottom: 19px;
+  font-size: 11px;
+  color: var(--faint);
+  font-family: var(--mono);
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  letter-spacing: 0.02em;
+  user-select: none;
 }
 
 /* ── Scrollbar ───────────────────────────────────────────────── */
