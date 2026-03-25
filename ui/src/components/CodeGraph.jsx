@@ -62,18 +62,18 @@
 import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 
-// ── Color scheme — aligned with Developer Tool/IDE palette ────────────────────
-// ui-ux-pro-max-skill #81: slate darks, green accent, semantic node colors
+// ── Color scheme — aligned with AI-Native violet design system ────────────────
+// Premium dark cinema palette: violet accent, indigo secondary, muted grey
 const COLORS = {
-  class:    "#F59E0B",   // amber — classes (warm, distinct from functions)
-  function: "#22C55E",   // green accent — functions (matches UI accent "run green")
-  module:   "#94A3B8",   // slate-400 muted — file/module nodes
+  class:    "#A78BFA",   // soft violet — classes (matches brand accent)
+  function: "#6366F1",   // indigo — functions (distinct from classes)
+  module:   "#4A4A65",   // muted slate — file/module nodes
 };
 
-const EDGE_COLOR    = "#334155";   // slate-700 — subtle edges
-const EDGE_HOVER    = "#4ADE80";   // lighter green — highlighted edges on hover
-const BG_COLOR      = "#0F172A";   // slate-900 — matches --bg
-const TOOLTIP_BG    = "#1E293B";   // slate-800 — matches --surface
+const EDGE_COLOR    = "rgba(255,255,255,0.08)";  // hairline edge — cinematic
+const EDGE_HOVER    = "#A78BFA";                  // violet — highlighted edges on hover
+const BG_COLOR      = "#080810";                  // void-black — matches --bg
+const TOOLTIP_BG    = "#1A1A2C";                  // surface-3 — matches --surface-3
 
 // Node radius: base + bonus for each caller (hub detection)
 function nodeRadius(d) {

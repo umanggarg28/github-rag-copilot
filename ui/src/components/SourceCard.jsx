@@ -76,7 +76,8 @@ export default function SourceCard({ source, index }) {
           <SyntaxHighlighter
             language={lang}
             style={oneDark}
-            customStyle={{ fontSize: 12, margin: 0, background: 'var(--bg)' }}
+            customStyle={{ fontSize: 12, margin: 0, background: 'rgba(0,0,0,0.50)', borderRadius: 0 }}
+            lineNumberStyle={{ color: 'rgba(255,255,255,0.18)', fontSize: 11, minWidth: 36, paddingRight: 12 }}
             showLineNumbers
             startingLineNumber={source.start_line}
           >

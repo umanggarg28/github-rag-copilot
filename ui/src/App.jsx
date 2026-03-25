@@ -319,6 +319,10 @@ export default function App() {
                   // Step 1: no repos yet
                   <>
                     <div className="onboarding-steps">
+                      <div className="onboarding-header">
+                        <div className="onboarding-headline">Your AI Code Copilot</div>
+                        <div className="onboarding-sub">Index any GitHub repo and ask questions about it.</div>
+                      </div>
                       <div className="onboarding-step active">
                         <span className="step-num">1</span>
                         <div>
