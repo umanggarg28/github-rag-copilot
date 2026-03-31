@@ -36,9 +36,11 @@ import json
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -54,20 +56,30 @@ from backend.services.ingestion_service import IngestionService
 from backend.services.generation import GenerationService, classify_query
 from backend.services.agent import AgentService
 from backend.services.graph_service import GraphService
+from backend.services.map_service import MapService
+from backend.services.diagram_service import DiagramService
 from backend.mcp_server import mcp, init_services as init_mcp_services
 from backend.mcp_client import MCPClient
-from retrieval.retrieval import RetrievalService
+from retrieval.retrieval import RetrievalService, Reranker
 from ingestion.qdrant_store import QdrantStore
 from ingestion.embedder import Embedder
 
 
 # ── Shared service instances ───────────────────────────────────────────────────
 
+# In-memory staleness tracker: repo_slug → ISO timestamp of last successful ingest.
+# Keyed by slug so it survives backend restarts only within a process lifetime.
+# Simple and dependency-free — no need for a persistent store for this UX hint.
+_repo_indexed_at: dict[str, str] = {}
+_repo_contextual_at: dict[str, str] = {}  # slug → ISO timestamp of last contextual re-index
+
 _ingestion_service:  IngestionService  | None = None
 _retrieval_service:  RetrievalService  | None = None
 _generation_service: GenerationService | None = None
 _agent_service:      AgentService      | None = None
 _graph_service:      GraphService      | None = None
+_map_service:        MapService        | None = None
+_diagram_service:    DiagramService    | None = None
 _mcp_client:         MCPClient         | None = None
 
 
@@ -78,7 +90,7 @@ async def lifespan(app: FastAPI):
     Shutdown: (add cleanup here if needed).
     """
     global _ingestion_service, _retrieval_service, _generation_service
-    global _agent_service, _graph_service, _mcp_client
+    global _agent_service, _graph_service, _map_service, _diagram_service, _mcp_client
 
     print("Starting up — loading models and connecting to Qdrant...")
 
@@ -96,22 +108,28 @@ async def lifespan(app: FastAPI):
     _qdrant_store = QdrantStore()
 
     # Core services — all share the same store + embedder instances
-    _retrieval_service  = RetrievalService(embedder=_embedder, store=_qdrant_store)
-    _ingestion_service  = IngestionService(store=_qdrant_store, embedder=_embedder)
-    _graph_service      = GraphService(_qdrant_store)
+    _reranker           = Reranker()   # shared; model loads lazily on first search
     _generation_service = GenerationService()
+    # Pass gen to RetrievalService so HyDE and query expansion can use the LLM.
+    # Pass gen to IngestionService so contextual retrieval can use the LLM.
+    # Both use the same GenerationService instance — one provider, no double-init.
+    _retrieval_service  = RetrievalService(embedder=_embedder, store=_qdrant_store, reranker=_reranker, gen=_generation_service)
+    _ingestion_service  = IngestionService(store=_qdrant_store, embedder=_embedder, gen=_generation_service)
+    _graph_service      = GraphService(_qdrant_store)
+    _map_service        = MapService(_qdrant_store)
+    _diagram_service    = DiagramService(_qdrant_store, _generation_service)
 
     # ── MCP server setup ───────────────────────────────────────────────────────
     # Inject shared service instances into the MCP server's tool functions.
     init_mcp_services(_retrieval_service, _qdrant_store)
 
     # ── MCP client + agent setup ───────────────────────────────────────────────
-    if settings.groq_api_key or settings.anthropic_api_key:
+    if settings.groq_api_key or settings.gemini_api_key or settings.openrouter_api_key or settings.anthropic_api_key:
         _mcp_client    = MCPClient(server_url="http://localhost:8000/mcp")
         _agent_service = AgentService(_mcp_client)
         print("AgentService ready (MCP-powered agentic RAG enabled).")
     else:
-        print("No GROQ_API_KEY or ANTHROPIC_API_KEY — /agent/* endpoints disabled.")
+        print("No GROQ_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY — /agent/* endpoints disabled.")
 
     print("All services ready.\n")
 
@@ -201,11 +219,16 @@ def _check_rate_limit(request: Request) -> None:
     # Drop timestamps older than 60 seconds
     while window and window[0] < now - 60:
         window.popleft()
+    # Clean up empty deques so the dict doesn't grow unboundedly over time
+    # (one entry per unique IP, never deleted otherwise — a slow memory leak).
+    if not window:
+        del _rate_windows[ip]
+        return  # no prior requests in window — proceed
 
     if len(window) >= limit:
         raise HTTPException(
             status_code=429,
-            detail=f"Rate limit exceeded: max {limit} ingestion requests per minute.",
+            detail=f"Rate limit exceeded: max {limit} requests per minute.",
         )
 
     window.append(now)
@@ -233,13 +256,24 @@ def get_graph_service() -> GraphService:
         raise RuntimeError("GraphService not initialised")
     return _graph_service
 
+def get_map_service() -> MapService:
+    if _map_service is None:
+        raise RuntimeError("MapService not initialised")
+    return _map_service
+
+def get_diagram_service() -> DiagramService:
+    if _diagram_service is None:
+        raise RuntimeError("DiagramService not initialised")
+    return _diagram_service
+
 def get_agent_service() -> AgentService:
     if _agent_service is None:
         raise HTTPException(
             status_code=503,
-            detail="Agent mode requires GROQ_API_KEY or ANTHROPIC_API_KEY.",
+            detail="Agent mode requires GROQ_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY.",
         )
     return _agent_service
+
 
 
 # ── Routes: MCP status ─────────────────────────────────────────────────────────
@@ -312,6 +346,17 @@ async def ingest_repo(
         # Running it in the main event loop would block ALL other requests for minutes.
         # asyncio.to_thread() offloads it to a thread pool — the loop stays responsive.
         result = await asyncio.to_thread(svc.ingest, request.repo_url, request.force)
+        # Invalidate stale diagrams and map — they were generated from the old chunk set.
+        if _diagram_service and result.get("repo"):
+            _diagram_service.invalidate(result["repo"])
+        if _map_service and result.get("repo"):
+            _map_service.invalidate(result["repo"])
+        # Record ingestion timestamp for the staleness indicator in the UI.
+        if result.get("repo"):
+            now = datetime.now(timezone.utc).isoformat()
+            _repo_indexed_at[result["repo"]] = now
+            if request.force:
+                _repo_contextual_at[result["repo"]] = now
         return IngestResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -357,6 +402,13 @@ async def ingest_stream(repo: str, request: Request):
                 False,  # force=False
                 _progress,
             )
+            # Invalidate stale diagrams and map after successful ingestion
+            if _diagram_service:
+                _diagram_service.invalidate(repo)
+            if _map_service:
+                _map_service.invalidate(repo)
+            # Record ingestion timestamp for the staleness indicator
+            _repo_indexed_at[repo] = datetime.now(timezone.utc).isoformat()
         except Exception as e:
             loop.call_soon_threadsafe(queue.put_nowait, {"step": "error", "detail": str(e)})
         finally:
@@ -391,7 +443,20 @@ async def list_repos(
     repos = svc.list_repos()
     total = sum(r["chunks"] for r in repos)
     return ReposResponse(
-        repos=[RepoInfo(slug=r["slug"], chunks=r["chunks"]) for r in repos],
+        repos=[
+            RepoInfo(
+                slug=r["slug"],
+                chunks=r["chunks"],
+                indexed_at=_repo_indexed_at.get(r["slug"]),
+                # Read contextual_at from Qdrant payload — persists across restarts.
+                # Falls back to in-memory dict for repos indexed in this session.
+                contextual_at=(
+                    svc.store.get_contextual_at(r["slug"])
+                    or _repo_contextual_at.get(r["slug"])
+                ),
+            )
+            for r in repos
+        ],
         total_chunks=total,
     )
 
@@ -428,6 +493,109 @@ async def get_repo_graph(
         return graph
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Graph build failed: {e}")
+
+
+@app.get("/repos/{owner}/{name}/tour", tags=["diagram"])
+async def get_tour(
+    owner:       str,
+    name:        str,
+    diagram_svc: Annotated[DiagramService, Depends(get_diagram_service)],
+):
+    """
+    Generate (or return cached) a codebase tour for a repo.
+
+    Returns a structured learning guide: 6-8 key concepts a student must
+    understand, with descriptions, dependencies, and a suggested reading order.
+    The frontend renders this as an interactive concept map (ExploreView).
+
+    Unlike Mermaid diagrams, the tour returns structured JSON so the frontend
+    can render rich interactive cards rather than a static SVG.
+    """
+    repo = f"{owner}/{name}"
+    try:
+        return await asyncio.to_thread(diagram_svc.build_tour, repo)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Tour generation failed: {e}")
+
+
+@app.get("/repos/{owner}/{name}/diagram", tags=["diagram"])
+async def get_diagram(
+    owner:        str,
+    name:         str,
+    diagram_svc:  Annotated[DiagramService, Depends(get_diagram_service)],
+    type:         str = Query("architecture", description="architecture | class | sequence | dataflow"),
+):
+    """
+    Generate (or return cached) a Mermaid system design diagram for a repo.
+
+    Four diagram types, each answering a different question:
+      architecture — What are the main components and how do they connect?
+      class        — What classes exist and how do they relate?
+      sequence     — What happens step-by-step during the main operation?
+      dataflow     — How does data move from input to output?
+
+    The LLM reads indexed chunk names, generates valid Mermaid syntax,
+    and returns it for the frontend to render. Results are cached per
+    (repo, type) pair — re-ingest to regenerate.
+    """
+    repo = f"{owner}/{name}"
+    try:
+        return await asyncio.to_thread(diagram_svc.build_diagram, repo, type)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Diagram generation failed: {e}")
+
+
+@app.post("/repos/{owner}/{name}/map/project", tags=["map"])
+async def project_query_onto_map(
+    owner: str,
+    name: str,
+    body: dict,
+    map_svc: Annotated[MapService, Depends(get_map_service)],
+):
+    """
+    Project a query embedding onto the existing 2D map coordinates.
+
+    Accepts {"embedding": [float, ...]} (768-dim).
+    Returns {"x": float, "y": float} in the same space as /map nodes,
+    or 404 if the map hasn't been built for this repo yet.
+
+    This powers the retrieval overlay: the frontend sends the query vector
+    here, gets back (x, y), and draws a star where the question lands on the map.
+    """
+    repo = f"{owner}/{name}"
+    embedding = body.get("embedding")
+    if not embedding:
+        raise HTTPException(status_code=422, detail="embedding required")
+    result = await asyncio.to_thread(map_svc.project_embedding, repo, embedding)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Map not built for this repo yet — call /map first")
+    x, y = result
+    return {"x": x, "y": y}
+
+
+
+@app.get("/repos/{owner}/{name}/map", tags=["map"])
+async def get_repo_map(
+    owner: str,
+    name: str,
+    map_svc: Annotated[MapService, Depends(get_map_service)],
+):
+    """
+    Build and return the 2D Semantic Code Map for an indexed repository.
+
+    Projects every chunk's 768-dim embedding to 2D using PCA so that
+    semantically similar code (functions doing similar things) clusters
+    together visually. The result is cached — re-ingest to refresh.
+
+    Returns:
+        nodes: list of {id, x, y, name, filepath, chunk_type, start_line, end_line}
+        stats: {node_count}
+    """
+    repo = f"{owner}/{name}"
+    try:
+        return await asyncio.to_thread(map_svc.build_map, repo)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Map build failed: {e}")
 
 
 # ── Routes: Search ─────────────────────────────────────────────────────────────
@@ -487,31 +655,44 @@ async def query(
     )
 
 
-@app.get("/query/stream", tags=["query"])
+class QueryStreamRequest(BaseModel):
+    """Request body for POST /query/stream — streaming RAG with conversation history."""
+    question:            str
+    repo:                str | None  = None
+    language:            str | None  = None
+    top_k:               int | None  = None
+    mode:                str         = "hybrid"
+    relevance_threshold: float       = 0.0
+    # Conversation history: prior [{role, content}] turns for follow-up questions.
+    # Capped at 10 items (5 exchanges) to stay within LLM context limits.
+    history:             list[dict]  = []
+
+
+@app.post("/query/stream", tags=["query"])
 async def query_stream(
-    question: Annotated[str, Query(description="Question about the codebase")],
+    request: QueryStreamRequest,
     retrieval_svc: Annotated[RetrievalService, Depends(get_retrieval_service)],
     generation_svc: Annotated[GenerationService, Depends(get_generation_service)],
-    repo: str | None = None,
-    language: str | None = None,
-    top_k: int | None = None,
-    mode: str = "hybrid",
-    relevance_threshold: float = 0.0,
 ):
     """
     Streaming RAG endpoint using Server-Sent Events (SSE).
 
+    Accepts conversation history so follow-up questions have context.
     Sends a 'meta' event first (sources + query_type), then token events,
     then a final [DONE] sentinel. One SSE connection does everything.
     """
+    question = request.question
+    history  = request.history[-10:]  # cap at 5 exchanges
+
     query_type = classify_query(question)
-    results = retrieval_svc.search(
+    results, pipeline_info = retrieval_svc.search(
         query=question,
-        top_k=top_k,
-        repo_filter=repo,
-        language_filter=language,
-        mode=mode,
-        relevance_threshold=relevance_threshold,
+        top_k=request.top_k,
+        repo_filter=request.repo,
+        language_filter=request.language,
+        mode=request.mode,
+        relevance_threshold=request.relevance_threshold,
+        return_pipeline=True,
     )
 
     if not results:
@@ -527,11 +708,30 @@ async def query_stream(
         meta = {
             "sources":    [CodeChunk(**r).model_dump() for r in results],
             "query_type": query_type,
+            # Pipeline provenance: which quality features fired for this query.
+            # Sent to the frontend so users can see HOW the answer was built.
+            "pipeline":   pipeline_info,
         }
         yield f"event: meta\ndata: {json.dumps(meta)}\n\n"
-        for token in generation_svc.stream(question, context, query_type):
-            safe_token = token.replace("\n", "\\n")
-            yield f"data: {safe_token}\n\n"
+
+        # Buffer tokens for grading. Wrap in try/except so a mid-stream rate-limit
+        # crash yields a readable error token instead of killing the ASGI connection.
+        full_answer: list[str] = []
+        try:
+            for token in generation_svc.stream(question, context, query_type, history=history):
+                full_answer.append(token)
+                safe_token = token.replace("\n", "\\n")
+                yield f"data: {safe_token}\n\n"
+        except Exception as e:
+            err = "⚠ All LLM providers are currently rate-limited. Please wait 60 seconds and retry."
+            yield f"data: {err.replace(chr(10), ' ')}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        # Model-based grading: second LLM call evaluates faithfulness.
+        grade = generation_svc.grade_answer(question, context, "".join(full_answer), query_type)
+        yield f"event: grade\ndata: {json.dumps(grade)}\n\n"
+
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(token_stream(), media_type="text/event-stream")
@@ -569,14 +769,20 @@ async def agent_query(
         raise HTTPException(status_code=500, detail=f"Agent error: {e}")
 
 
-@app.get("/agent/stream", tags=["agent"])
-async def agent_stream(
-    question: Annotated[str, Query(description="Question about the codebase")],
-    repo: str | None = None,
-):
+class AgentStreamRequest(BaseModel):
+    """Request body for POST /agent/stream — agentic RAG with conversation history."""
+    question: str
+    repo:     str | None = None
+    # Conversation history: prior [{role, content}] turns for follow-up questions.
+    history:  list[dict] = []
+
+
+@app.post("/agent/stream", tags=["agent"])
+async def agent_stream(request: AgentStreamRequest):
     """
     Run the agentic RAG loop with real-time SSE streaming.
 
+    Accepts conversation history so the agent has context for follow-up questions.
     Streams tool_call and tool_result events as the agent reasons,
     then streams the final answer token by token.
 
@@ -588,7 +794,10 @@ async def agent_stream(
     """
     import json
 
-    svc = _agent_service  # may be None if no API key configured
+    svc      = _agent_service  # may be None if no API key configured
+    question = request.question
+    repo     = request.repo
+    history  = request.history[-10:]  # cap at 5 exchanges
 
     async def event_stream():
         if svc is None:
@@ -599,10 +808,14 @@ async def agent_stream(
 
         try:
             # async for — consumes the async generator from AgentService.stream()
-            async for event in svc.stream(question, repo_filter=repo):
+            async for event in svc.stream(question, repo_filter=repo, history=history):
                 etype = event["type"]
 
-                if etype == "tool_call":
+                if etype == "thought":
+                    payload = json.dumps({"text": event["text"]})
+                    yield f"event: thought\ndata: {payload}\n\n"
+
+                elif etype == "tool_call":
                     payload = json.dumps({"tool": event["tool"], "input": event["input"]})
                     yield f"event: tool_call\ndata: {payload}\n\n"
 
@@ -614,6 +827,10 @@ async def agent_stream(
                     safe = event["text"].replace("\n", "\\n")
                     yield f"data: {safe}\n\n"
 
+                elif etype == "sources":
+                    payload = json.dumps({"sources": event["sources"]})
+                    yield f"event: sources\ndata: {payload}\n\n"
+
                 elif etype == "done":
                     payload = json.dumps({"iterations": event["iterations"]})
                     yield f"event: done\ndata: {payload}\n\n"
@@ -621,9 +838,16 @@ async def agent_stream(
 
         except Exception as e:
             err_msg = str(e)
-            if "credit" in err_msg.lower() or "billing" in err_msg.lower():
-                err_msg = "API credits exhausted. Check your billing dashboard."
-            elif "api_key" in err_msg.lower():
+            err_lower = err_msg.lower()
+            if any(kw in err_lower for kw in (
+                "credit", "billing", "quota", "resource_exhausted", "daily limit",
+                "rate_limit", "rate limit", "429",
+            )):
+                err_msg = (
+                    "All LLM providers are currently rate-limited or at their daily limit. "
+                    "Please wait a minute and try again."
+                )
+            elif "api_key" in err_lower:
                 err_msg = "API key not configured. Check your .env file."
             yield f"event: agent_error\ndata: {json.dumps({'message': err_msg})}\n\n"
             yield "data: [DONE]\n\n"

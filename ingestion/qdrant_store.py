@@ -79,6 +79,7 @@ class QdrantStore:
         self.client = QdrantClient(
             url=settings.qdrant_url,
             api_key=settings.qdrant_api_key or None,
+            timeout=60,  # default is 5s — too short for batch upserts over the network
         )
         self.collection = settings.qdrant_collection
         self._ensure_collection()
@@ -99,34 +100,71 @@ class QdrantStore:
           have cosine similarity 1.0 regardless of their length.
         """
         existing = [c.name for c in self.client.get_collections().collections]
-        if self.collection in existing:
-            print(f"Collection '{self.collection}' already exists")
-            return
-
-        print(f"Creating collection '{self.collection}'...")
-        self.client.create_collection(
-            collection_name=self.collection,
-            vectors_config={
-                self.DENSE_VECTOR_NAME: VectorParams(
-                    size=settings.embedding_dim,
-                    distance=Distance.COSINE,
-                )
-            },
-            sparse_vectors_config={
-                self.SPARSE_VECTOR_NAME: SparseVectorParams(
-                    index=SparseIndexParams(on_disk=False)
-                )
-            },
-        )
-        # Create payload indices for fields we filter by.
-        # Without an index, Qdrant rejects filter queries on that field.
-        for field in ["repo", "filepath", "language", "chunk_type"]:
-            self.client.create_payload_index(
+        if self.collection not in existing:
+            print(f"Creating collection '{self.collection}'...")
+            self.client.create_collection(
                 collection_name=self.collection,
-                field_name=field,
-                field_schema=PayloadSchemaType.KEYWORD,
+                vectors_config={
+                    self.DENSE_VECTOR_NAME: VectorParams(
+                        size=settings.embedding_dim,
+                        distance=Distance.COSINE,
+                    )
+                },
+                sparse_vectors_config={
+                    self.SPARSE_VECTOR_NAME: SparseVectorParams(
+                        index=SparseIndexParams(on_disk=False)
+                    )
+                },
             )
-        print(f"  → Collection and payload indices created")
+        else:
+            print(f"Collection '{self.collection}' already exists")
+
+        # Ensure payload indices exist — called even for existing collections so
+        # newly added fields (like text_hash) get indexed after a code update.
+        # create_payload_index is idempotent for most Qdrant versions; we wrap
+        # in try/except for safety in case a specific version raises on duplicate.
+        self._ensure_payload_indices()
+
+    def _ensure_payload_indices(self):
+        """Create payload indices for all filterable fields (idempotent)."""
+        for field in ["repo", "filepath", "language", "chunk_type", "text_hash", "calls", "imports", "base_classes"]:
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection,
+                    field_name=field,
+                    field_schema=PayloadSchemaType.KEYWORD,
+                )
+            except Exception:
+                pass  # index already exists — safe to ignore
+        print(f"  → Payload indices ensured")
+
+    def get_contextual_at(self, repo: str) -> str | None:
+        """
+        Return the contextual_at timestamp for a repo, or None if not run.
+
+        During contextual re-ingestion, we stamp every chunk with the ISO
+        timestamp of when contextual retrieval ran. Reading it back here
+        avoids keeping this state in an in-memory dict that resets on restart.
+
+        We just need the first chunk that has contextual_at set — they all
+        have the same timestamp for a given re-ingest.
+        """
+        filt = Filter(must=[
+            FieldCondition(key="repo", match=MatchValue(value=repo)),
+        ])
+        results, _ = self.client.scroll(
+            collection_name=self.collection,
+            scroll_filter=filt,
+            limit=50,   # check a batch — not all chunks have contextual_at
+            offset=None,
+            with_payload=["contextual_at"],
+            with_vectors=False,
+        )
+        for p in results:
+            ts = (p.payload or {}).get("contextual_at")
+            if ts:
+                return ts
+        return None
 
     def upsert_chunks(self, chunks: list[dict], dense_vectors: list[list[float]]):
         """
@@ -171,12 +209,29 @@ class QdrantStore:
                     # Call graph: names of functions/methods called by this chunk.
                     # Extracted by _CallExtractor during AST chunking.
                     # Empty list for non-Python or window chunks.
-                    "calls":       chunk.get("calls", []),
+                    "calls":        chunk.get("calls", []),
+                    # Import graph: module names imported at the top of the file.
+                    # Populated only for module-level chunks; empty for functions/classes.
+                    # Used to build file-level dependency edges in the Architecture diagram.
+                    "imports":      chunk.get("imports", []),
+                    # Inheritance graph: base class names from "class Foo(Bar):".
+                    # Populated only for class chunks; empty for functions/modules.
+                    # Used to build real inheritance edges in the Class Hierarchy diagram.
+                    "base_classes": chunk.get("base_classes", []),
+                    # SHA-256 of the chunk text — used for cross-repo deduplication.
+                    # If two repos contain identical code, the second ingestion can
+                    # reuse the existing embedding vector instead of re-calling the model.
+                    "text_hash":   chunk.get("text_hash", ""),
+                    # ISO timestamp of when contextual retrieval ran for this chunk.
+                    # Persisted in Qdrant so it survives server restarts — the /repos
+                    # endpoint reads this instead of an in-memory dict.
+                    # None for chunks that haven't been contextualised.
+                    "contextual_at": chunk.get("contextual_at"),
                 },
             ))
 
-        # Qdrant recommends upserting in batches of 100
-        batch_size = 100
+        # Smaller batches reduce per-request payload and avoid cloud write timeouts
+        batch_size = 50
         for i in range(0, len(points), batch_size):
             batch = points[i : i + batch_size]
             self.client.upsert(collection_name=self.collection, points=batch)
@@ -289,6 +344,58 @@ class QdrantStore:
                 break
         return results
 
+    def find_vectors_by_hash(self, hashes: list[str]) -> dict[str, list[float]]:
+        """
+        Look up existing dense embedding vectors by text hash.
+
+        Used by the ingestion pipeline to avoid re-embedding identical code
+        that already exists in the index (possibly from a different repo).
+
+        Example: if micrograd/engine.py and nanoGPT/utils.py both contain
+        "def relu(x): return max(0, x)", the second ingestion finds the hash
+        already in Qdrant and reuses the vector — no embedding call needed.
+
+        Args:
+            hashes: list of SHA-256 hex strings (from chunk["text_hash"])
+
+        Returns:
+            {hash: dense_vector_list} for every hash that already exists.
+            Hashes with no existing vector are simply absent from the result.
+        """
+        if not hashes:
+            return {}
+
+        from qdrant_client.models import MatchAny
+
+        found: dict[str, list[float]] = {}
+        offset = None
+        filt = Filter(must=[FieldCondition(key="text_hash", match=MatchAny(any=hashes))])
+
+        while True:
+            points, offset = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=filt,
+                limit=500,
+                offset=offset,
+                with_payload=["text_hash"],
+                # Only fetch the dense vector — sparse is not needed for reuse
+                with_vectors=[self.DENSE_VECTOR_NAME],
+            )
+            for p in points:
+                h = (p.payload or {}).get("text_hash", "")
+                if not h or h in found:
+                    continue
+                # p.vector is a dict when the collection has named vectors
+                vec = p.vector
+                if isinstance(vec, dict):
+                    vec = vec.get(self.DENSE_VECTOR_NAME)
+                if vec is not None:
+                    found[h] = list(vec)
+            if offset is None:
+                break
+
+        return found
+
     def delete_repo(self, repo: str) -> int:
         """Delete all chunks for a repo. Returns number of points deleted."""
         before = self.count(repo=repo)
@@ -358,13 +465,14 @@ def _text_to_sparse(text: str) -> SparseVector:
     tokens = re.findall(r"[a-zA-Z_]\w*", text.lower())
     token_counts = Counter(tokens)
 
-    # Map tokens to stable integer indices using MD5 (process-invariant)
-    # Using the first 8 hex chars = 32-bit integer, then mod 1M dimensions.
-    indices = []
-    values  = []
+    # Map tokens to stable integer indices using MD5 (process-invariant).
+    # Using the first 8 hex chars = 32-bit integer, then mod 2^20 dimensions.
+    # Two different tokens can collide to the same index (hash collision).
+    # Qdrant requires unique indices per sparse vector, so we sum the values
+    # for any colliding tokens rather than emitting duplicate indices.
+    index_map: dict[int, float] = {}
     for token, count in token_counts.items():
         idx = int(hashlib.md5(token.encode()).hexdigest()[:8], 16) % (2 ** 20)
-        indices.append(idx)
-        values.append(float(count))
+        index_map[idx] = index_map.get(idx, 0.0) + float(count)
 
-    return SparseVector(indices=indices, values=values)
+    return SparseVector(indices=list(index_map.keys()), values=list(index_map.values()))

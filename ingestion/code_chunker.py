@@ -28,11 +28,21 @@ Chunk shape (returned by both strategies):
     "start_line":    int,        # 1-indexed line where chunk starts
     "end_line":      int,        # 1-indexed line where chunk ends
     "calls":         list[str],  # names called by this function (AST only)
+    "imports":       list[str],  # imported module names (module chunks only; [] elsewhere)
+    "base_classes":  list[str],  # base class names (class chunks only; [] elsewhere)
   }
 
 The `calls` field is used to build the Code Knowledge Graph — an interactive
 D3 visualization of how functions call each other across files. It's extracted
 by the CallExtractor visitor which walks ast.Call nodes inside each function body.
+
+The `imports` field enables file-level dependency edges in the Architecture diagram.
+It records every module name imported at the top of the file (both "import X" and
+"from X import Y" forms), extracted from the module-level chunk only.
+
+The `base_classes` field enables real inheritance edges in the Class Hierarchy diagram.
+It records the names of parent classes from "class Foo(Bar, Baz):" declarations,
+extracted directly from each ClassDef node.
 """
 
 import ast
@@ -90,6 +100,50 @@ def _extract_calls(node: ast.AST) -> list[str]:
     return result
 
 
+def _extract_imports(tree: ast.AST) -> list[str]:
+    """
+    Extract all imported module names from a parsed AST.
+    Used to build file-level dependency edges for the Architecture diagram.
+
+    Handles both forms:
+      import os                  → ["os"]
+      from micrograd.engine import Value → ["micrograd.engine"]
+      from . import engine       → [".engine"] (relative, handled by caller)
+    """
+    imports = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            level  = node.level or 0   # number of dots for relative imports
+            if level > 0:
+                # Relative import — prefix with dots so caller can resolve them
+                imports.append("." * level + module)
+            elif module:
+                imports.append(module)
+    return list(dict.fromkeys(imports))  # deduplicate, preserve order
+
+
+def _extract_base_classes(node: ast.ClassDef) -> list[str]:
+    """
+    Extract base class names from a ClassDef node.
+    Used to build real inheritance edges for the Class Hierarchy diagram.
+
+    Example: class MLP(Module): → ["Module"]
+    Handles direct names (ast.Name) and dotted paths (ast.Attribute).
+    """
+    bases = []
+    for base in node.bases:
+        if isinstance(base, ast.Name):
+            bases.append(base.id)
+        elif isinstance(base, ast.Attribute):
+            bases.append(base.attr)   # e.g. nn.Module → "Module"
+    # Filter trivial bases that add noise
+    return [b for b in bases if b not in ("object", "ABC", "Enum")]
+
+
 # ── AST Chunking (Python) ─────────────────────────────────────────────────────
 
 def chunk_python(content: str, filepath: str) -> list[dict]:
@@ -134,14 +188,16 @@ def chunk_python(content: str, filepath: str) -> list[dict]:
     module_text = "\n".join(module_lines).strip()
     if module_text:
         chunks.append({
-            "text":       f"# {filepath}\n{module_text}",
-            "language":   "python",
-            "filepath":   filepath,
-            "chunk_type": "module",
-            "name":       "",
-            "start_line": 1,
-            "end_line":   len(lines),
-            "calls":      [],
+            "text":         f"# {filepath}\n{module_text}",
+            "language":     "python",
+            "filepath":     filepath,
+            "chunk_type":   "module",
+            "name":         "",
+            "start_line":   1,
+            "end_line":     len(lines),
+            "calls":        [],
+            "imports":      _extract_imports(tree),
+            "base_classes": [],
         })
 
     # ── Function and class chunks ─────────────────────────────────────────────
@@ -164,14 +220,16 @@ def chunk_python(content: str, filepath: str) -> list[dict]:
             chunks.extend(sub_chunks)
         else:
             chunks.append({
-                "text":       f"# {filepath}\n{node_text}",
-                "language":   "python",
-                "filepath":   filepath,
-                "chunk_type": chunk_type,
-                "name":       name,
-                "start_line": start,
-                "end_line":   end,
-                "calls":      _extract_calls(node),
+                "text":         f"# {filepath}\n{node_text}",
+                "language":     "python",
+                "filepath":     filepath,
+                "chunk_type":   chunk_type,
+                "name":         name,
+                "start_line":   start,
+                "end_line":     end,
+                "calls":        _extract_calls(node),
+                "imports":      [],
+                "base_classes": _extract_base_classes(node) if isinstance(node, ast.ClassDef) else [],
             })
 
     return chunks if chunks else chunk_by_window(content, filepath, language="python")
@@ -203,28 +261,32 @@ def _split_class(class_node: ast.ClassDef, lines: list[str], filepath: str) -> l
         method_text  = "\n".join(method_lines)
 
         chunks.append({
-            "text":       f"# {filepath}\n{class_header}\n{method_text}",
-            "language":   "python",
-            "filepath":   filepath,
-            "chunk_type": "function",
-            "name":       f"{class_node.name}.{node.name}",
-            "start_line": start,
-            "end_line":   end,
-            "calls":      _extract_calls(node),
+            "text":         f"# {filepath}\n{class_header}\n{method_text}",
+            "language":     "python",
+            "filepath":     filepath,
+            "chunk_type":   "function",
+            "name":         f"{class_node.name}.{node.name}",
+            "start_line":   start,
+            "end_line":     end,
+            "calls":        _extract_calls(node),
+            "imports":      [],
+            "base_classes": [],
         })
 
     # Also include the class-level code (class variables, docstring)
     class_end = class_node.end_lineno or class_node.lineno
     class_text = "\n".join(lines[class_start - 1 : class_end])
     chunks.insert(0, {
-        "text":       f"# {filepath}\n{class_text[:800]}",   # truncated overview
-        "language":   "python",
-        "filepath":   filepath,
-        "chunk_type": "class",
-        "name":       class_node.name,
-        "start_line": class_start,
-        "end_line":   class_end,
-        "calls":      _extract_calls(class_node),
+        "text":         f"# {filepath}\n{class_text[:800]}",   # truncated overview
+        "language":     "python",
+        "filepath":     filepath,
+        "chunk_type":   "class",
+        "name":         class_node.name,
+        "start_line":   class_start,
+        "end_line":     class_end,
+        "calls":        _extract_calls(class_node),
+        "imports":      [],
+        "base_classes": _extract_base_classes(class_node),
     })
 
     return chunks
@@ -268,14 +330,16 @@ def chunk_by_window(
         end_line   = content[:end].count("\n") + 1
 
         chunks.append({
-            "text":       f"# {filepath}\n{text}",
-            "language":   language,
-            "filepath":   filepath,
-            "chunk_type": "text",
-            "name":       "",
-            "start_line": start_line,
-            "end_line":   end_line,
-            "calls":      [],
+            "text":         f"# {filepath}\n{text}",
+            "language":     language,
+            "filepath":     filepath,
+            "chunk_type":   "text",
+            "name":         "",
+            "start_line":   start_line,
+            "end_line":     end_line,
+            "calls":        [],
+            "imports":      [],
+            "base_classes": [],
         })
 
         if end == len(content):

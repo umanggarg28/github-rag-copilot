@@ -26,6 +26,28 @@ export async function fetchGraph(slug) {
   return res.json();
 }
 
+export async function fetchSemanticMap(slug) {
+  const [owner, name] = slug.split("/");
+  const res = await fetch(`${BASE}/repos/${owner}/${name}/map`);
+  if (!res.ok) throw new Error("Failed to fetch semantic map");
+  return res.json();
+}
+
+
+export async function fetchTour(slug) {
+  const [owner, name] = slug.split("/");
+  const res = await fetch(`${BASE}/repos/${owner}/${name}/tour`);
+  if (!res.ok) throw new Error("Failed to generate tour");
+  return res.json(); // { summary, entry_point, concepts: [...] }
+}
+
+export async function fetchDiagram(slug, type = "architecture") {
+  const [owner, name] = slug.split("/");
+  const res = await fetch(`${BASE}/repos/${owner}/${name}/diagram?type=${type}`);
+  if (!res.ok) throw new Error("Failed to generate diagram");
+  return res.json(); // { diagram: "<mermaid syntax>", type } or { error: "..." }
+}
+
 export async function fetchMcpPrompt(name, args = {}) {
   const res = await fetch(
     `${BASE}/mcp-prompt?name=${encodeURIComponent(name)}&arguments=${encodeURIComponent(JSON.stringify(args))}`
@@ -48,52 +70,132 @@ export async function deleteRepo(slug) {
 }
 
 /**
- * Stream a query response via SSE.
+ * Low-level POST SSE helper.
+ *
+ * EventSource only supports GET, so we can't send a request body (e.g. history).
+ * Instead we use fetch() with a ReadableStream response and parse the SSE format
+ * manually. The returned cancel() function aborts the in-flight request.
+ *
+ * SSE wire format (per spec):
+ *   event: <type>\ndata: <json>\n\n   ← named event
+ *   data: <text>\n\n                  ← default event
+ */
+async function postSSE(path, body, handlers) {
+  const controller = new AbortController();
+
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(body),
+      signal:  controller.signal,
+    });
+
+    if (!res.ok) {
+      handlers.onError?.(`Server error ${res.status}`);
+      return;
+    }
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let   buffer  = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE events are separated by blank lines (\n\n)
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop(); // keep any incomplete trailing chunk
+
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        let eventType = "message";
+        let data      = "";
+
+        for (const line of part.split("\n")) {
+          if (line.startsWith("event: "))      eventType = line.slice(7).trim();
+          else if (line.startsWith("data: "))  data      = line.slice(6);
+        }
+
+        if (data) handlers[eventType]?.(data);
+      }
+    }
+  } catch (err) {
+    if (err.name !== "AbortError") handlers.onError?.(err.message || "Connection lost");
+  }
+
+  return () => controller.abort();
+}
+
+/**
+ * Stream a query response via SSE (POST so we can send conversation history).
  *
  * The server sends two event types:
  *   event: meta   → JSON with { sources, query_type } (arrives before tokens)
  *   (default)     → token text, or "[DONE]" to signal completion
- *
- * This avoids the previous double-LLM-call pattern where we fired both
- * POST /query and GET /query/stream simultaneously. Now one connection does both.
  */
-export function streamQuery({ question, repo, mode, onToken, onSources, onDone, onError }) {
-  const params = new URLSearchParams({
-    question,
-    mode: mode || "hybrid",
-    top_k: 6,
-    ...(repo ? { repo } : {}),
-  });
+export function streamQuery({ question, repo, mode, history, onToken, onSources, onGrade, onDone, onError }) {
+  const controller = new AbortController();
 
-  const es = new EventSource(`${BASE}/query/stream?${params}`);
+  fetch(`${BASE}/query/stream`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({
+      question,
+      mode:    mode || "hybrid",
+      top_k:   6,
+      repo:    repo || null,
+      history: history || [],
+    }),
+    signal:  controller.signal,
+  }).then(async (res) => {
+    if (!res.ok) { onError(`Server error ${res.status}`); return; }
 
-  // Named event: sources + query_type arrive in the first frame
-  es.addEventListener("meta", (e) => {
-    const { sources, query_type } = JSON.parse(e.data);
-    onSources(sources || [], query_type || "technical");
-  });
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let   buffer  = "";
 
-  // Default events: token text
-  es.onmessage = (e) => {
-    if (e.data === "[DONE]") {
-      es.close();
-      onDone();
-      return;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
+
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        let eventType = "message";
+        let data      = "";
+        for (const line of part.split("\n")) {
+          if (line.startsWith("event: "))     eventType = line.slice(7).trim();
+          else if (line.startsWith("data: ")) data      = line.slice(6);
+        }
+        if (!data) continue;
+
+        if (eventType === "meta") {
+          const { sources, query_type, pipeline } = JSON.parse(data);
+          onSources(sources || [], query_type || "technical", pipeline || {});
+        } else if (eventType === "grade") {
+          onGrade?.(JSON.parse(data));
+        } else {
+          // default event: token or [DONE]
+          if (data === "[DONE]") { onDone(); return; }
+          onToken(data.replace(/\\n/g, "\n"));
+        }
+      }
     }
-    const token = e.data.replace(/\\n/g, "\n");
-    onToken(token);
-  };
+  }).catch((err) => {
+    if (err.name !== "AbortError") onError(err.message || "Connection lost");
+  });
 
-  es.onerror = () => {
-    es.close();
-    onError("Connection lost");
-  };
-
-  return () => es.close();
+  return () => controller.abort();
 }
 
 /**
- * Stream the agentic RAG loop via SSE.
+ * Stream the agentic RAG loop via SSE (POST so we can send conversation history).
  *
  * Unlike streamQuery (one retrieval → tokens), this endpoint shows the
  * agent's full ReAct reasoning loop in real time:
@@ -111,59 +213,68 @@ export function streamQuery({ question, repo, mode, onToken, onSources, onDone, 
  *   onDone(iterations)         — agent finished
  *   onError(msg)               — connection or server error
  */
-export function streamAgentQuery({ question, repo, onToolCall, onToolResult, onToken, onDone, onError }) {
-  const params = new URLSearchParams({
-    question,
-    ...(repo ? { repo } : {}),
-  });
+export function streamAgentQuery({ question, repo, history, onThought, onToolCall, onToolResult, onToken, onSources, onDone, onError }) {
+  const controller = new AbortController();
 
-  const es = new EventSource(`${BASE}/agent/stream?${params}`);
+  fetch(`${BASE}/agent/stream`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ question, repo: repo || null, history: history || [] }),
+    signal:  controller.signal,
+  }).then(async (res) => {
+    if (!res.ok) { onError?.(`Server error ${res.status}`); return; }
 
-  // Named event: agent is about to call a tool
-  es.addEventListener("tool_call", (e) => {
-    const { tool, input } = JSON.parse(e.data);
-    onToolCall?.(tool, input);
-  });
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let   buffer  = "";
 
-  // Named event: tool returned a result
-  es.addEventListener("tool_result", (e) => {
-    const { tool, output } = JSON.parse(e.data);
-    onToolResult?.(tool, output);
-  });
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-  // Named event: agent finished
-  es.addEventListener("done", (e) => {
-    const { iterations } = JSON.parse(e.data);
-    onDone?.(iterations);
-  });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
 
-  // Named event: server sent a clean error (API credits, missing key, etc.)
-  // Using "agent_error" not "error" — the browser reserves the name "error"
-  // for connection failures and it would conflict with onerror below.
-  es.addEventListener("agent_error", (e) => {
-    es.close();  // close before onerror can also fire
-    try {
-      const { message } = JSON.parse(e.data);
-      onError?.(message);
-    } catch {
-      onError?.("Agent error — check server logs.");
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        let eventType = "message";
+        let data      = "";
+        for (const line of part.split("\n")) {
+          if (line.startsWith("event: "))     eventType = line.slice(7).trim();
+          else if (line.startsWith("data: ")) data      = line.slice(6);
+        }
+        if (!data) continue;
+
+        if (eventType === "thought") {
+          const { text } = JSON.parse(data);
+          onThought?.(text);
+        } else if (eventType === "tool_call") {
+          const { tool, input } = JSON.parse(data);
+          onToolCall?.(tool, input);
+        } else if (eventType === "tool_result") {
+          const { tool, output } = JSON.parse(data);
+          onToolResult?.(tool, output);
+        } else if (eventType === "sources") {
+          const { sources } = JSON.parse(data);
+          onSources?.(sources || []);
+        } else if (eventType === "done") {
+          const { iterations } = JSON.parse(data);
+          onDone?.(iterations);
+        } else if (eventType === "agent_error") {
+          const { message } = JSON.parse(data);
+          onError?.(message);
+          return;
+        } else {
+          // default: token or [DONE]
+          if (data === "[DONE]") return;
+          onToken?.(data.replace(/\\n/g, "\n"));
+        }
+      }
     }
+  }).catch((err) => {
+    if (err.name !== "AbortError") onError?.("Could not connect to the agent. Is the backend running?");
   });
 
-  // Default events: token text (or [DONE] sentinel)
-  es.onmessage = (e) => {
-    if (e.data === "[DONE]") {
-      es.close();
-      return;
-    }
-    const token = e.data.replace(/\\n/g, "\n");
-    onToken?.(token);
-  };
-
-  es.onerror = () => {
-    es.close();
-    onError?.("Could not connect to the agent. Is the backend running?");
-  };
-
-  return () => es.close();
+  return () => controller.abort();
 }

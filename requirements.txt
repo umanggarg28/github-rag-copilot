@@ -7,7 +7,11 @@ python-multipart
 qdrant-client
 
 # Embeddings
-sentence-transformers  # will use nomic-embed-code
+# sentence-transformers is still needed for the CrossEncoder re-ranker fallback.
+# Embeddings are API-based: Voyage AI (voyage-code-3) or Nomic (nomic-embed-text-v1.5).
+sentence-transformers
+voyageai         # Voyage AI embeddings (voyage-code-3, 1024-dim, code-optimised)
+cohere           # Cohere Rerank API (rerank-v3.5) — falls back to local cross-encoder
 
 # Repo fetching
 gitpython
@@ -25,3 +29,7 @@ anthropic
 python-dotenv
 pydantic
 mcp
+
+# Semantic Map — 2D projection of code embeddings
+scikit-learn  # PCA fallback + K-means clustering
+umap-learn    # UMAP projection (better clusters than PCA; PCA used if not installed)

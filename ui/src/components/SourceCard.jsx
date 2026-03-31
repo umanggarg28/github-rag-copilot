@@ -15,14 +15,22 @@ const CopyIcon = () => (
   </svg>
 );
 
-export default function SourceCard({ source, index }) {
+// showRepo=true when querying all repos — makes the source repo visible on every card
+export default function SourceCard({ source, index, showRepo = false }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const lang = LANG_MAP[source.language] || "text";
   const name = source.name ? `${source.name}()` : null;
 
-  const githubUrl = `https://github.com/${source.repo}/blob/main/${source.filepath}#L${source.start_line}`;
-  const scorePercent = source.score ? `${Math.round(source.score * 100)}%` : null;
+  // blob/HEAD always resolves to the default branch (main or master), avoiding
+  // hardcoding "main" which breaks repos that still use "master".
+  const githubUrl = `https://github.com/${source.repo}/blob/HEAD/${source.filepath}#L${source.start_line}`;
+  const scorePercent = source.score != null ? `${Math.round(source.score * 100)}%` : null;
+  // Color-code by confidence: green ≥90%, amber 70–89%, orange <70%
+  const scoreColor = !source.score ? null
+    : source.score >= 0.90 ? "#10B981"   // emerald
+    : source.score >= 0.70 ? "#F59E0B"   // amber
+    : "#EF4444";                          // red
 
   function handleCopy(e) {
     e.stopPropagation();
@@ -44,6 +52,11 @@ export default function SourceCard({ source, index }) {
         aria-label={`Source ${index}: ${source.filepath}`}
       >
         <span className="source-num">{index}</span>
+        {showRepo && source.repo && (
+          <span className="source-repo-badge" title={source.repo}>
+            {source.repo.split("/")[1]}
+          </span>
+        )}
         <span className="source-lang-badge" data-lang={lang}>{lang}</span>
         <a
           className="source-github-link"
@@ -57,8 +70,23 @@ export default function SourceCard({ source, index }) {
         </a>
         {name && <span className="source-name">{name}</span>}
         <span className="source-lines">L{source.start_line}–{source.end_line}</span>
+        <a
+          className="source-open-btn"
+          href={githubUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title={`Open on GitHub (L${source.start_line})`}
+          aria-label="Open on GitHub"
+        >
+          ↗
+        </a>
         {scorePercent && (
-          <span className="source-score" title={`Relevance: ${source.score}`}>{scorePercent}</span>
+          <span
+            className="source-score"
+            title={`Relevance: ${source.score}`}
+            style={{ color: scoreColor, borderColor: scoreColor ? `${scoreColor}55` : undefined }}
+          >{scorePercent}</span>
         )}
         <button
           className="source-copy-btn"

@@ -125,8 +125,10 @@ class QueryResponse(BaseModel):
 
 class RepoInfo(BaseModel):
     """Metadata for a single indexed repo."""
-    slug: str   # "owner/name"
-    chunks: int # number of chunks in the index
+    slug: str              # "owner/name"
+    chunks: int            # number of chunks in the index
+    indexed_at: str | None = None       # ISO timestamp of last successful ingest
+    contextual_at: str | None = None    # ISO timestamp of last contextual re-index (None = not yet run)
 
 
 class ReposResponse(BaseModel):

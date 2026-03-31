@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -35,71 +35,243 @@ const mdComponents = {
   },
 };
 
-// ToolCallTrace shows the agent's reasoning steps.
-//
-// DURING streaming:  shows steps live, expanded, as they accumulate.
-// AFTER completion:  collapses to a toggle button to keep the UI clean.
-//
-// This is the "glass box" view — users can watch the LLM reason in real time,
-// see what it searched for, and what it found, step by step.
-function ToolCallTrace({ steps, streaming }) {
-  const [expanded, setExpanded] = useState(true);
-  if (!steps || steps.length === 0) return null;
-
-  // Tool name → emoji for quick visual scanning
-  const toolIcon = { search_code: "🔍", get_file_chunk: "📄", find_callers: "🔗" };
-
-  const stepsEl = (
-    <div className="agent-trace-steps">
-      {steps.map((step, i) => (
-        <div key={i} className={`agent-step ${step.output ? "done" : "pending"}`}>
-          <div className="agent-step-header">
-            <span className="agent-step-icon">{toolIcon[step.tool] || "⚙️"}</span>
-            <span className="agent-step-tool">{step.tool}</span>
-            <span className="agent-step-query">
-              {step.input?.query || step.input?.function_name || JSON.stringify(step.input)}
-            </span>
-            {/* Spinner on the last step while waiting for result */}
-            {!step.output && i === steps.length - 1 && (
-              <span className="spinner" style={{ marginLeft: "auto", flexShrink: 0 }} />
-            )}
-          </div>
-          {step.output && (
-            <div className="agent-step-output">{step.output}</div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-
-  if (streaming) {
-    // Live view: always expanded while agent is running
-    return (
-      <div className="agent-trace live">
-        <div className="agent-trace-label">
-          ✦ Agent reasoning · {steps.length} step{steps.length !== 1 ? "s" : ""}
-        </div>
-        {stepsEl}
-      </div>
-    );
-  }
-
-  // Collapsed view after completion
+// Thought bubble — shows the LLM's reasoning before a tool call.
+// Displayed inline in the trace timeline so users can see WHY the agent
+// chose each tool, not just WHAT it called.
+function AgentThought({ text }) {
   return (
-    <div className="agent-trace">
-      <button
-        className="agent-trace-toggle"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-      >
-        {expanded ? "▼" : "▶"} Reasoning trace · {steps.length} step{steps.length !== 1 ? "s" : ""}
-      </button>
-      {expanded && stepsEl}
+    <div className="agent-thought">
+      <div className="agent-step-node">
+        <span className="agent-step-dot thought-dot" />
+      </div>
+      <div className="agent-thought-text">{text}</div>
     </div>
   );
 }
 
-export default function Message({ msg }) {
+// Individual agent step — renders as a node in the connected timeline chain.
+//
+// Collapsed by default once a step is no longer the active one.
+// isActive = this step is currently executing (isLast && streaming).
+// Clicking a completed (non-active) step toggles its output open/closed.
+function AgentStep({ step, isLast, icon, streaming }) {
+  const isActive  = isLast && streaming;
+  const isPending = !step.output && isActive;
+  // manualExpand lets users re-open a completed step; resets when step becomes active again
+  const [manualExpand, setManualExpand] = useState(false);
+  const showOutput = isActive || manualExpand;
+
+  const isLong = step.output && step.output.length > 300;
+  const [outputExpanded, setOutputExpanded] = useState(false);
+
+  const toggle = () => {
+    if (!isActive) setManualExpand(v => !v);
+  };
+
+  return (
+    <div className={`agent-step ${step.output ? "done" : "pending"}${isLast ? " last" : ""}${!showOutput && step.output ? " collapsed" : ""}`}>
+      {/* Node dot on the vertical line + arrow connector */}
+      <div className="agent-step-node">
+        <span className="agent-step-dot" />
+        <span className="agent-step-arrow">→</span>
+      </div>
+
+      {/* Step body */}
+      <div className="agent-step-body">
+        <div
+          className="agent-step-header"
+          onClick={toggle}
+          style={{ cursor: !isActive && step.output ? "pointer" : "default" }}
+        >
+          <span className="agent-step-icon">{icon}</span>
+          <span className="agent-step-tool">{step.tool}</span>
+          <span className="agent-step-query">
+            {step.input?.query || step.input?.function_name || JSON.stringify(step.input)}
+          </span>
+          {isPending && <span className="spinner" style={{ marginLeft: "auto", flexShrink: 0, width: 10, height: 10 }} />}
+          {!isActive && step.output && (
+            <span className="agent-step-chevron" style={{ marginLeft: "auto", opacity: 0.4 }}>
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                {manualExpand ? <path d="m4 6 4 4 4-4"/> : <path d="m6 4 4 4-4 4"/>}
+              </svg>
+            </span>
+          )}
+        </div>
+
+        {showOutput && step.output && (
+          <>
+            <div
+              className={`agent-step-output${outputExpanded ? " expanded" : isLong ? " clipped" : ""}`}
+              onClick={() => isLong && !outputExpanded && setOutputExpanded(true)}
+            >
+              {step.output}
+            </div>
+            {isLong && !outputExpanded && (
+              <button className="agent-step-expand" onClick={() => setOutputExpanded(true)}>
+                Show full output ↓
+              </button>
+            )}
+            {isLong && outputExpanded && (
+              <button className="agent-step-expand" onClick={() => setOutputExpanded(false)}>
+                Collapse ↑
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ToolCallTrace shows the agent's reasoning steps as a connected timeline —
+// visually similar to how Claude Code shows "Agent → Bash → Read" with
+// vertical lines connecting each step.
+//
+// DURING streaming:  always expanded so user can watch the agent think live.
+// AFTER completion:  collapsible via the toggle header.
+function ToolCallTrace({ steps, streaming, iterations }) {
+  const [expanded, setExpanded] = useState(true);
+  if (!steps || steps.length === 0) return null;
+
+  // Tool name → icon SVG path for clean visual scanning (no emoji)
+  const toolIcon = {
+    search_code:    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5"/><path d="M10 10l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+    get_file_chunk: <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.5"/><path d="M5 5h4M5 7h3M9 1v3h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>,
+    find_callers:   <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="2" stroke="currentColor" strokeWidth="1.4"/><circle cx="12" cy="12" r="2" stroke="currentColor" strokeWidth="1.4"/><path d="M6 4h2a2 2 0 012 2v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+  };
+  const defaultIcon = <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" stroke="currentColor" strokeWidth="1.5"/><path d="M8 5v3l2 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>;
+
+  // Compute the index of the last non-thought step so we can pass isLast correctly
+  const lastToolIdx = steps.reduce((acc, s, i) => s.type !== "thought" ? i : acc, -1);
+
+  const stepsEl = (
+    <div className="agent-trace-steps">
+      {/* Vertical connector line running the full height */}
+      <div className="agent-trace-line" />
+      {steps.map((step, i) => {
+        if (step.type === "thought") {
+          return <AgentThought key={i} text={step.text} />;
+        }
+        return (
+          <AgentStep
+            key={i}
+            step={step}
+            isLast={i === lastToolIdx}
+            icon={toolIcon[step.tool] || defaultIcon}
+            streaming={streaming}
+          />
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <div className={`agent-trace${streaming ? " live" : ""}`}>
+      <button
+        className="agent-trace-toggle"
+        onClick={() => !streaming && setExpanded(v => !v)}
+        aria-expanded={expanded}
+        style={{ cursor: streaming ? "default" : "pointer" }}
+      >
+        {/* "Agent" node — the root of the chain */}
+        <span className="agent-trace-root-dot" />
+        <span className="agent-trace-root-label">Agent</span>
+        {streaming
+          ? <span className="spinner" style={{ marginLeft: 6, width: 10, height: 10 }} />
+          : (() => {
+              // Use backend's authoritative iteration count when available.
+              // steps.length = tool calls only; iterations = full ReAct turns
+              // (includes the final answer turn, so it's always >= steps.length).
+              const count = iterations ?? steps.length;
+              const label = iterations ? "iteration" : "tool call";
+              return <span className="agent-trace-count">{count} {label}{count !== 1 ? "s" : ""}</span>;
+            })()
+        }
+        {!streaming && (
+          <span className="agent-trace-chevron">
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              {expanded ? <path d="m4 6 4 4 4-4"/> : <path d="m6 4 4 4-4 4"/>}
+            </svg>
+          </span>
+        )}
+      </button>
+      {expanded && stepsEl}
+      {/* When collapsed, show the first thought as a one-line summary so users can still see the agent's reasoning intent */}
+      {!expanded && !streaming && (() => {
+        const firstThought = steps.find(s => s.type === "thought");
+        if (!firstThought) return null;
+        return (
+          <div className="agent-trace-thought-summary" title={firstThought.text}>
+            "{firstThought.text.length > 120 ? firstThought.text.slice(0, 120) + "…" : firstThought.text}"
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+
+// ConfidenceBadge — rendered after model-based grading completes.
+// high   = all claims confirmed in sources → green check (shown in pipeline bar only)
+// medium = mostly supported, minor extrapolation → amber warning
+// low    = claims not backed by sources → red warning
+const CONFIDENCE_CONFIG = {
+  high:   { color: "#10b981", bg: "rgba(16,185,129,0.10)", icon: "✓", label: "High confidence" },
+  medium: { color: "#f59e0b", bg: "rgba(245,158,11,0.10)", icon: "◐", label: "Medium confidence" },
+  low:    { color: "#ef4444", bg: "rgba(239,68,68,0.10)",  icon: "⚠", label: "Low confidence"   },
+};
+
+function ConfidenceBadge({ grade }) {
+  const cfg = CONFIDENCE_CONFIG[grade.confidence] || CONFIDENCE_CONFIG.medium;
+  return (
+    <div style={{
+      display: "inline-flex", alignItems: "flex-start", gap: 6,
+      marginTop: 8,
+      padding: "5px 10px",
+      background: cfg.bg,
+      border: `1px solid ${cfg.color}33`,
+      borderRadius: 6,
+      fontSize: 11.5,
+      fontFamily: "var(--mono)",
+      color: cfg.color,
+      maxWidth: "100%",
+    }}>
+      <span style={{ flexShrink: 0, marginTop: 1 }}>{cfg.icon} {cfg.label}</span>
+      {grade.note && (
+        <span style={{ color: "var(--text-2)", fontFamily: "inherit", fontSize: 11 }}>
+          — {grade.note}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Copy-answer button — appears on hover over the assistant message.
+// Copies the raw markdown text so developers can paste it into docs/code.
+function CopyAnswerButton({ content }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  }, [content]);
+  return (
+    <button
+      className="copy-answer-btn"
+      onClick={handleCopy}
+      title={copied ? "Copied!" : "Copy answer"}
+      aria-label="Copy answer to clipboard"
+    >
+      {copied
+        ? <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 010 1.06l-7.25 7.25a.75.75 0 01-1.06 0L2.22 9.28a.75.75 0 011.06-1.06L6 10.94l6.72-6.72a.75.75 0 011.06 0z"/></svg>
+        : <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25z"/></svg>
+      }
+    </button>
+  );
+}
+
+export default function Message({ msg, onDiagramThis, onRetry, showRepo = false }) {
   const isUser = msg.role === "user";
 
   return (
@@ -108,52 +280,158 @@ export default function Message({ msg }) {
         <div className="bubble">{msg.content}</div>
       ) : (
         <>
-          {/* Assistant avatar */}
-          <div className="message-avatar assistant" aria-hidden="true">⚡</div>
+          {/* Assistant avatar — ✦ for agent responses, code icon for RAG.
+              This matches the ✦ badge on agent sessions in the sidebar,
+              making the visual language consistent: ✦ = agent mode. */}
+          <div className="message-avatar assistant" aria-hidden="true">
+            {msg.iterations
+              ? <span style={{ fontSize: 13, lineHeight: 1, color: "white", opacity: 0.9 }}>✦</span>
+              : <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
+                  <path d="M5.5 5L2 9l3.5 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.95"/>
+                  <path d="M12.5 5L16 9l-3.5 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.95"/>
+                  <circle cx="9" cy="9" r="1.2" fill="white" fillOpacity="0.7"/>
+                </svg>
+            }
+          </div>
 
           {/* All assistant content in a column wrapper */}
           <div className="message-content">
             {/* Agent reasoning trace */}
             {msg.toolCalls && msg.toolCalls.length > 0 && (
-              <ToolCallTrace steps={msg.toolCalls} streaming={msg.streaming} />
+              <ToolCallTrace steps={msg.toolCalls} streaming={msg.streaming} iterations={msg.iterations} />
             )}
 
-            {/* "Thinking…" shown before first tool call */}
-            {msg.streaming && msg.currentTool === null && !msg.content && (!msg.toolCalls || msg.toolCalls.length === 0) && (
+
+            {/* "Thinking…" shown before first tool call in agent mode */}
+            {msg.streaming && msg.currentTool === null && !msg.content && (!msg.toolCalls || msg.toolCalls.length === 0) && !msg.phase && (
               <div className="agent-thinking">
                 <span className="spinner" role="status" aria-label="Thinking" />
                 Thinking…
               </div>
             )}
 
+            {/* RAG retrieval phase indicator — makes the invisible retrieval step visible.
+                "searching" = waiting for vector search to return sources.
+                "generating" = sources received, LLM is now streaming the answer. */}
+            {msg.streaming && msg.phase && (
+              <div className={`stream-phase stream-phase--${msg.phase}`}>
+                <span className="stream-phase-dot" />
+                {msg.phase === "searching"
+                  ? "Searching code…"
+                  : `Found ${msg.sourceCount ?? "?"} source${msg.sourceCount !== 1 ? "s" : ""} · Generating answer…`
+                }
+              </div>
+            )}
+
+            {/* Rate-limit countdown banner — shown instead of a hard error */}
+            {msg.rateLimited && (
+              <div className="rate-limit-banner">
+                <span className="rate-limit-spinner" aria-hidden="true" />
+                <span className="rate-limit-text">{msg.content}</span>
+                {onRetry && msg.retryQuestion && (
+                  <button
+                    className="rate-limit-retry-btn"
+                    onClick={() => onRetry(msg.retryQuestion)}
+                  >
+                    Retry now
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Answer bubble */}
-            <div className="bubble">
+            <div className="bubble" style={{ position: "relative", display: msg.rateLimited ? "none" : undefined }}>
               <ReactMarkdown components={mdComponents}>
                 {msg.content || " "}
               </ReactMarkdown>
               {/* Show cursor whenever streaming, not just when no tool active */}
               {msg.streaming && <span className="cursor" aria-hidden="true" />}
+              {/* Copy-answer button — visible on hover; lets devs paste the answer */}
+              {!msg.streaming && msg.content && <CopyAnswerButton content={msg.content} />}
             </div>
 
-            {/* Badges */}
-            {!msg.streaming && msg.iterations && (
-              <span className="query-type-badge">agent · {msg.iterations} step{msg.iterations !== 1 ? "s" : ""}</span>
-            )}
+            {/* Pipeline provenance — shows every retrieval stage that fired for this answer.
+                Positioned HERE (before sources) so it's immediately visible after the answer,
+                not buried below N source cards. Quality features only shown when they ran. */}
             {!msg.streaming && msg.queryType && !msg.iterations && (
-              <span className="query-type-badge">{msg.queryType}</span>
+              <div className="pipeline-provenance">
+                {msg.pipeline?.hyde && (
+                  <>
+                    <span className="pipeline-stage pipeline-quality" title="Hypothetical Document Embeddings: a code snippet was generated from your question and used for retrieval instead of the raw query text">
+                      HyDE
+                    </span>
+                    <span className="pipeline-sep">→</span>
+                  </>
+                )}
+                {msg.pipeline?.expanded > 0 && (
+                  <>
+                    <span className="pipeline-stage pipeline-quality" title={`Query Expansion: ${msg.pipeline.expanded} alternative phrasings were searched and merged with RRF`}>
+                      +{msg.pipeline.expanded} expansions
+                    </span>
+                    <span className="pipeline-sep">→</span>
+                  </>
+                )}
+                <span className="pipeline-stage" title={`${msg.queryType === "hybrid" ? "Hybrid: dense semantic vectors + BM25 keyword search, fused with Reciprocal Rank Fusion" : msg.queryType === "semantic" ? "Dense semantic search: nearest-neighbour lookup in 768-dim embedding space" : "BM25 keyword search: exact and fuzzy term matching"}`}>
+                  <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg>
+                  {msg.queryType} search
+                </span>
+                <span className="pipeline-sep">→</span>
+                <span
+                  className="pipeline-stage"
+                  title={msg.pipeline?.reranker === "cohere" ? "Cohere rerank-v3.5: API cross-encoder re-scores every candidate against your question for maximum precision" : "Local ms-marco cross-encoder: re-scores candidates locally without an API call"}
+                >
+                  {msg.pipeline?.reranker === "cohere" ? "cohere re-ranked" : "re-ranked"}
+                </span>
+                <span className="pipeline-sep">→</span>
+                <span className="pipeline-stage" title={`${msg.sources?.length ?? 0} code chunk${(msg.sources?.length ?? 0) !== 1 ? "s" : ""} were retrieved and passed as context to the LLM`}>{msg.sources?.length ?? 0} source{(msg.sources?.length ?? 0) !== 1 ? "s" : ""}</span>
+                <span className="pipeline-sep">→</span>
+                <span className="pipeline-stage" title="The LLM generated this answer using only the retrieved sources as context — it cannot see code outside these chunks">generated</span>
+                {msg.grade && msg.grade.confidence !== "unknown" && (
+                  <>
+                    <span className="pipeline-sep">→</span>
+                    <span className={`pipeline-stage pipeline-grade-${msg.grade.confidence}`}>
+                      {msg.grade.confidence === "high" ? "✓" : msg.grade.confidence === "low" ? "⚠" : "◐"} {msg.grade.confidence}
+                    </span>
+                  </>
+                )}
+              </div>
             )}
 
-            {/* Sources */}
+            {/* Badges + Sources — query type shown as sources header for context */}
+            {/* (agent iteration count is shown in the ToolCallTrace header above) */}
             {msg.sources && msg.sources.length > 0 && !msg.streaming && (
               <div className="sources">
                 <div className="sources-header">
                   {msg.sources.length} source{msg.sources.length > 1 ? "s" : ""}
+                  {msg.queryType && !msg.iterations && (
+                    <span className="query-type-badge" style={{ marginLeft: 8 }}>{msg.queryType}</span>
+                  )}
                 </div>
                 {msg.sources.map((s, i) => (
-                  <SourceCard key={i} source={s} index={i + 1} />
+                  <SourceCard key={i} source={s} index={i + 1} showRepo={showRepo} />
                 ))}
+                {/* "Diagram this →" button — switches to diagram tab with focused-files context */}
+                {onDiagramThis && (
+                  <button
+                    className="diagram-this-btn"
+                    onClick={() => onDiagramThis(msg.sources)}
+                    title="Switch to Diagram tab and highlight the files cited in this answer"
+                  >
+                    Diagram this →
+                  </button>
+                )}
               </div>
             )}
+            {/* Query type badge when no sources (e.g. factual answer with no retrieved chunks) */}
+            {!msg.streaming && !msg.iterations && msg.queryType && !(msg.sources?.length > 0) && (
+              <span className="query-type-badge">{msg.queryType}</span>
+            )}
+
+            {/* Standalone confidence badge for medium/low — shows the note text */}
+            {msg.grade && msg.grade.confidence !== "unknown" && msg.grade.confidence !== "high" && (
+              <ConfidenceBadge grade={msg.grade} />
+            )}
+
           </div>
         </>
       )}
