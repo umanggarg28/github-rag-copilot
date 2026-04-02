@@ -318,7 +318,11 @@ class GenerationService:
           - Anthropic: no separate flag needed; the system prompt already says "Return ONLY
             valid JSON". Prompt caching (see _anthropic_complete) keeps this cheap to repeat.
         """
-        self._reset_to_primary()
+        # Only reset to primary on the first call, not on fallback retries.
+        # Without this guard, the recursive retry call resets back to Groq,
+        # which 429s again, which retries again — infinite recursion.
+        if not getattr(self, '_in_fallback', False):
+            self._reset_to_primary()
         messages = [{"role": "user", "content": prompt}]
         params   = {"temperature": temperature, "max_tokens": max_tokens, "json_mode": json_mode}
         try:
@@ -328,7 +332,11 @@ class GenerationService:
                 return self._anthropic_complete(system, messages, params)
         except Exception as e:
             if _is_exhausted(e) and self._try_fallback():
-                return self.generate(system, prompt, temperature, json_mode)
+                self._in_fallback = True
+                try:
+                    return self.generate(system, prompt, temperature, json_mode)
+                finally:
+                    self._in_fallback = False
             raise
 
     def answer(self, question: str, context: str, query_type: str, history: list[dict] | None = None) -> str:
@@ -372,7 +380,8 @@ class GenerationService:
         Yields:
             str: Individual text tokens as they are generated
         """
-        self._reset_to_primary()
+        if not getattr(self, '_in_fallback', False):
+            self._reset_to_primary()
         system   = _SYSTEM_TECHNICAL if query_type == "technical" else _SYSTEM_CREATIVE
         params   = _PARAMS[query_type]
         messages = _build_messages(question, context, history)
@@ -384,7 +393,11 @@ class GenerationService:
                 yield from self._anthropic_stream(system, messages, params)
         except Exception as e:
             if _is_exhausted(e) and self._try_fallback():
-                yield from self.stream(question, context, query_type, history)  # retry with new provider
+                self._in_fallback = True
+                try:
+                    yield from self.stream(question, context, query_type, history)
+                finally:
+                    self._in_fallback = False
             else:
                 raise
 

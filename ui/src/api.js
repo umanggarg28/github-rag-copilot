@@ -19,21 +19,6 @@ export async function ingestRepo(repoUrl, force = false) {
   return data;
 }
 
-export async function fetchGraph(slug) {
-  const [owner, name] = slug.split("/");
-  const res = await fetch(`${BASE}/repos/${owner}/${name}/graph`);
-  if (!res.ok) throw new Error("Failed to fetch graph");
-  return res.json();
-}
-
-export async function fetchSemanticMap(slug) {
-  const [owner, name] = slug.split("/");
-  const res = await fetch(`${BASE}/repos/${owner}/${name}/map`);
-  if (!res.ok) throw new Error("Failed to fetch semantic map");
-  return res.json();
-}
-
-
 export async function fetchTour(slug) {
   const [owner, name] = slug.split("/");
   const res = await fetch(`${BASE}/repos/${owner}/${name}/tour`);
@@ -46,6 +31,116 @@ export async function fetchDiagram(slug, type = "architecture") {
   const res = await fetch(`${BASE}/repos/${owner}/${name}/diagram?type=${type}`);
   if (!res.ok) throw new Error("Failed to generate diagram");
   return res.json(); // { diagram: "<mermaid syntax>", type } or { error: "..." }
+}
+
+/**
+ * Stream codebase tour generation with live progress events.
+ *
+ * Replaces the blank spinner with real progress stages:
+ *   loading → analysing → generating → parsing → done
+ *
+ * onProgress({ stage, progress, message }) — called for each intermediate event
+ * onDone(tourData)                          — called with the full tour on completion
+ * onError(msg)                              — called on failure
+ *
+ * Returns a cancel() function.
+ */
+export function streamTour(slug, { onProgress, onDone, onError }) {
+  const [owner, name] = slug.split("/");
+  const controller = new AbortController();
+
+  fetch(`${BASE}/repos/${owner}/${name}/tour/stream`, { signal: controller.signal })
+    .then(async (res) => {
+      if (!res.ok) { onError?.(`Server error ${res.status}`); return; }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop();
+
+        for (const part of parts) {
+          if (!part.trim()) continue;
+          const line = part.split("\n").find(l => l.startsWith("data: "));
+          if (!line) continue;
+          const event = JSON.parse(line.slice(6));
+
+          if (event.stage === "done") {
+            const { stage, progress, ...tourData } = event;
+            onDone?.(tourData);
+          } else if (event.stage === "error") {
+            onError?.(event.error || "Failed to generate tour");
+          } else {
+            onProgress?.(event);
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") onError?.(err.message || "Connection lost");
+    });
+
+  return () => controller.abort();
+}
+
+/**
+ * Stream diagram generation with live progress events.
+ *
+ * Progress stages: loading → building → enriching → done
+ *
+ * onProgress({ stage, progress, message })
+ * onDone({ diagram, type })
+ * onError(msg)
+ *
+ * Returns a cancel() function.
+ */
+export function streamDiagram(slug, type = "architecture", { onProgress, onDone, onError }) {
+  const [owner, name] = slug.split("/");
+  const controller = new AbortController();
+
+  fetch(`${BASE}/repos/${owner}/${name}/diagram/stream?type=${type}`, { signal: controller.signal })
+    .then(async (res) => {
+      if (!res.ok) { onError?.(`Server error ${res.status}`); return; }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop();
+
+        for (const part of parts) {
+          if (!part.trim()) continue;
+          const line = part.split("\n").find(l => l.startsWith("data: "));
+          if (!line) continue;
+          const event = JSON.parse(line.slice(6));
+
+          if (event.stage === "done") {
+            onDone?.({ diagram: event.diagram, type: event.type });
+          } else if (event.stage === "error") {
+            onError?.(event.error || "Failed to generate diagram");
+          } else {
+            onProgress?.(event);
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") onError?.(err.message || "Connection lost");
+    });
+
+  return () => controller.abort();
 }
 
 export async function fetchMcpPrompt(name, args = {}) {

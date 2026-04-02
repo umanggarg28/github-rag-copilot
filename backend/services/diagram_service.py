@@ -50,6 +50,8 @@ JSON gives us full control over layout, styling, and interactivity
 syntax, and we can validate + sanitise the output programmatically.
 """
 
+from pathlib import Path
+
 from ingestion.qdrant_store import QdrantStore
 from backend.services.generation import GenerationService
 
@@ -282,11 +284,65 @@ class DiagramService:
     grounded with real function names from the AST.
     """
 
+    # Disk cache directory — diagrams are expensive LLM calls, persist them
+    # across server restarts so users never wait twice for the same repo.
+    _CACHE_DIR = Path(__file__).parent.parent / "diagrams"
+
     def __init__(self, store: QdrantStore, generation_svc: GenerationService):
         self._store = store
         self._gen   = generation_svc
         self._cache: dict[tuple[str, str], dict] = {}  # (repo, type) → parsed JSON dict
         self._tour_cache: dict[str, dict] = {}          # repo → tour JSON
+        self._CACHE_DIR.mkdir(exist_ok=True)
+
+    # ── Disk helpers ──────────────────────────────────────────────────────────
+
+    def _diagram_path(self, repo: str, diagram_type: str) -> Path:
+        slug = repo.replace("/", "_")
+        return self._CACHE_DIR / f"{slug}_{diagram_type}.json"
+
+    def _tour_path(self, repo: str) -> Path:
+        slug = repo.replace("/", "_")
+        return self._CACHE_DIR / f"{slug}_tour.json"
+
+    def _load_diagram(self, repo: str, diagram_type: str) -> dict | None:
+        """Load a cached diagram from disk into memory. Returns None if not found."""
+        import json as _json
+        path = self._diagram_path(repo, diagram_type)
+        if path.exists():
+            try:
+                data = _json.loads(path.read_text())
+                self._cache[(repo, diagram_type)] = data
+                return data
+            except Exception:
+                path.unlink(missing_ok=True)  # delete corrupt file
+        return None
+
+    def _save_diagram(self, repo: str, diagram_type: str, data: dict) -> None:
+        import json as _json
+        try:
+            self._diagram_path(repo, diagram_type).write_text(_json.dumps(data))
+        except Exception:
+            pass  # disk write failure is non-fatal — memory cache still works
+
+    def _load_tour(self, repo: str) -> dict | None:
+        import json as _json
+        path = self._tour_path(repo)
+        if path.exists():
+            try:
+                data = _json.loads(path.read_text())
+                self._tour_cache[repo] = data
+                return data
+            except Exception:
+                path.unlink(missing_ok=True)
+        return None
+
+    def _save_tour(self, repo: str, data: dict) -> None:
+        import json as _json
+        try:
+            self._tour_path(repo).write_text(_json.dumps(data))
+        except Exception:
+            pass
 
     def build_diagram(self, repo: str, diagram_type: str) -> dict:
         """
@@ -306,6 +362,11 @@ class DiagramService:
         if cache_key in self._cache:
             return {"diagram": self._cache[cache_key], "type": diagram_type}
 
+        # Check disk cache before hitting the LLM
+        disk = self._load_diagram(repo, diagram_type)
+        if disk is not None:
+            return {"diagram": disk, "type": diagram_type}
+
         chunks = self._list_chunks(repo)
         if not chunks:
             return {"error": "No indexed chunks found for this repo. Try re-ingesting."}
@@ -324,12 +385,13 @@ class DiagramService:
                 # (e.g. non-Python repo with no AST data)
                 data = self._build_diagram_from_llm(repo, diagram_type, chunks)
             else:
-                data = self._enrich_nodes(repo, diagram_type, data)
+                data = self._enrich_nodes(repo, diagram_type, data, chunks)
 
         if not data:
             return {"error": "Could not generate diagram. Try regenerating."}
 
         self._cache[cache_key] = data
+        self._save_diagram(repo, diagram_type, data)
         return {"diagram": data, "type": diagram_type}
 
     def build_tour(self, repo: str) -> dict:
@@ -349,6 +411,10 @@ class DiagramService:
 
         if repo in self._tour_cache:
             return self._tour_cache[repo]
+
+        disk = self._load_tour(repo)
+        if disk is not None:
+            return disk
 
         chunks = self._list_chunks(repo)
         if not chunks:
@@ -381,10 +447,10 @@ class DiagramService:
             key=_chunk_score, reverse=True,
         )
 
-        # Top 35 with real code, rest as name-only stubs (gives context breadth)
-        TOP_N        = 35
+        # Top 50 with real code, rest as name-only stubs (gives context breadth)
+        TOP_N        = 50
         STUB_N       = 80
-        SNIPPET_LEN  = 450   # chars per snippet — enough to see the signature + docstring + key logic
+        SNIPPET_LEN  = 700   # chars per snippet — signature + full docstring + key logic
 
         code_sections = []
         for c in ranked[:TOP_N]:
@@ -426,7 +492,159 @@ class DiagramService:
             c["depends_on"] = [d for d in c.get("depends_on", []) if d in valid_ids and d != c["id"]]
 
         self._tour_cache[repo] = tour
+        self._save_tour(repo, tour)
         return tour
+
+    def build_tour_stream(self, repo: str):
+        """
+        Generator version of build_tour that yields progress events.
+
+        Each event is a dict: { "stage": str, "progress": float, ...payload }
+        The frontend consumes these via SSE to show a live progress bar instead
+        of a blank spinner during the 5-10s LLM call.
+
+        Stages:
+          loading    (0.10) — fetching chunks from Qdrant
+          analysing  (0.35) — ranking chunks by importance
+          generating (0.55) — LLM call in progress (the slow part)
+          parsing    (0.90) — validating and caching result
+          done       (1.00) — full tour data in payload
+          error      (1.00) — error message in payload
+        """
+        if repo in self._tour_cache:
+            yield {"stage": "done", "progress": 1.0, **self._tour_cache[repo]}
+            return
+
+        disk = self._load_tour(repo)
+        if disk is not None:
+            yield {"stage": "done", "progress": 1.0, **disk}
+            return
+
+        yield {"stage": "loading", "progress": 0.10, "message": "Loading repository chunks…"}
+        chunks = self._list_chunks(repo)
+        if not chunks:
+            yield {"stage": "error", "progress": 1.0, "error": "No indexed chunks found for this repo. Try re-ingesting."}
+            return
+
+        yield {"stage": "analysing", "progress": 0.35, "message": f"Analysing {len(chunks)} code chunks…"}
+
+        _ENTRY_FILES   = {"main.py", "app.py", "server.py", "index.py", "__init__.py",
+                          "agent.py", "run.py", "train.py", "model.py", "pipeline.py"}
+        _HIGH_PRIORITY = {"class", "module"}
+
+        def _chunk_score(c: dict) -> int:
+            score = 0
+            if c["type"] in _HIGH_PRIORITY:
+                score += 10
+            fname = c["file"].split("/")[-1] if c["file"] else ""
+            if fname in _ENTRY_FILES:
+                score += 8
+            if c["text"]:
+                score += 3
+            if c["base_classes"]:
+                score += 2
+            return score
+
+        ranked      = sorted([c for c in chunks if c["name"]], key=_chunk_score, reverse=True)
+        TOP_N       = 50
+        STUB_N      = 80
+        SNIPPET_LEN = 700
+
+        code_sections = []
+        for c in ranked[:TOP_N]:
+            snippet = (c["text"] or "").strip()[:SNIPPET_LEN]
+            if snippet:
+                code_sections.append(f"### {c['name']} ({c['type']}) in {c['file']}\n{snippet}")
+            else:
+                code_sections.append(f"- {c['name']} ({c['type']}) in {c['file']}")
+
+        name_only = "\n".join(
+            f"- {c['name']} ({c['type']}) in {c['file']}"
+            for c in ranked[TOP_N:TOP_N + STUB_N]
+        )
+
+        chunk_summary = "\n\n".join(code_sections)
+        if name_only:
+            chunk_summary += "\n\n--- Additional elements (names only) ---\n" + name_only
+
+        prompt = _TOUR_PROMPT.format(repo=repo, chunk_summary=chunk_summary)
+
+        yield {"stage": "generating", "progress": 0.55, "message": "Generating concept tour with AI…"}
+        raw = self._gen.generate(_TOUR_SYSTEM, prompt, temperature=0.0, json_mode=True)
+
+        yield {"stage": "parsing", "progress": 0.90, "message": "Finalizing…"}
+        try:
+            tour = _parse_json(raw)
+        except ValueError:
+            yield {"stage": "error", "progress": 1.0, "error": "Could not parse tour from LLM response. Try regenerating."}
+            return
+
+        valid_ids = {c["id"] for c in tour.get("concepts", [])}
+        for c in tour.get("concepts", []):
+            c["depends_on"] = [d for d in c.get("depends_on", []) if d in valid_ids and d != c["id"]]
+
+        self._tour_cache[repo] = tour
+        self._save_tour(repo, tour)
+        yield {"stage": "done", "progress": 1.0, **tour}
+
+    def build_diagram_stream(self, repo: str, diagram_type: str):
+        """
+        Generator version of build_diagram that yields progress events.
+
+        Stages:
+          loading    (0.10) — fetching chunks
+          building   (0.40) — static AST graph construction
+          enriching  (0.70) — LLM call for node descriptions
+          done       (1.00) — full diagram data in payload
+          error      (1.00) — error message in payload
+        """
+        import json as _json
+
+        if diagram_type not in _JSON_PROMPTS:
+            yield {"stage": "error", "progress": 1.0,
+                   "error": f"Unknown diagram type '{diagram_type}'."}
+            return
+
+        cache_key = (repo, diagram_type)
+        if cache_key in self._cache:
+            yield {"stage": "done", "progress": 1.0,
+                   "diagram": self._cache[cache_key], "type": diagram_type}
+            return
+
+        disk = self._load_diagram(repo, diagram_type)
+        if disk is not None:
+            yield {"stage": "done", "progress": 1.0, "diagram": disk, "type": diagram_type}
+            return
+
+        yield {"stage": "loading", "progress": 0.10, "message": "Loading repository chunks…"}
+        chunks = self._list_chunks(repo)
+        if not chunks:
+            yield {"stage": "error", "progress": 1.0,
+                   "error": "No indexed chunks found for this repo. Try re-ingesting."}
+            return
+
+        yield {"stage": "building", "progress": 0.40, "message": "Building graph from AST…"}
+        if diagram_type == "sequence":
+            data = self._build_sequence_from_llm(repo, chunks)
+        else:
+            data = self._build_static_graph(repo, diagram_type)
+            if not data or not data.get("nodes"):
+                yield {"stage": "enriching", "progress": 0.70,
+                       "message": "Generating diagram with AI…"}
+                data = self._build_diagram_from_llm(repo, diagram_type, chunks)
+            else:
+                yield {"stage": "enriching", "progress": 0.70,
+                       "message": "Enriching node descriptions with AI…"}
+                data = self._enrich_nodes(repo, diagram_type, data, chunks)
+
+        if not data:
+            yield {"stage": "error", "progress": 1.0,
+                   "error": "Could not generate diagram. Try regenerating."}
+            return
+
+        self._cache[cache_key] = data
+        self._save_diagram(repo, diagram_type, data)
+        yield {"stage": "done", "progress": 1.0, "diagram": data, "type": diagram_type}
 
     def invalidate(self, repo: str):
         """Remove all cached diagrams and tours for a repo — call after re-ingestion."""
@@ -434,6 +652,10 @@ class DiagramService:
         for k in keys:
             del self._cache[k]
         self._tour_cache.pop(repo, None)
+        # Delete disk files so the next request regenerates from fresh AST data
+        for diagram_type in ("architecture", "class"):
+            self._diagram_path(repo, diagram_type).unlink(missing_ok=True)
+        self._tour_path(repo).unlink(missing_ok=True)
 
     # ── Static graph builders (AST-grounded) ──────────────────────────────────
 
@@ -493,9 +715,34 @@ class DiagramService:
             for base in chunk.get("base_classes", []):
                 raw_edges.append({"source": name, "target": base, "label": "inherits"})
 
-        # Only keep edges where both nodes are in the repo
+        # Only keep inheritance edges where both endpoints are in the repo.
+        # External bases like nn.Module are dropped here — they aren't repo nodes.
         valid = set(nodes.keys())
         edges = [e for e in raw_edges if e["source"] in valid and e["target"] in valid]
+
+        # Add composition edges: when class A's code calls class B's constructor
+        # (i.e. B appears in A's calls list and B is a known repo class), A "uses" B.
+        #
+        # Why this matters: repos like nanogpt have zero intra-repo inheritance
+        # (all classes inherit nn.Module which is external), but rich composition —
+        # Block instantiates CausalSelfAttention, MLP, and LayerNorm. Without these
+        # edges the class diagram shows floating disconnected nodes.
+        #
+        # The `calls` field on class chunks comes from walking the *entire* class
+        # body with ast.walk, so it captures constructor calls inside __init__.
+        seen_comp = set()
+        for chunk in chunks:
+            if chunk["type"] != "class":
+                continue
+            src = chunk["name"]
+            if "." in src or src not in valid:
+                continue
+            for called in chunk.get("calls", []):
+                if called in valid and called != src:
+                    key = (src, called)
+                    if key not in seen_comp:
+                        seen_comp.add(key)
+                        edges.append({"source": src, "target": called, "label": "uses"})
 
         return {"nodes": list(nodes.values()), "edges": edges}
 
@@ -710,13 +957,18 @@ class DiagramService:
 
         return {"nodes": nodes, "edges": edges}
 
-    def _enrich_nodes(self, repo: str, diagram_type: str, graph: dict) -> dict:
+    def _enrich_nodes(self, repo: str, diagram_type: str, graph: dict, chunks: list[dict] | None = None) -> dict:
         """
         Ask the LLM to write a short description for each node.
 
         The graph structure (nodes + edges) comes from static analysis and is
         already accurate. The LLM's only job here is to write readable descriptions
         — it cannot invent or change the structure.
+
+        chunks: the full list from _list_chunks, used to supply actual source code
+        snippets per node. Without this, the LLM only sees the node name and file
+        and has to guess what the component does — the most common source of
+        inaccurate descriptions. With snippets, descriptions are grounded in real code.
         """
         import json as _json
 
@@ -724,17 +976,60 @@ class DiagramService:
         if not nodes:
             return graph
 
-        # Build a compact node list for the LLM
-        node_list = "\n".join(
-            f'- id="{n["id"]}" label="{n["label"]}" file="{n.get("file","")}" type="{n.get("type","")}"'
-            for n in nodes
-        )
+        # Two lookups so we can attach real code for both diagram types:
+        #
+        # snippet_by_name  — name → snippet (class diagrams: node id == class name)
+        # snippets_by_file — filepath → top snippets joined (architecture diagrams:
+        #                    node id is a sanitised filepath, not a symbol name)
+        SNIPPET_LEN      = 400   # chars per individual snippet
+        FILE_SNIPPET_LEN = 600   # chars for combined file summary (top 2 chunks)
+
+        snippet_by_name:  dict[str, str]       = {}
+        snippets_by_file: dict[str, list[str]] = {}
+        if chunks:
+            for c in chunks:
+                name = c.get("name", "")
+                fp   = c.get("file", "")
+                text = (c.get("text") or "").strip()
+                if name and text and name not in snippet_by_name:
+                    snippet_by_name[name] = text[:SNIPPET_LEN]
+                if fp and text:
+                    snippets_by_file.setdefault(fp, []).append(text[:200])
+
+        # Build node list, attaching a code snippet where available
+        node_parts = []
+        for n in nodes:
+            nid   = n["id"]
+            label = n["label"]
+            ftype = n.get("type", "")
+            ffile = n.get("file", "")  # full filepath for arch nodes, short name for class nodes
+
+            # Try name-based lookup first (class diagrams), then file-based (arch diagrams)
+            snippet = snippet_by_name.get(nid) or snippet_by_name.get(label)
+            if not snippet and ffile:
+                file_snippets = snippets_by_file.get(ffile, [])
+                if file_snippets:
+                    snippet = "\n---\n".join(file_snippets[:2])[:FILE_SNIPPET_LEN]
+
+            if snippet:
+                node_parts.append(
+                    f'### {nid} ({ftype}) in {ffile}\n{snippet}'
+                )
+            else:
+                node_parts.append(
+                    f'- id="{nid}" label="{label}" file="{ffile}" type="{ftype}"'
+                )
+
+        node_list = "\n\n".join(node_parts)
 
         prompt = (
             f'Repository: {repo}\n'
             f'Diagram type: {diagram_type}\n\n'
-            f'These components were identified by static code analysis:\n{node_list}\n\n'
+            f'These components were identified by static code analysis. '
+            f'Source code snippets are included where available — read them carefully.\n\n'
+            f'{node_list}\n\n'
             f'For each component, write a 1-sentence description explaining what it does.\n'
+            f'Base your descriptions on the source code, not the names alone.\n'
             f'Return ONLY this JSON (no markdown):\n'
             f'{{"descriptions": {{"<id>": "<1 sentence description>", ...}}}}'
         )

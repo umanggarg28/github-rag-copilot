@@ -105,7 +105,7 @@ function stalenessLevel(isoTimestamp) {
   return "stale";                  // definitely stale
 }
 
-export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange, sessions, currentSessionId, onLoadSession, onDeleteSession, onRenameSession, isOpen, onClose, collapsed, onToggleCollapse }) {
+export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange, sessions, currentSessionId, onLoadSession, onDeleteSession, onRenameSession, isOpen, onClose, collapsed, onToggleCollapse }) {
   const [url, setUrl]                   = useState("");
   const [status, setStatus]             = useState(null); // {type, text}
   const [loading, setLoading]           = useState(false);
@@ -345,7 +345,22 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
                 className={`ingest-step ${p.done ? "done" : "active"} ${p.step === "error" ? "error" : ""}`}
               >
                 <span className="ingest-step-icon">
-                  {p.step === "error" ? "✗" : p.done ? "✓" : "⋯"}
+                  {p.step === "error" ? (
+                    /* X circle */
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                      <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm3.03 10.97L10.03 12 8 9.97 5.97 12l-1-1.03L7 8.97 5 6.97l1-1 2 2 2-2 1 1-2 2z"/>
+                    </svg>
+                  ) : p.done ? (
+                    /* Check circle */
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                      <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm3.78 6.22-4.5 4.5a.75.75 0 0 1-1.06 0l-2-2a.75.75 0 1 1 1.06-1.06l1.47 1.47 3.97-3.97a.75.75 0 1 1 1.06 1.06z"/>
+                    </svg>
+                  ) : (
+                    /* Spinner dots — three dots for "in progress" */
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                      <circle cx="2" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="14" cy="8" r="1.5"/>
+                    </svg>
+                  )}
                 </span>
                 <span className="ingest-step-detail">{p.detail}</span>
               </div>
@@ -401,8 +416,20 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
 
       {/* ── Repos ── */}
       <div className="sidebar-section" style={{ flex: 1 }}>
-        <div className="section-label">Indexed Repos ({repos.length})</div>
-        {repos.length === 0 ? (
+        <div className="section-label">Indexed Repos ({reposLoading ? "…" : repos.length})</div>
+        {reposLoading ? (
+          // Skeleton while the first fetch is in flight — backend can take a moment on cold start
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+            {[1, 2].map(i => (
+              <div key={i} style={{
+                height: 34, borderRadius: "var(--radius-sm)",
+                background: "var(--surface-3)",
+                animation: "pulse 1.4s ease-in-out infinite",
+                animationDelay: `${i * 0.15}s`,
+              }} />
+            ))}
+          </div>
+        ) : repos.length === 0 ? (
           <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
             No repos indexed yet. Add one above.
           </p>
@@ -412,7 +439,7 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
               className={`repo-item ${activeRepo === null ? "active" : ""}`}
               onClick={() => onSelectRepo(null)}
             >
-              <span className="repo-slug" style={{ color: "var(--muted)" }}>All repos</span>
+              <span className="repo-slug">All repos</span>
             </div>
             {repos.map((r) => {
               const staleness = stalenessLevel(r.indexed_at);
@@ -537,7 +564,16 @@ export default function Sidebar({ repos, activeRepo, onSelectRepo, onReposChange
               {mcpInfo.tools.length}T · {mcpInfo.resources.length}R · {mcpInfo.prompts.length}P
             </span>
           )}
-          <span className="mcp-chevron">{mcpOpen ? "▴" : "▾"}</span>
+          <svg
+            className="mcp-chevron"
+            width="10" height="10" viewBox="0 0 16 16"
+            fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round"
+            style={{ transform: mcpOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}
+            aria-hidden="true"
+          >
+            <path d="m4 6 4 4 4-4"/>
+          </svg>
         </button>
 
         {mcpOpen && mcpInfo && (

@@ -27,6 +27,19 @@ corresponding feature is built. Read it alongside the code and `notes/` entries.
     - 11b. Slash Commands
     - 11c. Hooks
     - 11d. Subagents
+16. [Agent Tool Architecture — Making the Agent Smarter](#16-agent-tool-architecture--making-the-agent-smarter) ✓
+17. [Streaming Agent Thought Steps — Making Reasoning Visible](#17-streaming-agent-thought-steps--making-reasoning-visible) ✓
+18. [Reaching 9.5/10 — System Prompt Engineering + Tool Completeness](#18-reaching-9510--system-prompt-engineering--tool-completeness) ✓
+19. [Dead Code Hygiene — Keeping the Codebase Clean](#19-dead-code-hygiene--keeping-the-codebase-clean) ✓
+20. [Replacing a Third-Party Library with Custom SVG](#20-replacing-a-third-party-library-with-custom-svg) ✓
+21. [API Request Size Limits — The 413 Error](#21-api-request-size-limits--the-413-error) ✓
+22. [Agent Working Memory — The Note/Recall Pattern](#22-agent-working-memory--the-noterecall-pattern) ✓
+23. [Call Chain Tracing — Walking the Execution Graph](#23-call-chain-tracing--walking-the-execution-graph) ✓
+24. [Persistent Repo Map — Agent Cross-Session Knowledge](#24-persistent-repo-map--agent-cross-session-knowledge) ✓
+25. [Planning Before Acting — Structured Agent Reasoning](#25-planning-before-acting--structured-agent-reasoning) ✓
+26. [Parallel Tool Execution — asyncio.gather in the ReAct Loop](#26-parallel-tool-execution--asynciogather-in-the-react-loop) ✓
+27. [Streaming Diagram Generation — SSE Progress for Long LLM Calls](#27-streaming-diagram-generation--sse-progress-for-long-llm-calls) ✓
+28. [Docker CI/CD Pipeline — GitHub Actions + HuggingFace Spaces + Vercel](#28-docker-cicd-pipeline--github-actions--huggingface-spaces--vercel) ✓
 
 ---
 
@@ -1412,3 +1425,1281 @@ Even with real code in the tour prompt, the LLM only sees 35 chunks out of
 potentially 500+. For large repos, the remaining 465 chunks are still described
 by name only. Future improvement: use the RAG retrieval pipeline to fetch the
 most relevant chunks for each concept the LLM is trying to describe.
+
+---
+
+# 16. Agent Tool Architecture — Making the Agent Smarter
+
+## The problem with vector search alone
+
+Our original agent had three tools: `search_code`, `get_file_chunk`, `find_callers`.
+
+`search_code` uses embeddings — it embeds your query and finds the nearest code chunks
+in vector space. This works well for conceptual questions ("how does backpropagation work?")
+but has two blind spots:
+
+1. **Exact name lookups**: If you ask "what does `_add_context` do?", the embedding of
+   `"_add_context"` may not land close to the function's actual definition vector.
+   The function could be missing from the top-10 results despite being *exactly* what we want.
+
+2. **File-level understanding**: Vector search returns *chunks* (individual functions).
+   It never returns the whole file. So the agent can't see imports, module docstrings,
+   or how all the functions in a file relate to each other.
+
+These are not retrieval quality problems — they're fundamental limitations of the
+chunked-embedding approach.
+
+## The solution: two new tools
+
+### `search_symbol(symbol_name, repo=None)`
+
+This is a **structural lookup** — pure Qdrant filter, zero vector math:
+
+```
+Qdrant: WHERE name = 'backward' AND repo = 'karpathy/micrograd'
+```
+
+It's the equivalent of `grep -r "def backward"` but fast and over the cloud index.
+
+Why does this matter? When the agent has already found a caller:
+
+```
+# search_code result says: "backward() is called in engine.py:45"
+# Agent now knows the name. Use search_symbol to jump to the definition:
+search_symbol("backward", repo="karpathy/micrograd")
+# → Returns the exact chunk where backward() is defined, every time.
+```
+
+This is how real dev tools work. Cursor and VS Code don't embed "backward" to find
+its definition — they use an AST index and do an exact name lookup. We're doing the
+same thing now with our Qdrant payload index.
+
+### `read_file(repo, filepath)`
+
+Reads the **entire source file** via GitHub API — same as `get_file_chunk` but no
+line range needed. The agent gets:
+- All imports (critical for understanding dependencies)
+- Module-level docstring
+- Every function/class in order
+- The full context of how things relate
+
+When to use it:
+
+| Question type | Right tool |
+|---|---|
+| "What does `backward` do?" | `search_symbol` or `search_code` |
+| "What does engine.py import?" | `read_file` |
+| "How do all these classes relate?" | `read_file` |
+| "What happens on line 140?" | `get_file_chunk` (you know the line) |
+
+The warning: `read_file` on a 2000-line file could use 20k+ tokens of context.
+The tool warns the agent when a file is >500 lines so it can choose `get_file_chunk` instead.
+
+## Why the agent gets them for free
+
+Here's the elegant part of the MCP architecture:
+
+```python
+# In agent.py — called once when a question arrives:
+tools = await self.mcp.list_tools()
+# Returns: search_code, find_callers, get_file_chunk, search_symbol, read_file
+```
+
+**We added tools to `mcp_server.py`. The agent called zero new code.**
+
+The agent uses `mcp.list_tools()` to discover tools at runtime. Every `@mcp.tool()`
+decorator in `mcp_server.py` is automatically published via the MCP protocol.
+The agent doesn't know or care how many tools exist — it reads their descriptions
+and decides which ones to call.
+
+This is **plug-and-play tooling**. The agent is a general-purpose ReAct loop.
+The tools are interchangeable plugins. Want to add a `run_tests` tool? Add it to
+`mcp_server.py` with a `@mcp.tool()` decorator and the agent has it immediately.
+
+This is exactly how Claude Code works: you configure MCP servers in settings,
+and Claude discovers their tools at startup. Our agent does the same thing —
+it just happens to connect to its own MCP server (the one we built).
+
+## The impact
+
+Before: `search_code` → "find similar chunks in vector space"  
+After: Agent can now do what senior engineers do:
+1. Search for a concept (vector search)
+2. Jump to a specific definition (exact name lookup)
+3. Read the whole file for full context (file read)
+4. Trace all callers (structural graph lookup)
+
+Concrete example — before vs after for "explain how autograd works in micrograd":
+
+**Before (3 search_code calls):**
+```
+search_code("autograd backward pass") → 6 chunks, maybe missing the Value class def
+search_code("Value class") → finds it, but no imports visible
+search_code("gradient accumulation") → 6 more chunks
+Answer: pretty good but missing some context
+```
+
+**After (mixed tool strategy):**
+```
+search_code("autograd backward pass") → finds backward() chunk, get its file
+search_symbol("Value") → exact definition immediately  
+read_file("karpathy/micrograd", "micrograd/engine.py") → full file: all methods, imports
+find_callers("backward") → see how it's invoked in the training loop
+Answer: complete picture, every detail
+```
+
+## Technical implementation
+
+`search_symbol` uses a new `find_symbol()` method on `QdrantStore`:
+
+```python
+# qdrant_store.py
+def find_symbol(self, symbol_name, repo=None):
+    conditions = [FieldCondition(key="name", match=MatchValue(value=symbol_name))]
+    if repo:
+        conditions.append(FieldCondition(key="repo", match=MatchValue(value=repo)))
+    # scroll() = paginated full-scan with filter — no vectors needed
+    ...
+```
+
+`read_file` is a GitHub API call — same pattern as `get_file_chunk` but no slicing:
+```python
+url = f"https://api.github.com/repos/{owner}/{name}/contents/{filepath}"
+headers = {"Accept": "application/vnd.github.v3.raw"}
+# Returns the raw file text, numbered line by line
+```
+
+Both tools have the same path-traversal protection as `get_file_chunk`: they
+reject `../` in paths to prevent an LLM (or a prompt injection attack) from
+trying to read files outside the intended repo.
+
+## What's still missing (honest assessment)
+
+Even with these tools, there are quality gaps vs. commercial tools:
+
+| Feature | Ours | Cursor/Claude Code |
+|---|---|---|
+| Exact symbol lookup | ✅ `search_symbol` | ✅ LSP-based |
+| Full file read | ✅ `read_file` | ✅ |
+| Type inference | ❌ | ✅ LSP |
+| Cross-file call graph | Partial (`find_callers`) | ✅ full LSP |
+| Edit current file | ❌ | ✅ |
+| Evals / offline scoring | ❌ (next) | ✅ |
+
+The big remaining unlock is an **evals framework**: a set of 50-100 gold
+question-answer pairs per repo that we can run offline to score quality.
+Right now we judge quality by feel. With evals, we'd know if a change to the
+system prompt or retrieval parameters actually improves answers.
+
+---
+
+# 17. Streaming Agent Thought Steps — Making Reasoning Visible
+
+## What the user sees
+
+When you ask a question in agent mode, instead of a blank spinner for 10 seconds,
+you see a live timeline:
+
+```
+● Agent  ↻
+  💭 "I need to find the backward pass implementation first"
+  🔍 search_code          "backpropagation gradient computation"     ↻
+     Found Value.backward in engine.py, lines 45–67 ...
+  ◎ search_symbol         "backward"                                 ✓
+     Found 1 definition of 'backward': ...
+  📖 read_file            "micrograd/engine.py"                      ✓
+     # micrograd/engine.py  (72 lines total) ...
+  ⬡ find_callers          "backward"                                 ✓
+     Found 3 caller(s): train(), evaluate(), ...
+```
+
+Each step collapses when the next one starts. The full trace is expandable after
+the answer arrives. The thought bubble shows WHY the agent chose each tool.
+
+## How it works end to end
+
+### 1. Backend: the agent is an async generator
+
+`agent.stream()` in `backend/services/agent.py` uses Python's `yield` keyword
+to produce events as they happen:
+
+```python
+async def stream(self, question, repo, messages_history):
+    # ...
+    for iteration in range(MAX_ITERATIONS):
+        step = await asyncio.to_thread(self._call_llm, messages, mcp_tools)
+
+        thought = _extract_thought(step["assistant_message"])
+        if thought:
+            yield {"type": "thought", "text": thought}   # 💭 bubble
+
+        for tc in step["tool_calls"]:
+            yield {"type": "tool_call",   "tool": tc["name"], "input": tc["input"]}
+            result = await mcp.call_tool(tc["name"], tc["input"])
+            yield {"type": "tool_result", "tool": tc["name"], "output": result}
+
+        if step["done"]:
+            async for token in self._stream_final_answer(messages):
+                yield {"type": "token", "text": token}  # answer tokens
+            yield {"type": "sources", ...}
+            yield {"type": "done", ...}
+            return
+```
+
+`yield` suspends the function and delivers the event immediately — the caller
+gets each event the instant it's produced, not all at once at the end.
+
+### 2. Backend: SSE transport
+
+FastAPI's `StreamingResponse` wraps the async generator and sends each event
+as a Server-Sent Events (SSE) frame:
+
+```
+event: thought
+data: {"text": "I need to find the backward pass first"}
+
+event: tool_call
+data: {"tool": "search_code", "input": {"query": "backpropagation"}}
+
+event: tool_result
+data: {"tool": "search_code", "output": "Found Value.backward ..."}
+
+event: message
+data: According to the source code...
+
+event: done
+data: {"iterations": 4}
+```
+
+SSE is just HTTP with `Content-Type: text/event-stream`. The connection stays
+open and the server pushes frames. The browser's `fetch` API can read them
+chunk-by-chunk via `response.body.getReader()`.
+
+### 3. Frontend: api.js parses the SSE stream
+
+```javascript
+// api.js
+const reader = response.body.getReader();
+while (true) {
+    const { value, done } = await reader.read();
+    const text = new TextDecoder().decode(value);
+
+    for (const part of text.split("\n\n")) {
+        // each part is one SSE event
+        if (eventType === "thought")      onThought(text);
+        if (eventType === "tool_call")    onToolCall(tool, input);
+        if (eventType === "tool_result")  onToolResult(tool, output);
+        if (eventType === "token")        onToken(data);
+        if (eventType === "done")         onDone(iterations);
+    }
+}
+```
+
+The callbacks (`onThought`, `onToolCall`, etc.) are passed in from `App.jsx`.
+
+### 4. Frontend: App.jsx builds message state
+
+Each callback mutates the in-progress assistant message:
+
+```javascript
+onThought:    (text)         => append { type: "thought", text } to toolCalls array
+onToolCall:   (tool, input)  => append { tool, input, output: "" } to toolCalls
+onToolResult: (tool, output) → find last matching tool call, fill in its output
+onToken:      (text)         → append to msg.content (the answer text)
+onDone:       (iterations)   → mark msg.streaming = false, save iteration count
+```
+
+React re-renders on every state update — so each event triggers a re-render and
+the UI updates live.
+
+### 5. Frontend: Message.jsx renders the trace
+
+`ToolCallTrace` maps `msg.toolCalls` to a vertical timeline:
+- `{ type: "thought", text }` → `AgentThought` bubble (italic, dimmed)
+- `{ tool, input, output }` → `AgentStep` with icon + query label + collapsible output
+
+```jsx
+{steps.map((step, i) =>
+  step.type === "thought"
+    ? <AgentThought text={step.text} />
+    : <AgentStep
+        step={step}
+        icon={toolIcon[step.tool]}      // SVG icon per tool
+        isLast={i === lastToolIdx}      // last step = still animating
+        streaming={streaming}
+      />
+)}
+```
+
+`isLast && streaming` = the step is currently executing → show spinner, expand output.
+Once the next step starts, the previous one collapses automatically.
+
+## The formatStepQuery function
+
+Each tool has a different input shape. Raw JSON in the step header is unreadable:
+```
+search_symbol   {"symbol_name":"backward","repo":"karpathy/micrograd"}  ← bad
+search_symbol   backward                                                 ← good
+```
+
+`formatStepQuery(tool, input)` extracts the right field per tool:
+```javascript
+case "search_code":    return input.query;
+case "search_symbol":  return input.symbol_name;
+case "find_callers":   return input.function_name;
+case "read_file":      return input.filepath;
+case "get_file_chunk": return `${input.filepath} (L${input.start_line}–${input.end_line})`;
+```
+
+This is a pure function at module level — no state, no hooks. It's called inside
+`AgentStep` where both `tool` and `input` are available from `step.tool` and `step.input`.
+
+## What this teaches about async architectures
+
+This feature connects several concepts:
+
+1. **Async generators**: Python `yield` in an `async def` → events flow out as they happen
+2. **SSE (Server-Sent Events)**: Persistent HTTP connection for server→client push
+3. **React state as a stream**: Each callback call is a state mutation that triggers re-render
+4. **Optimistic UI**: The trace shows steps BEFORE they complete — spinner → result
+
+The key insight: the agent's reasoning was always happening. This feature just
+makes the invisible visible. No new AI capability was added — just observability.
+
+---
+
+# 18. Reaching 9.5/10 — System Prompt Engineering + Tool Completeness
+
+## The three levers
+
+Going from 7.5 → 9.5 required three things working together:
+
+1. **Right tools** — the agent needs tools that match how a human engineer actually navigates code
+2. **Right system prompt** — the agent needs to know *when* to use each tool, not just *that* they exist  
+3. **Conversation memory** — already wired up; the agent had it all along
+
+## `list_files` — the missing orientation step
+
+Before `list_files`, the agent was dropped into a repo blind. It would guess file paths
+like `src/models.py` or `lib/engine.py` and often get 404s. A human engineer's first
+move when entering an unfamiliar codebase is: look at the directory tree.
+
+```python
+@mcp.tool()
+def list_files(repo: str, path: str = "") -> str:
+    # GitHub API: GET /repos/{owner}/{name}/contents/{path}
+    # Returns a JSON array of {name, type, size} entries
+    # Directories are marked with / so the agent can drill down
+```
+
+GitHub's contents API returns the directory listing as a JSON array when given a directory path,
+or a single file object when given a file path. The tool handles both cases.
+
+Now the agent's first move on any complex question is:
+```
+list_files("karpathy/micrograd") →
+  micrograd/
+  test/
+  README.md  (8KB)
+  setup.py   (1KB)
+```
+Then `list_files("karpathy/micrograd", "micrograd")` →
+```
+  __init__.py  (200B)
+  engine.py    (4KB)
+  nn.py        (2KB)
+```
+
+Two tool calls and the agent knows exactly which files to read. No guessing.
+
+## System prompt engineering — the biggest quality lever
+
+Here's an uncomfortable truth: **the system prompt is more important than the tools**.
+
+You can give the agent 10 perfect tools, but if the system prompt says "use search_code
+for everything", it will use search_code for everything — including cases where
+search_symbol would be 10x more reliable.
+
+### What the old prompt did wrong
+
+```
+When answering questions about code:
+1. Start by calling search_code to find relevant code
+2. If the initial results don't fully answer the question, search again with a different query
+3. Use get_file_chunk to see more context around a result
+...
+```
+
+Problems:
+- Listed tools as an afterthought — no guidance on *when* to use each one
+- No planning step — agent dives in immediately, often searching the wrong thing first
+- Didn't mention `search_symbol` or `read_file` at all (they were added later, prompt never updated)
+- Stopping criteria were vague ("stop searching when no new info")
+
+### What the new prompt does right
+
+**Tool selection guide** — each tool has an explicit trigger condition:
+```
+search_symbol(symbol_name) → Use when you KNOW the exact name.
+  You found a caller that references `Value` → search_symbol("Value")
+
+read_file(repo, filepath) → Use when you need imports, structure, or full context.
+  "What does engine.py import?" → read_file (not search_code)
+```
+
+The agent now has a decision tree: "do I know the exact name? → search_symbol. 
+Do I need the full file? → read_file. Am I exploring? → list_files."
+
+**Mandatory planning step** — before any tools:
+```
+Before using any tools, write a 1-2 sentence plan:
+"To answer this I need to: (1) find X, (2) trace how it connects to Y, (3) check Z."
+```
+
+This is the biggest single change. An agent that plans first makes fewer wasted tool calls.
+It's the same reason senior engineers sketch a plan before coding — it prevents going
+down wrong paths for 30 minutes before realizing the approach is wrong.
+
+**Explicit strategy sequence** — ORIENT → FIND → READ → CONNECT → ANSWER:
+```
+1. ORIENT   — list_files to understand structure
+2. FIND     — search_code for concepts, search_symbol for known names  
+3. READ     — read_file for full context, get_file_chunk for targeted lines
+4. CONNECT  — find_callers to trace how pieces relate
+5. ANSWER   — cite every file path and line number
+```
+
+**History awareness**:
+```
+Check conversation history first — don't re-search things you already found this session
+```
+
+Without this instruction, the agent re-searches the same files every turn even when
+they're already in the conversation history from 2 messages ago.
+
+## Conversation memory — already there
+
+The infrastructure was built from the start:
+
+```python
+# App.jsx — builds history from completed messages
+const history = completedMsgs.slice(-10).map(m => ({ role: m.role, content: m.content }));
+
+# agent.py — prepends history to messages
+def _build_initial_messages(self, question, repo_filter, history=None):
+    messages = [{"role": h["role"], "content": h["content"]} for h in (history or [])]
+    messages.append({"role": "user", "content": question})
+    return messages
+```
+
+History = last 10 messages (5 exchanges) as plain `{role, content}` pairs. The agent
+doesn't re-attach retrieved code chunks — it can re-search if needed. This is intentional:
+attaching full tool outputs to every history message would balloon the context to 50k+ tokens.
+
+## The compound effect
+
+None of these changes alone gets to 9.5. They work together:
+
+| Without list_files | With list_files |
+|---|---|
+| Agent guesses file paths | Agent browses structure first |
+| 2-3 failed tool calls per question | Straight to the right file |
+
+| Old system prompt | New system prompt |
+|---|---|
+| Always starts with search_code | Chooses the right tool for the context |
+| No planning step | Plans before any tool call |
+| Ignores conversation history | Checks history before re-searching |
+| search_symbol never used | Used immediately when name is known |
+
+| Without memory | With memory |
+|---|---|
+| "What does backward() do?" (re-searches) | Already in context from Q2 |
+| Can't answer "what about the other method?" | Knows which method from prior turn |
+
+Combined: the agent now behaves like a senior engineer pairing with you — it knows
+the codebase from prior turns, orients itself before diving in, picks the right tool
+for each step, and plans before acting.
+
+---
+
+# 19. Dead Code Hygiene — Keeping the Codebase Clean
+
+## Why it matters
+
+Every unused file is a liability: it confuses newcomers, wastes build time, and can
+silently break when touched by accident. When a feature is replaced or removed, the
+old code must go with it — not be left as "maybe useful later."
+
+## What we removed
+
+Three React components were built early as prototypes but never wired into the UI:
+- `SemanticMap.jsx` — 2D scatter plot of embeddings via UMAP
+- `CodeGraph.jsx` — call-graph view built on top of React Flow
+- `SequenceDiagram.jsx` — sequence diagram renderer
+
+They were never imported, never rendered. Dead weight.
+
+On the backend, `graph_service.py` and `map_service.py` served `/graph` and `/map`
+endpoints that were only ever called by those deleted components. Removing the services
+meant also removing their imports, their globals in `main.py`, their lifespan
+initialisation, their dependency injectors, and their endpoint handlers.
+
+**Key lesson**: deleting one file often means deleting 5 things — the file, its import,
+its global, its route, and the calls to its methods. Trace the dependency graph fully
+before declaring cleanup done.
+
+## The checklist after any dead-code removal
+
+```
+1. Delete the file
+2. Remove its import from every file that imported it
+3. Remove globals / instances that held the object
+4. Remove the routes or endpoints it backed
+5. Remove calls to its methods from other handlers
+6. Run the app — confirm no NameError or ImportError
+```
+
+---
+
+# 20. Replacing a Third-Party Library with Custom SVG
+
+## The problem with React Flow
+
+React Flow is a full layout engine for node-based editors. It's powerful for drag-and-drop
+workflow builders, but it adds friction when all you need is a static diagram:
+
+- Forces its own DOM structure — every node gets wrapped in React Flow wrappers
+- Injects its own CSS (`@xyflow/react/dist/style.css`) with handles, selection rings, and control buttons
+- Calculates layout in its own coordinate system, making it hard to match visual design from elsewhere
+- Adds 200KB+ to the bundle for features (drag, connect, selection) we never used
+
+The `GraphDiagram` component (Architecture and Class Hierarchy diagrams) used React Flow
+while `ExploreView` used a hand-crafted SVG canvas. The visual mismatch was obvious:
+React Flow's mechanical look vs. Explore's refined custom rendering.
+
+## The custom SVG canvas pattern
+
+ExploreView established a pattern we can reuse everywhere:
+
+```
+┌─────────────────────────────────────────────────┐  ← ec-container (flex column)
+│  [legend bar]                                   │
+│  ┌───────────────────────────────────────────┐  │  ← ec-canvas (position: relative, overflow: hidden)
+│  │  <svg> — arrows layer (position: absolute)│  │
+│  │  <div node> (position: absolute, left, top)│  │  ← ec-card
+│  │  <div node> ...                           │  │
+│  └───────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────┘
+```
+
+Key pieces:
+1. **Canvas div** with `position: relative` — all children absolute-positioned within it
+2. **SVG overlay** stretched to 100%×100% for drawing bezier arrows between nodes
+3. **Pan**: `onMouseDown/Move/Up` track a `pan` ref and apply `translate(x, y)` via CSS transform
+4. **Zoom**: non-passive `wheel` event (must be added via `addEventListener` for `passive: false`)
+   applies `scale(z)` on top of the translate
+5. **Nodes**: plain `div`s styled with `left: node.x` / `top: node.y` matching computed layout
+6. **Edges**: SVG `<path>` elements using cubic bezier curves
+
+## BFS topological layout
+
+To position nodes without a library:
+
+```
+1. Build adjacency list from edges
+2. BFS from root nodes (in-degree 0) → assign each node a column depth
+3. Split columns that exceed MAX_PER_COL rows vertically (wrap into next column)
+4. Compute each column's height = n * CARD_H + (n-1) * ROW_GAP
+5. Center each column against the TALLEST column's height:
+   startY = (maxColH - colH) / 2 + TOP_PADDING   ← CRITICAL: always ≥ 0
+6. Space columns evenly with COL_GAP between them
+```
+
+### The negative-y bug
+
+A common mistake: centering around 0 with `startY = -totalH / 2 + offset`.
+For a single-node column with CARD_H=178 and offset=60:
+```
+startY = -178/2 + 60 = -89 + 60 = -29px   ← node renders ABOVE the canvas
+```
+
+Fix: measure the tallest column first (`maxColH`), then offset every column
+relative to that. The tallest column always starts at `TOP_PADDING`; shorter
+columns start lower. All y values are therefore non-negative.
+
+## Bezier arrow formula
+
+```js
+const tension = Math.abs(x2 - x1) * 0.5;
+const d = `M ${x1} ${y1} C ${x1+tension} ${y1}, ${x2-tension} ${y2}, ${x2} ${y2}`;
+```
+
+`tension` scales with the horizontal distance so short hops get gentle curves
+and long cross-column hops get pronounced S-curves. This is the same formula
+D3 force graphs use for curved links.
+
+## Why remove the library entirely
+
+The best fix for a library causing visual inconsistency is to remove it and own
+the rendering. This gives:
+- Full control over every pixel
+- Shared CSS with the rest of the app (no override battles)
+- Smaller bundle (removed `@xyflow/react`)
+- One rendering pipeline instead of two diverging approaches
+
+---
+
+# 21. API Request Size Limits — The 413 Error
+
+## What happened
+
+After adding Contextual Retrieval (section 14), each chunk's text grew from ~500
+characters to ~8000 characters (the original chunk + the LLM-generated context
+paragraph prepended to it). Batching 96 of these through the Nomic API:
+
+```
+96 chunks × ~8000 chars × ~1 byte/char ≈ 768KB per batch
+```
+
+That sounds fine — but HTTP JSON encoding adds overhead, and Nomic's free-tier
+gateway has a ~10MB request body limit. With large repositories some batches
+exceeded this limit, returning HTTP 413 Request Entity Too Large.
+
+## The fix: two levers
+
+**Lever 1 — smaller batches**: `_BATCH_SIZE = 96` → `_BATCH_SIZE = 32`
+
+Reduces the worst-case batch body from ~768KB to ~256KB. Three times fewer
+chunks per API call, but the extra round trips are cheap compared to the cost
+of a failed 413 and a forced re-index.
+
+**Lever 2 — truncate long texts**: `_MAX_CHARS = 8000` per text before sending
+
+Embedding models have a token limit (~8192 tokens ≈ 6000–8000 chars). Text
+beyond this limit is ignored by the model anyway — the embedding is computed
+only from the first N tokens. Truncating explicitly:
+- Prevents 413 errors on contextually-enriched chunks
+- Makes the request body predictable regardless of chunk content
+- Has negligible effect on retrieval quality (the key signal is at the top)
+
+**Rule of thumb**: `batch_size × max_chars_per_text` should stay well under the
+API's body limit with a 2× safety margin.
+
+---
+
+# 22. Agent Working Memory — The Note/Recall Pattern
+
+## The problem
+
+An LLM agent running a ReAct loop has no memory within a session except what
+fits in its context window. As the loop runs, the context fills with tool outputs,
+and early discoveries can scroll out of the effective window for models with
+shorter contexts.
+
+Worse: the agent might search for the same function twice in different iterations
+because it "forgot" finding it three tool calls ago.
+
+## Claude Code's approach
+
+Claude Code uses a `TodoWrite` tool (persistent task list) and a Memory tool
+(cross-session notes). The key insight is that **memory should be an explicit
+tool call** — the agent actively decides what to remember, not a passive side-effect.
+
+## Our implementation
+
+```python
+# In mcp_server.py
+
+_session_notes: dict[str, str] = {}   # module-level — survives across tool calls
+
+@mcp.tool()
+def note(key: str, value: str) -> str:
+    """Save a key fact to working memory for this session."""
+    _session_notes[key] = value
+    return f"✓ Noted: {key} = {value}"
+
+@mcp.tool()
+def recall_notes() -> str:
+    """Retrieve all facts saved with note() during this session."""
+    ...
+```
+
+In `agent.py`, at the start of every `stream()` call:
+```python
+from backend.mcp_server import clear_notes
+clear_notes()   # Fresh memory for each new question
+```
+
+## System prompt instruction
+
+The system prompt tells the agent:
+```
+WORKING MEMORY — USE IT
+After every discovery, call note(key, value) immediately.
+Call recall_notes() as step 1 before any search, and again before final answer.
+```
+
+Without the explicit instruction, the agent ignores the tools even though they
+exist. **LLMs only use tools they are told to use in the system prompt.**
+
+## What to note vs what not to note
+
+Good candidates for `note()`:
+- File paths where key classes/functions were found
+- Module responsibilities ("auth.py handles JWT validation")
+- Key relationships ("UserService calls AuthService.verify()")
+- Dead ends ("search_code for 'batch_norm' returned no results")
+
+Not worth noting:
+- Raw code snippets (too verbose, already in tool output)
+- Things that are obvious from the question itself
+
+## Comparison
+
+| Without note/recall | With note/recall |
+|---|---|
+| Re-searches the same function | Knows file from earlier note |
+| Loses thread after 8+ tool calls | recall_notes() restores context |
+| Final answer misses early findings | All notes consulted before answering |
+
+---
+
+# 23. Call Chain Tracing — Walking the Execution Graph
+
+## What it enables
+
+"What is the execution path when I call `train()`?" requires following a chain:
+`train → _run_epoch → _forward_pass → _compute_loss → ...`
+
+Standard semantic search finds individual functions but can't reconstruct the
+execution path. `trace_calls` walks it explicitly.
+
+## How it works
+
+The ingestion pipeline already stores a `calls` field in each chunk's payload —
+a list of function names that the function calls. This is parsed from the AST
+at index time.
+
+`trace_calls` does a BFS over this graph:
+
+```python
+def trace_calls(repo: str, symbol_name: str, max_depth: int = 3) -> str:
+    visited = set()
+    queue = [(symbol_name, 0, None)]   # (name, depth, parent)
+    while queue:
+        name, depth, parent = queue.pop(0)
+        if name in visited or depth > min(max_depth, 5):
+            continue
+        visited.add(name)
+        chunk = _store.find_symbol(repo, name)   # Qdrant lookup by name
+        if chunk:
+            # record in output tree
+            for callee in chunk.payload.get("calls", [])[:6]:  # fan-out cap
+                queue.append((callee, depth+1, name))
+```
+
+Output is a markdown call tree:
+```
+trace_calls: train
+  train  [src/trainer.py:45]
+    _run_epoch  [src/trainer.py:88]
+      _forward_pass  [src/model.py:122]
+        _compute_loss  [src/model.py:156]
+```
+
+## Design decisions
+
+- **max_depth hard-capped at 5**: call graphs can be deep and circular. A cap of 5
+  gives 3–4 hops of useful context without risking infinite loops.
+- **fan-out capped at 6**: functions that call 20+ others (e.g. `__init__`) would
+  explode the tree. Cap to the 6 most-called functions per level.
+- **Cycle detection via `visited` set**: function A calling B calling A is common
+  in recursive code. Skip already-visited nodes.
+- **Graceful missing symbols**: if `find_symbol` returns None (function not indexed),
+  note it and continue — don't crash the trace.
+
+## Complementary to find_callers
+
+| Tool | Direction | Question answered |
+|---|---|---|
+| `find_callers` | Up (callers) | "Who calls this function?" |
+| `trace_calls` | Down (callees) | "What does this function call?" |
+
+Together they let the agent answer "explain the full data flow through this system."
+
+---
+
+# 24. Persistent Repo Map — Agent Cross-Session Knowledge
+
+## The cold-start problem
+
+Every agent session starts blind. Even if you've asked 20 questions about
+`karpathy/micrograd`, the next question costs 2-4 tool-call turns just to
+re-orient: list_files → search for entry point → find GPT class → now answer.
+
+Claude Code solves this with CLAUDE.md: a persistent file the agent reads before
+every session. We replicate this pattern with `RepoMapService`.
+
+## What a repo map contains
+
+Built by scanning Qdrant chunk metadata — no LLM calls, no text vectors:
+
+```json
+{
+  "repo": "karpathy/micrograd",
+  "total_chunks": 45,
+  "total_files":  8,
+  "entry_files":  ["micrograd/engine.py"],
+  "key_classes":  ["Value", "Neuron", "Layer", "MLP"],
+  "files": {
+    "micrograd/engine.py": {
+      "classes":   ["Value"],
+      "functions": ["__add__", "__mul__", "__pow__", "backward"]
+    }
+  }
+}
+```
+
+Saved to `backend/repo_maps/{owner}_{name}.json`. Zero cost to load.
+
+## Injecting it into agent context
+
+The map is prepended to the user's first message before any tool calls:
+
+```
+╔══ REPO MAP: karpathy/micrograd (45 chunks, 8 files) ══╗
+  Entry files : engine.py
+  Key classes : Value, Neuron, Layer, MLP
+  Key files   :
+    engine.py        classes: Value  |  fns: __add__, __mul__, backward +2
+    nn.py            classes: Neuron, Layer, MLP  |  fns: __call__, parameters
+╚══ Skip list_files — use this map to target searches directly ══╝
+```
+
+The agent reads this before planning and can skip `list_files` entirely —
+going straight to `search_symbol("Value")` or `trace_calls(repo, "backward")`.
+
+## Token cost
+
+~300 tokens per session. Equivalent to one `search_code` call.
+The saved tool calls (list_files + orient step) cost 2-3x more.
+Net negative token usage for any question longer than trivial.
+
+## Invalidation
+
+After re-ingestion, `RepoMapService.invalidate(repo)` deletes the cached JSON.
+Next agent call rebuilds it from the fresh Qdrant data.
+
+## Key pattern: inject static context before dynamic search
+
+This is a general technique:
+1. Build a cheap static summary from data you already have
+2. Inject it as upfront context
+3. Let the agent use it to avoid expensive discovery calls
+
+Used by: CLAUDE.md, Claude Code's memory tool, GitHub Copilot's workspace index,
+Cursor's codebase index.
+
+---
+
+# 25. Planning Before Acting — Structured Agent Reasoning
+
+## The problem with reactive agents
+
+Without explicit planning, agents jump straight to the first search that occurs
+to them. This leads to:
+- Redundant searches (finds "backward" 3 times with different queries)
+- Missed coverage (searches "forward pass" but forgets to check "loss function")
+- Opaque reasoning (users can't see what the agent is trying to do)
+
+## The solution: structured `<plan>` blocks
+
+The system prompt requires the agent to write a plan before its first tool call:
+
+```
+<plan>
+Goal: find how the training loop calls the backward pass
+Search 1: trace_calls(repo, "train", depth=3) for execution path
+Search 2: search_symbol("backward") for the implementation
+</plan>
+```
+
+This appears as the agent's first "thought bubble" in the UI.
+
+## Why this works
+
+1. **Forces deliberate thinking** — writing the plan slows the agent down just enough
+   to consider multiple angles before committing to the first search
+2. **Prevents backtracking** — agent that planned "search both forward AND backward"
+   in step 1 doesn't need to come back for a second pass later
+3. **Groups parallel searches** — the plan naturally identifies independent searches
+   that can run concurrently (see section 26)
+4. **Visible to users** — the thought bubble shows "here's what I'm going to do"
+   before anything executes, building trust
+
+## Implementation
+
+Pure system prompt change — no code changes required. The agent emits the plan as
+its `content` field before `tool_calls` in the first iteration. The existing
+`_extract_thought()` captures it and the UI renders it as a thought bubble.
+
+## Lesson: prompting is architecture
+
+Adding a planning step is purely a prompting decision, but it changes the agent's
+effective architecture from reactive (stimulus → response) to deliberate
+(stimulus → plan → execute). Many agent "failures" are actually planning failures.
+
+---
+
+# 26. Parallel Tool Execution — asyncio.gather in the ReAct Loop
+
+## The serial bottleneck
+
+Original agent loop: tool calls happen one at a time.
+- LLM returns `[search_code("forward"), search_code("backward")]`
+- Agent calls search 1 → waits 500ms
+- Agent calls search 2 → waits 500ms
+- Total: 1000ms for two independent searches
+
+Both searches hit the same Qdrant service and have no data dependency.
+Running them serially wastes 500ms of wall-clock time per extra tool call.
+
+## asyncio.gather for parallel IO
+
+```python
+# Before: serial
+for tc in step["tool_calls"]:
+    result = await self.mcp.call_tool(tc["name"], tc["input"])
+
+# After: parallel
+async def _run_tool(tc):
+    try:
+        return await self.mcp.call_tool(tc["name"], tc["input"])
+    except Exception as e:
+        return f"Tool error: {e}"
+
+results = await asyncio.gather(*[_run_tool(tc) for tc in new_calls])
+```
+
+`asyncio.gather` runs all coroutines concurrently on the single event loop.
+Since MCP tool calls are async HTTP requests (no CPU blocking), they interleave
+efficiently — the total time is roughly `max(individual_times)` not `sum(times)`.
+
+## UI ordering: emit tool_call first, results after
+
+The tricky part is UX: we want the UI to show "these tools are running" before
+any results arrive. Solution: separate the `yield` calls:
+
+```python
+# 1. Emit all tool_call events upfront (UI shows them immediately)
+for tc in new_calls:
+    yield {"type": "tool_call", "tool": tc["name"], "input": tc["input"]}
+
+# 2. Execute all in parallel
+results = await asyncio.gather(*[_run_tool(tc) for tc in new_calls])
+
+# 3. Emit tool_result events after all complete
+for tc, result in zip(new_calls, results):
+    yield {"type": "tool_result", "tool": tc["name"], "output": result[:500]}
+```
+
+The user sees all tool_call events together, then all results together.
+This correctly communicates "these ran in parallel."
+
+## Deduplication before parallel execution
+
+Duplicate calls (same tool + same args) are filtered out synchronously before
+launching the parallel batch. The `seen_calls` set is checked in the main thread
+(not inside the async task) to avoid race conditions:
+
+```python
+for tc in step["tool_calls"]:
+    call_key = (tc["name"], tuple(sorted(tc["input"].items())))
+    if call_key in seen_calls:
+        # emit skip message, don't add to new_calls
+    else:
+        seen_calls.add(call_key)
+        new_calls.append(tc)
+
+results = await asyncio.gather(*[_run_tool(tc) for tc in new_calls])
+```
+
+## When models emit parallel calls
+
+- **Gemini** (default): emits multiple `tool_calls` in one turn naturally
+- **Groq**: `parallel_tool_calls=False` is set to prevent the hermes bug — single calls only
+- **OpenRouter**: depends on the model; most support parallel tool calls
+
+To encourage parallel calls, the system prompt says:
+> "For multi-part questions, call 2-3 searches in a SINGLE turn — they run in parallel"
+
+---
+
+# 27. Streaming Diagram Generation — SSE Progress for Long LLM Calls
+
+## The blank spinner problem
+
+Generating a codebase tour takes 5-10 seconds (Qdrant scan + LLM call).
+During this time the user sees a spinner with no feedback — "is it working?
+did it hang? how long will this take?"
+
+The solution: stream progress events over SSE, the same mechanism used for
+the agent's tool-call trace.
+
+## Generator-based progress
+
+`DiagramService.build_tour_stream()` is a synchronous Python generator that
+yields `(stage, progress, data)` dicts at key checkpoints:
+
+```python
+def build_tour_stream(self, repo: str):
+    yield {"stage": "loading",    "progress": 0.10, "message": "Loading chunks…"}
+    chunks = self._list_chunks(repo)
+
+    yield {"stage": "analysing",  "progress": 0.35, "message": "Analysing chunks…"}
+    # ... rank and build prompt ...
+
+    yield {"stage": "generating", "progress": 0.55, "message": "Generating tour with AI…"}
+    raw = self._gen.generate(...)   # ← the slow part
+
+    yield {"stage": "parsing",    "progress": 0.90, "message": "Finalizing…"}
+    # ... parse and validate ...
+
+    yield {"stage": "done",       "progress": 1.00, **tour}
+```
+
+The LLM call (stage "generating") is where time is actually spent — the user
+now sees progress jump from 35% to 55% when it starts, and to 90% when it finishes.
+
+## Bridging sync generator → async SSE
+
+The generator is synchronous but the FastAPI endpoint is async. We bridge them
+with the same `asyncio.Queue + run_in_executor` pattern used by `_stream_final_answer`:
+
+```python
+@app.get("/repos/{owner}/{name}/tour/stream")
+async def stream_tour(owner, name, diagram_svc):
+    async def _event_stream():
+        queue = asyncio.Queue()
+        loop  = asyncio.get_running_loop()
+
+        def _run():
+            for event in diagram_svc.build_tour_stream(repo):
+                loop.call_soon_threadsafe(queue.put_nowait, event)
+            loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinel
+
+        loop.run_in_executor(None, _run)   # run sync gen in thread pool
+
+        while True:
+            event = await queue.get()
+            if event is None: break
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(_event_stream(), media_type="text/event-stream")
+```
+
+## Frontend progress bar
+
+The client subscribes via fetch + ReadableStream (same pattern as agent streaming).
+Progress events update a `loadStage` state that drives a CSS progress bar:
+
+```jsx
+<div style={{
+  height: "100%",
+  width: `${pct}%`,         // ← animated from 0 to 100
+  background: "var(--accent)",
+  transition: "width 0.4s ease",  // ← smooth animation between stages
+}} />
+```
+
+The `transition: width 0.4s ease` makes the bar glide smoothly between the
+discrete progress checkpoints (10% → 35% → 55% → 90% → 100%) rather than
+jumping abruptly.
+
+## Why generators, not callbacks
+
+An alternative would be a progress callback:
+```python
+def build_tour(self, repo, progress_cb=None):
+    progress_cb(0.1, "Loading…")
+    ...
+```
+
+Generators are cleaner because:
+- No callback parameter threaded through every helper method
+- `yield` composes naturally with other generators
+- The caller (SSE endpoint) pulls at its own pace
+- Easier to test: just iterate the generator and inspect yields
+
+## Token cost
+
+Zero extra tokens. The LLM call is identical to the non-streaming version.
+
+---
+
+# 28. Docker CI/CD Pipeline — GitHub Actions + HuggingFace Spaces + Vercel
+
+## What CI/CD means
+
+**CI** (Continuous Integration): every push to `main` automatically runs checks
+(lint, build, syntax) to catch errors before they land.
+
+**CD** (Continuous Deployment): if those checks pass, the new code is automatically
+deployed to production. No manual steps, no "remember to deploy" errors.
+
+```
+git push main
+    ↓
+GitHub Actions triggers
+    ├── CI job: lint + build (catches errors)
+    └── Deploy jobs (run in parallel if CI passes):
+        ├── deploy-backend  → HuggingFace Spaces
+        └── deploy-frontend → Vercel
+```
+
+## The deployment architecture
+
+```
+HuggingFace Spaces (free)          Vercel (free)
+┌──────────────────────┐           ┌──────────────────────┐
+│ Docker container     │           │ Static CDN           │
+│ port 7860            │    ←──    │ React SPA            │
+│ FastAPI + Qdrant     │  API req  │ VITE_API_URL=HF URL  │
+│ Python 3.11          │           │ 100+ edge nodes      │
+└──────────────────────┘           └──────────────────────┘
+```
+
+- **HF Spaces** runs your Docker container. It's a full server with persistent
+  processes, suitable for a FastAPI backend.
+- **Vercel** hosts static files (your compiled React app). It has no server
+  process — just CDN nodes serving HTML/JS/CSS.
+- They communicate at runtime: the browser makes `fetch()` calls from the Vercel
+  URL to the HF Space URL.
+
+## The monorepo problem — `git subtree split`
+
+Our project lives inside a subdirectory of a larger repo:
+```
+deep-learning-from-scratch/
+└── github-rag-copilot/    ← our project
+    ├── Dockerfile          ← HF Spaces needs this at ROOT
+    ├── backend/
+    └── ui/
+```
+
+HuggingFace Spaces expects `Dockerfile` at the repository root. But we can't
+push the entire monorepo — HF would see no Dockerfile at the root.
+
+**`git subtree split`** solves this:
+
+```bash
+git subtree split --prefix=github-rag-copilot -b hf-deploy
+```
+
+This command rewrites git history to create a new branch where:
+- `github-rag-copilot/Dockerfile` becomes `./Dockerfile`
+- `github-rag-copilot/backend/main.py` becomes `./backend/main.py`
+- Every other directory is removed
+
+Then we push that branch as `main` to the HF Space's git endpoint:
+```bash
+git push https://user:$TOKEN@huggingface.co/spaces/user/space hf-deploy:main --force
+```
+
+`--force` is needed because subtree split produces different commit SHAs each
+time (history is being rewritten). The HF Space repo is a pure deploy target,
+so force-pushing it is safe.
+
+## GitHub Actions concepts
+
+### Secrets vs Variables
+
+```yaml
+${{ secrets.HF_TOKEN }}     # encrypted, never shown in logs
+${{ vars.HF_USERNAME }}     # plain text, visible in logs
+```
+
+Use **secrets** for anything sensitive: tokens, API keys, passwords.
+Use **vars** for non-sensitive config: usernames, space names, URLs.
+
+### `fetch-depth: 0`
+
+By default, `actions/checkout@v4` does a shallow clone (only the latest commit).
+`git subtree split` needs to walk the full history to know which commits touched
+the subdirectory. `fetch-depth: 0` fetches everything.
+
+### Parallel jobs
+
+```yaml
+jobs:
+  deploy-backend:   # starts immediately
+    ...
+  deploy-frontend:  # starts immediately, in parallel
+    ...
+```
+
+Jobs in GitHub Actions run in parallel unless you add `needs: [job-name]`.
+Since backend and frontend are independent, both deploy at the same time.
+Total deploy time ≈ max(backend, frontend) instead of sum.
+
+### `concurrency`
+
+```yaml
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+If you push twice in quick succession, this cancels the first deploy before
+starting the second. Prevents two deploys racing to overwrite each other.
+
+## Vercel CLI deployment
+
+```bash
+npx vercel --prod --token="$VERCEL_TOKEN" --yes
+```
+
+- `npx vercel` downloads and runs the Vercel CLI without global installation
+- `--prod` promotes the deployment to the production URL (not a preview URL)
+- `--token` authenticates via the secret stored in GitHub
+- `--yes` skips interactive confirmation (required in non-TTY environments like CI)
+- `VERCEL_ORG_ID` + `VERCEL_PROJECT_ID` env vars tell the CLI which project to deploy
+
+## VITE_API_URL — baked at build time
+
+Vite replaces `import.meta.env.VITE_API_URL` with a literal string at build time:
+```js
+// Source code:
+const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+// After Vite build with VITE_API_URL=https://umang-github-rag-copilot.hf.space:
+const BASE = "https://umang-github-rag-copilot.hf.space";
+```
+
+This means the production build always points to the right backend without any
+runtime configuration. The tradeoff: changing the backend URL requires rebuilding
+the frontend.
+
+## One-time setup checklist
+
+Before the GitHub Actions workflow will succeed, you need:
+
+**HuggingFace Space:**
+- [ ] Create a new Space with SDK = Docker at `https://huggingface.co/new-space`
+- [ ] Set env vars in Space → Settings → Variables (not in Dockerfile):
+      `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION`, `GROQ_API_KEY`,
+      `GEMINI_API_KEY`, `NOMIC_API_KEY`, `FRONTEND_URL` (Vercel URL)
+- [ ] Generate a token at `https://huggingface.co/settings/tokens` with Write permission
+
+**Vercel:**
+- [ ] Create project at `https://vercel.com/new`, root dir = `github-rag-copilot/ui`
+- [ ] Set `VITE_API_URL` = your HF Space URL in Vercel project env vars
+- [ ] Get `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` from `.vercel/project.json`
+      after running `npx vercel link` locally once
+
+**GitHub repo secrets/variables:**
+- [ ] `HF_TOKEN` (secret), `VERCEL_TOKEN` (secret)
+- [ ] `VERCEL_ORG_ID` (secret), `VERCEL_PROJECT_ID` (secret)
+- [ ] `HF_USERNAME` (var), `HF_SPACE_NAME` (var), `HF_SPACE_URL` (var)
+Only the delivery mechanism changes — progress events are pure metadata.

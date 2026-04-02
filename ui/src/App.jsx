@@ -6,6 +6,7 @@ import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpProm
 
 export default function App() {
   const [repos, setRepos]           = useState([]);
+  const [reposLoading, setReposLoading] = useState(true);
   const [activeRepo, setActiveRepo] = useState(null);
   const [mode, setMode]             = useState("hybrid");
   const [agentMode, setAgentMode]   = useState(() => localStorage.getItem('ghrc_agentMode') === 'true');
@@ -211,6 +212,7 @@ export default function App() {
   // Auto-selects the only repo if exactly one is indexed, so new users land in
   // single-repo mode rather than the "All repos" cross-repo view.
   const loadRepos = useCallback(async () => {
+    setReposLoading(true);
     try {
       const data = await fetchRepos();
       const list = data.repos || [];
@@ -222,6 +224,8 @@ export default function App() {
       }
     } catch {
       setBackendOk(false);
+    } finally {
+      setReposLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -542,6 +546,7 @@ export default function App() {
 
       <Sidebar
         repos={repos}
+        reposLoading={reposLoading}
         activeRepo={activeRepo}
         onSelectRepo={setActiveRepo}
         onReposChange={loadRepos}

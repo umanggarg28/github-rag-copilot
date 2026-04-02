@@ -14,8 +14,8 @@
  *   - Hover a node          → dims unrelated nodes, highlights connections
  */
 
-import { useEffect, useState } from "react";
-import { fetchDiagram } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { streamDiagram } from "../api";
 import ExploreView from "./ExploreView";
 import GraphDiagram from "./GraphDiagram";
 import NodeDetailPanel from "./NodeDetailPanel";
@@ -57,15 +57,21 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
   }
 
   const [loading, setLoading]         = useState(false);
+  const [loadStage, setLoadStage]     = useState(null);  // { stage, progress, message }
   const [error, setError]             = useState(null);
   const [diagramData, setDiagramData] = useState(null);
   const [cache, setCache]             = useState({});
-  const [retryKey, setRetryKey]       = useState(0);
+  // Per-type retry counter — using a single shared counter caused switching tabs
+  // while retryKey > 0 to bypass the cache for the OTHER diagram type too.
+  const [retryKeys, setRetryKeys]     = useState({});  // { "architecture": 1, "class": 0, ... }
   const [fullscreen, setFullscreen]   = useState(false);
 
   // ── Inline detail panel state ─────────────────────────────────────────────
   // subject = { kind, label, type, file, description, items, autoQuestion? }
   const [selected, setSelected] = useState(null);
+
+  // Ref passed into ExploreView so we can call its force-reload from our header
+  const exploreRegenRef = useRef(null);
 
   const isExplore = diagramType === "explore";
   const selectedTypeDef = ALL_TABS.find(t => t.id === diagramType);
@@ -73,31 +79,32 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
   // ── Fetch diagram ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!repo || isExplore) return;
-    if (retryKey === 0 && cache[diagramType]) {
+    if (!retryKeys[diagramType] && cache[diagramType]) {
       setDiagramData(cache[diagramType]);
       setError(null);
       return;
     }
-    let cancelled = false;
     setLoading(true);
+    setLoadStage(null);
     setError(null);
     setDiagramData(null);
-    fetchDiagram(repo, diagramType)
-      .then(data => {
-        if (cancelled) return;
+    const cancel = streamDiagram(repo, diagramType, {
+      onProgress: (ev) => setLoadStage(ev),
+      onDone: ({ diagram, type }) => {
         setLoading(false);
-        if (data.error) { setError(data.error); return; }
-        setCache(prev => ({ ...prev, [diagramType]: data.diagram }));
-        setDiagramData(data.diagram);
-        setRetryKey(0);
-      })
-      .catch(err => {
-        if (cancelled) return;
+        setLoadStage(null);
+        setCache(prev => ({ ...prev, [diagramType]: diagram }));
+        setDiagramData(diagram);
+        setRetryKeys(prev => ({ ...prev, [diagramType]: 0 }));
+      },
+      onError: (msg) => {
         setLoading(false);
-        setError(err.message);
-      });
-    return () => { cancelled = true; };
-  }, [repo, diagramType, retryKey, isExplore]);
+        setLoadStage(null);
+        setError(msg);
+      },
+    });
+    return cancel;
+  }, [repo, diagramType, retryKeys[diagramType], isExplore]);
 
   // Reset on repo change — always land on Explore so the concept map is the
   // first thing seen when switching repos.
@@ -105,7 +112,7 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
     setCache({});
     setDiagramData(null);
     setError(null);
-    setRetryKey(0);
+    setRetryKeys({});
     setSelected(null);
     setDiagramType("explore");
     localStorage.setItem("ghrc_diagramType", "explore");
@@ -124,7 +131,7 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
     setDiagramData(null);
     setError(null);
     setSelected(null);
-    setRetryKey(k => k + 1);
+    setRetryKeys(prev => ({ ...prev, [diagramType]: (prev[diagramType] || 0) + 1 }));
   }
 
   // When user clicks "Open in full chat →" from the detail panel
@@ -143,38 +150,48 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
             {isExplore ? `Explore — ${repo}` : `System Diagram — ${repo}`}
           </span>
         )}
-        <button
-          className="diagram-fullscreen-btn"
-          onClick={() => setFullscreen(f => !f)}
-          title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-          aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-          style={{ marginLeft: "auto" }}
-        >
-          {fullscreen ? (
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M5.5 0a.5.5 0 0 1 .5.5v4A1.5 1.5 0 0 1 4.5 6h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5m5 0a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 10 4.5v-4a.5.5 0 0 1 .5-.5M0 10.5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 6 11.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5m10 1a1.5 1.5 0 0 1 1.5-1.5h4a.5.5 0 0 1 0 1h-4a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0z"/>
-            </svg>
-          ) : (
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M1.5 1h4a.5.5 0 0 1 0 1h-4a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 1m9 0h4A1.5 1.5 0 0 1 16 2.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1 0-1m-9 9a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 13.5v-4a.5.5 0 0 1 .5-.5m15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5"/>
-            </svg>
-          )}
-        </button>
-        {diagramData && !isExplore && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button className="diagram-ask-btn" onClick={handleRegenerate} title="Generate a fresh diagram">
+        {/* Right-side controls — action buttons then fullscreen on the far right */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>
+          {isExplore ? (
+            <button className="diagram-retry-btn" onClick={() => exploreRegenRef.current?.()} title="Generate a fresh tour">
               ↺ Regenerate
             </button>
-            <button
-              className="diagram-ask-btn"
-              onClick={() => onAskAbout?.(
-                `Explain the ${selectedTypeDef?.label.toLowerCase()} of ${repo} — walk me through each component and how they connect`
-              )}
-            >
-              Ask about this →
-            </button>
-          </div>
-        )}
+          ) : diagramData && (
+            <>
+              <button className="diagram-retry-btn" onClick={handleRegenerate} title="Generate a fresh diagram">
+                ↺ Regenerate
+              </button>
+              <button
+                className="diagram-ask-btn"
+                onClick={() => onAskAbout?.(
+                  `Explain the ${selectedTypeDef?.label.toLowerCase()} of ${repo} — walk me through each component and how they connect`
+                )}
+              >
+                Ask about this →
+              </button>
+            </>
+          )}
+          <button
+            className="diagram-fullscreen-btn"
+            onClick={() => setFullscreen(f => !f)}
+            title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+            aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+          >
+            {fullscreen ? (
+              /* Compress — 4 inward corners */
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" style={{ display: "block" }}>
+                <path d="M6 1v5H1"/><path d="M10 1v5h5"/>
+                <path d="M6 15v-5H1"/><path d="M10 15v-5h5"/>
+              </svg>
+            ) : (
+              /* Expand — 4 outward corners */
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" style={{ display: "block" }}>
+                <path d="M1 6V1h5"/><path d="M15 6V1h-5"/>
+                <path d="M1 10v5h5"/><path d="M15 10v5h-5"/>
+              </svg>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* ── Focus Files banner ── */}
@@ -199,11 +216,11 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
             onClick={() => setType("explore")}
             style={{
               background: diagramType === "explore"
-                ? "rgba(124,58,237,0.18)"
-                : "rgba(124,58,237,0.07)",
+                ? "rgba(212,132,90,0.18)"
+                : "rgba(212,132,90,0.07)",
               borderColor: diagramType === "explore"
-                ? "rgba(124,58,237,0.55)"
-                : "rgba(124,58,237,0.25)",
+                ? "rgba(212,132,90,0.55)"
+                : "rgba(212,132,90,0.25)",
             }}
           >
             <span className="diagram-type-icon" style={{ color: "var(--accent-soft)" }}>◈</span>
@@ -237,13 +254,33 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
       <div className="diagram-canvas" style={{ display: "flex", flexDirection: "column", overflow: "hidden", alignItems: "stretch", minHeight: 0 }}>
         <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>
           {isExplore ? (
-            <ExploreView repo={repo} onAskAbout={onAskAbout} />
+            <ExploreView repo={repo} onAskAbout={onAskAbout} onRegenerateRef={exploreRegenRef} />
           ) : (
             <>
               {loading && (
                 <div className="diagram-loading">
                   <span className="spinner" />
-                  Analysing codebase and generating {selectedTypeDef?.label.toLowerCase()} diagram…
+                  <div style={{ flex: 1, maxWidth: 300 }}>
+                    <div>{loadStage?.message || `Generating ${selectedTypeDef?.label.toLowerCase()} diagram…`}</div>
+                    {loadStage && (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{
+                          height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden",
+                        }}>
+                          <div style={{
+                            height: "100%",
+                            width:  `${Math.round((loadStage.progress || 0) * 100)}%`,
+                            background:  "var(--accent)",
+                            borderRadius: 2,
+                            transition:  "width 0.4s ease",
+                          }} />
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
+                          {Math.round((loadStage.progress || 0) * 100)}%
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
               {error && (

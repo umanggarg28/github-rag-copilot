@@ -45,8 +45,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from backend.config import settings
 
 
-_NOMIC_API_URL = "https://api-atlas.nomic.ai/v1/embedding/text"
-_BATCH_SIZE    = 96   # conservative batch — avoids timeout on large chunks
+_NOMIC_API_URL  = "https://api-atlas.nomic.ai/v1/embedding/text"
+_BATCH_SIZE     = 32    # Nomic has a ~10MB request body limit; 32 chunks keeps us safe
+                        # even for large contextually-enriched chunks (~8KB each)
+_MAX_CHARS      = 8000  # truncate each text before sending — embeddings degrade
+                        # gracefully on truncation, and models have a token limit anyway
 
 
 class Embedder:
@@ -111,8 +114,13 @@ class Embedder:
         task_type="search_document" / input_type="document" tells the model
         these are passages being stored — it applies a different projection
         than for queries, which improves retrieval precision.
+
+        Texts are truncated to _MAX_CHARS before sending. Embedding models have
+        a token limit (~8192 tokens) and API gateways have a request body size
+        limit (~10MB). Truncation degrades retrieval quality marginally but
+        avoids 413 errors on large class definitions or contextually-enriched chunks.
         """
-        texts = [c["text"] for c in chunks]
+        texts = [c["text"][:_MAX_CHARS] for c in chunks]
         if self._provider == "voyage":
             return self._voyage_embed(texts, input_type="document")
         return self._nomic_embed(texts, task_type="search_document")
@@ -176,10 +184,14 @@ class Embedder:
     # ── Nomic API implementation ───────────────────────────────────────────────
 
     def _nomic_embed(self, texts: list[str], task_type: str) -> list[list[float]]:
-        """Call Nomic Atlas API with batching. Returns list of 768-dim vectors."""
+        """Call Nomic Atlas API with batching. Returns list of 768-dim vectors.
+
+        Each text is truncated to _MAX_CHARS so a batch of 32 stays well under
+        the 10MB request body limit even for contextually-enriched chunks.
+        """
         all_embeddings: list[list[float]] = []
         for i in range(0, len(texts), _BATCH_SIZE):
-            batch      = texts[i : i + _BATCH_SIZE]
+            batch      = [t[:_MAX_CHARS] for t in texts[i : i + _BATCH_SIZE]]
             embeddings = self._nomic_call_api(batch, task_type)
             all_embeddings.extend(embeddings)
         return all_embeddings

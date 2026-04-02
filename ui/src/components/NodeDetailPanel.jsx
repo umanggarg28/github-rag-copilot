@@ -23,10 +23,10 @@ const summaryCache = new Map();
 
 // ── Type colours (matches GraphDiagram.jsx TYPE_STYLE dots) ──────────────────
 const TYPE_COLOR = {
-  module:    "#fbbf24", class:    "#a78bfa", abstract: "#c4b5fd",
-  mixin:     "#ddd6fe", service:  "#2dd4bf", database: "#fbbf24",
-  external:  "#9CA3AF", input:    "#2dd4bf", transform: "#818CF8",
-  output:    "#f472b6", edge:     "#6b7280",
+  module:    "#FBBF24", class:    "#E09A72", abstract: "#D4845A",
+  mixin:     "#C4603A", service:  "#5DC4B0", database: "#FBBF24",
+  external:  "#8A7A64", input:    "#5DC4B0", transform: "#EDBA9A",
+  output:    "#C4845A", edge:     "#8A7A64",
 };
 
 // ── Chevron SVGs — same viewport as DiagramView fullscreen icons ──────────────

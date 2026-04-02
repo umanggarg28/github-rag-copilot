@@ -27,6 +27,8 @@ Endpoints:
   GET  /query/stream             — RAG with SSE streaming
   POST /agent/query              — Agentic RAG (synchronous)
   GET  /agent/stream             — Agentic RAG with SSE streaming
+  GET  /repos/{owner}/{name}/tour    — guided concept tour (ExploreView)
+  GET  /repos/{owner}/{name}/diagram — architecture / class diagrams
   GET  /mcp-status               — MCP server info (tools, resources, prompts)
   POST /mcp                      — MCP protocol endpoint (for MCP clients)
 """
@@ -55,9 +57,8 @@ from backend.config import settings
 from backend.services.ingestion_service import IngestionService
 from backend.services.generation import GenerationService, classify_query
 from backend.services.agent import AgentService
-from backend.services.graph_service import GraphService
-from backend.services.map_service import MapService
 from backend.services.diagram_service import DiagramService
+from backend.services.repo_map_service import RepoMapService
 from backend.mcp_server import mcp, init_services as init_mcp_services
 from backend.mcp_client import MCPClient
 from retrieval.retrieval import RetrievalService, Reranker
@@ -77,9 +78,8 @@ _ingestion_service:  IngestionService  | None = None
 _retrieval_service:  RetrievalService  | None = None
 _generation_service: GenerationService | None = None
 _agent_service:      AgentService      | None = None
-_graph_service:      GraphService      | None = None
-_map_service:        MapService        | None = None
 _diagram_service:    DiagramService    | None = None
+_repo_map_service:   RepoMapService    | None = None
 _mcp_client:         MCPClient         | None = None
 
 
@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
     Shutdown: (add cleanup here if needed).
     """
     global _ingestion_service, _retrieval_service, _generation_service
-    global _agent_service, _graph_service, _map_service, _diagram_service, _mcp_client
+    global _agent_service, _diagram_service, _repo_map_service, _mcp_client
 
     print("Starting up — loading models and connecting to Qdrant...")
 
@@ -115,9 +115,8 @@ async def lifespan(app: FastAPI):
     # Both use the same GenerationService instance — one provider, no double-init.
     _retrieval_service  = RetrievalService(embedder=_embedder, store=_qdrant_store, reranker=_reranker, gen=_generation_service)
     _ingestion_service  = IngestionService(store=_qdrant_store, embedder=_embedder, gen=_generation_service)
-    _graph_service      = GraphService(_qdrant_store)
-    _map_service        = MapService(_qdrant_store)
     _diagram_service    = DiagramService(_qdrant_store, _generation_service)
+    _repo_map_service   = RepoMapService(_qdrant_store)
 
     # ── MCP server setup ───────────────────────────────────────────────────────
     # Inject shared service instances into the MCP server's tool functions.
@@ -126,7 +125,7 @@ async def lifespan(app: FastAPI):
     # ── MCP client + agent setup ───────────────────────────────────────────────
     if settings.groq_api_key or settings.gemini_api_key or settings.openrouter_api_key or settings.anthropic_api_key:
         _mcp_client    = MCPClient(server_url="http://localhost:8000/mcp")
-        _agent_service = AgentService(_mcp_client)
+        _agent_service = AgentService(_mcp_client, repo_map_svc=_repo_map_service)
         print("AgentService ready (MCP-powered agentic RAG enabled).")
     else:
         print("No GROQ_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY — /agent/* endpoints disabled.")
@@ -251,16 +250,6 @@ def get_generation_service() -> GenerationService:
         raise RuntimeError("GenerationService not initialised")
     return _generation_service
 
-def get_graph_service() -> GraphService:
-    if _graph_service is None:
-        raise RuntimeError("GraphService not initialised")
-    return _graph_service
-
-def get_map_service() -> MapService:
-    if _map_service is None:
-        raise RuntimeError("MapService not initialised")
-    return _map_service
-
 def get_diagram_service() -> DiagramService:
     if _diagram_service is None:
         raise RuntimeError("DiagramService not initialised")
@@ -346,11 +335,12 @@ async def ingest_repo(
         # Running it in the main event loop would block ALL other requests for minutes.
         # asyncio.to_thread() offloads it to a thread pool — the loop stays responsive.
         result = await asyncio.to_thread(svc.ingest, request.repo_url, request.force)
-        # Invalidate stale diagrams and map — they were generated from the old chunk set.
-        if _diagram_service and result.get("repo"):
-            _diagram_service.invalidate(result["repo"])
-        if _map_service and result.get("repo"):
-            _map_service.invalidate(result["repo"])
+        # Invalidate stale diagrams and repo map — they were built from the old chunk set.
+        if result.get("repo"):
+            if _diagram_service:
+                _diagram_service.invalidate(result["repo"])
+            if _repo_map_service:
+                _repo_map_service.invalidate(result["repo"])
         # Record ingestion timestamp for the staleness indicator in the UI.
         if result.get("repo"):
             now = datetime.now(timezone.utc).isoformat()
@@ -402,11 +392,11 @@ async def ingest_stream(repo: str, request: Request):
                 False,  # force=False
                 _progress,
             )
-            # Invalidate stale diagrams and map after successful ingestion
+            # Invalidate stale diagrams and repo map after successful ingestion
             if _diagram_service:
                 _diagram_service.invalidate(repo)
-            if _map_service:
-                _map_service.invalidate(repo)
+            if _repo_map_service:
+                _repo_map_service.invalidate(repo)
             # Record ingestion timestamp for the staleness indicator
             _repo_indexed_at[repo] = datetime.now(timezone.utc).isoformat()
         except Exception as e:
@@ -473,28 +463,6 @@ async def delete_repo(
     return {"repo": slug, "chunks_deleted": deleted}
 
 
-# ── Routes: Code Graph ────────────────────────────────────────────────────────
-
-@app.get("/repos/{owner}/{name}/graph", tags=["graph"])
-async def get_repo_graph(
-    owner: str,
-    name: str,
-    graph_svc: Annotated[GraphService, Depends(get_graph_service)],
-):
-    """
-    Build and return the call graph for an indexed repository.
-
-    Returns nodes (functions/classes) and edges (call relationships)
-    in D3-compatible format. Node size is proportional to caller_count.
-    """
-    repo = f"{owner}/{name}"
-    try:
-        graph = graph_svc.build_graph(repo)
-        return graph
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Graph build failed: {e}")
-
-
 @app.get("/repos/{owner}/{name}/tour", tags=["diagram"])
 async def get_tour(
     owner:       str,
@@ -516,6 +484,104 @@ async def get_tour(
         return await asyncio.to_thread(diagram_svc.build_tour, repo)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Tour generation failed: {e}")
+
+
+@app.get("/repos/{owner}/{name}/tour/stream", tags=["diagram"])
+async def stream_tour(
+    owner:       str,
+    name:        str,
+    diagram_svc: Annotated[DiagramService, Depends(get_diagram_service)],
+):
+    """
+    Stream codebase tour generation as Server-Sent Events.
+
+    Replaces the blank spinner with live progress events:
+      { "stage": "loading|analysing|generating|parsing|done|error",
+        "progress": 0.0-1.0,
+        "message": "human-readable status" }   ← all stages except done/error
+      { "stage": "done", "progress": 1.0, ...full_tour_data }
+
+    Same data as GET /tour but streamed — no extra LLM calls, same token cost.
+    """
+    repo = f"{owner}/{name}"
+
+    async def _event_stream():
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            try:
+                for event in diagram_svc.build_tour_stream(repo):
+                    loop.call_soon_threadsafe(queue.put_nowait, event)
+            except Exception as e:
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    {"stage": "error", "progress": 1.0, "error": str(e)},
+                )
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        asyncio.get_running_loop().run_in_executor(None, _run)
+
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/repos/{owner}/{name}/diagram/stream", tags=["diagram"])
+async def stream_diagram(
+    owner:        str,
+    name:         str,
+    diagram_svc:  Annotated[DiagramService, Depends(get_diagram_service)],
+    type:         str = Query("architecture", description="architecture | class"),
+):
+    """
+    Stream diagram generation as Server-Sent Events.
+
+    Progress stages:
+      loading (0.10) → building (0.40) → enriching (0.70) → done (1.00)
+
+    Final event: { "stage": "done", "diagram": {...}, "type": "architecture" }
+    """
+    repo = f"{owner}/{name}"
+
+    async def _event_stream():
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            try:
+                for event in diagram_svc.build_diagram_stream(repo, type):
+                    loop.call_soon_threadsafe(queue.put_nowait, event)
+            except Exception as e:
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    {"stage": "error", "progress": 1.0, "error": str(e)},
+                )
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        asyncio.get_running_loop().run_in_executor(None, _run)
+
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/repos/{owner}/{name}/diagram", tags=["diagram"])
@@ -543,59 +609,6 @@ async def get_diagram(
         return await asyncio.to_thread(diagram_svc.build_diagram, repo, type)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Diagram generation failed: {e}")
-
-
-@app.post("/repos/{owner}/{name}/map/project", tags=["map"])
-async def project_query_onto_map(
-    owner: str,
-    name: str,
-    body: dict,
-    map_svc: Annotated[MapService, Depends(get_map_service)],
-):
-    """
-    Project a query embedding onto the existing 2D map coordinates.
-
-    Accepts {"embedding": [float, ...]} (768-dim).
-    Returns {"x": float, "y": float} in the same space as /map nodes,
-    or 404 if the map hasn't been built for this repo yet.
-
-    This powers the retrieval overlay: the frontend sends the query vector
-    here, gets back (x, y), and draws a star where the question lands on the map.
-    """
-    repo = f"{owner}/{name}"
-    embedding = body.get("embedding")
-    if not embedding:
-        raise HTTPException(status_code=422, detail="embedding required")
-    result = await asyncio.to_thread(map_svc.project_embedding, repo, embedding)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Map not built for this repo yet — call /map first")
-    x, y = result
-    return {"x": x, "y": y}
-
-
-
-@app.get("/repos/{owner}/{name}/map", tags=["map"])
-async def get_repo_map(
-    owner: str,
-    name: str,
-    map_svc: Annotated[MapService, Depends(get_map_service)],
-):
-    """
-    Build and return the 2D Semantic Code Map for an indexed repository.
-
-    Projects every chunk's 768-dim embedding to 2D using PCA so that
-    semantically similar code (functions doing similar things) clusters
-    together visually. The result is cached — re-ingest to refresh.
-
-    Returns:
-        nodes: list of {id, x, y, name, filepath, chunk_type, start_line, end_line}
-        stats: {node_count}
-    """
-    repo = f"{owner}/{name}"
-    try:
-        return await asyncio.to_thread(map_svc.build_map, repo)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Map build failed: {e}")
 
 
 # ── Routes: Search ─────────────────────────────────────────────────────────────

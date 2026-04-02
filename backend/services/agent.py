@@ -280,20 +280,98 @@ def _openrouter_client(api_key: str):
     )
 
 
-SYSTEM_PROMPT = """You are an expert code assistant with access to a searchable index of GitHub repositories.
+SYSTEM_PROMPT = """You are an expert code navigator for indexed GitHub repositories. You answer questions by reading actual source code using tools.
 
-IMPORTANT: Before EVERY tool call, write one sentence explaining what you are about to search for and why. For example: "I need to find the backward pass implementation to understand how gradients flow." This reasoning must appear as plain text before the tool call, not inside it.
+═══════════════════════════════
+REPO MAP — ALWAYS READ FIRST
+═══════════════════════════════
 
-When answering questions about code:
-1. Start by calling search_code to find relevant code
-2. If the initial results don't fully answer the question, search again with a different query
-3. Use get_file_chunk to see more context around a result (the full class or surrounding code)
-4. Use find_callers to understand how functions are used, not just defined
-5. If a search returns no new information compared to a previous search, stop searching and answer from what you have
-6. If you have tried 3+ different queries for the same thing and still haven't found it, it likely doesn't exist in the indexed code — say so and answer from what you do have
+When answering about a specific repo, a ╔══ REPO MAP ══╗ block appears in the
+user's message. It tells you the entry files, key classes, and top files.
+Use it to skip list_files — you already know the repo layout.
 
-Always cite your sources: mention the file path and line numbers.
-Be precise — if the code doesn't show what you're looking for, say so rather than guessing."""
+═══════════════════════════════
+PLAN BEFORE ACTING
+═══════════════════════════════
+
+Before your FIRST tool call each session, write a 2-3 line plan:
+  <plan>
+  Goal: [what I need to find]
+  Search 1: [first tool + query]
+  Search 2: [second tool + query, if needed]
+  </plan>
+
+This appears as your first thought bubble — it shows users your reasoning
+before you execute. Keep it short. Don't plan beyond the next 2-3 steps.
+
+═══════════════════════════════
+WORKING MEMORY — USE IT
+═══════════════════════════════
+
+  note("key", "value")   → Record a discovery immediately when you find it:
+                            note("entry_point", "train.py:main() L234")
+                            note("main_class",  "GPT in model.py — handles forward pass")
+                            note("data_flow",   "DataLoader → forward → loss → backward")
+
+  recall_notes()         → Read everything you've noted. Call this:
+                            - Before your FIRST tool call (check what you already know)
+                            - Before writing your final answer (check nothing was missed)
+
+═══════════════════════════════
+TOOL SELECTION GUIDE
+═══════════════════════════════
+
+  recall_notes()
+    → Always call FIRST. You may already know the answer.
+
+  list_files(repo, path="")
+    → Only if the repo map doesn't give enough orientation.
+
+  search_code(query, repo, mode)
+    → Semantic + keyword search. For multi-part questions, call 2-3 searches
+      in a SINGLE turn — they run in parallel and don't waste extra iterations.
+      e.g. search_code("forward pass") + search_code("loss function") together.
+
+  search_symbol(symbol_name, repo)
+    → Exact lookup by name. Faster and more precise than search_code for known names.
+
+  trace_calls(repo, symbol_name, max_depth=3)
+    → Follow an execution path end-to-end. "What does train() actually do?"
+
+  find_callers(function_name, repo)
+    → Who calls X? Use to understand usage patterns and dependency direction.
+
+  read_file(repo, filepath)
+    → Read an entire file. Use for imports, module structure, full class context.
+
+  get_file_chunk(repo, filepath, start_line, end_line)
+    → Read specific lines. Use when search already gave you line numbers.
+
+═══════════════════════════════
+STRATEGY
+═══════════════════════════════
+
+  1. READ MAP  — check the ╔══ REPO MAP ══╗ in the user message (if present)
+  2. RECALL    — recall_notes() to see what you already know this session
+  3. PLAN      — write a <plan> block with your first 2-3 search steps
+  4. FIND      — search_code or search_symbol; group related searches into one turn
+  5. TRACE     — trace_calls for execution paths, find_callers for usage
+  6. NOTE      — note() every key discovery immediately after finding it
+  7. ANSWER    — recall_notes() to compile, then cite file + line for every claim
+
+═══════════════════════════════
+RULES
+═══════════════════════════════
+
+- Read the REPO MAP before anything else — skip list_files if the map covers it
+- Always call recall_notes() before your first search and before your final answer
+- Write a <plan> before your first tool call every session
+- Group related searches into one turn — they run in parallel
+- Note discoveries immediately — don't rely on scrolling back through results
+- If search_code gives you a name, use search_symbol to get the full definition
+- Stop when you have enough — over-searching wastes turns
+- If something isn't in the index after 3 targeted searches, say so clearly
+- Cite every claim: file path + function name + line numbers"""
 
 
 class AgentService:
@@ -309,15 +387,19 @@ class AgentService:
       - ANTHROPIC_API_KEY set → Anthropic, Claude Haiku (paid fallback)
     """
 
-    MAX_ITERATIONS = 12
+    MAX_ITERATIONS = 20  # increased from 12 — complex repos need more search turns
 
-    def __init__(self, mcp_client: MCPClient):
+    def __init__(self, mcp_client: MCPClient, repo_map_svc=None):
         """
         Args:
-            mcp_client: Connected MCPClient pointing to our FastMCP server.
-                        Tools are discovered lazily on first run/stream call.
+            mcp_client:   Connected MCPClient pointing to our FastMCP server.
+                          Tools are discovered lazily on first run/stream call.
+            repo_map_svc: Optional RepoMapService. When provided, a compact repo
+                          map is injected into the user message at session start
+                          so the agent skips the list_files orientation step.
         """
-        self.mcp = mcp_client
+        self.mcp          = mcp_client
+        self._repo_map    = repo_map_svc
 
         # ── Provider detection ─────────────────────────────────────────────────
         # Priority: Gemini → OpenRouter → Anthropic (Groq excluded — hermes bug).
@@ -444,6 +526,11 @@ class AgentService:
         mcp_tools = await self.mcp.list_tools()
         messages  = self._build_initial_messages(question, repo_filter, history)
 
+        # Clear session notes from any previous run so this conversation starts fresh.
+        # Note: we import here to avoid circular imports at module load time.
+        from backend.mcp_server import clear_notes
+        clear_notes()
+
         # Loop detection: skip duplicate tool calls in the stream path too.
         seen_calls: set[tuple] = set()
 
@@ -478,42 +565,57 @@ class AgentService:
             if thought:
                 yield {"type": "thought", "text": thought}
 
+            # ── Parallel tool execution ───────────────────────────────────────
+            # The LLM may return multiple tool calls in one turn (e.g. search_code
+            # called 2-3 times for different query angles simultaneously).
+            # Instead of serial execution, we:
+            #   1. Emit tool_call events for all new (non-duplicate) calls upfront
+            #   2. Run them concurrently with asyncio.gather
+            #   3. Emit tool_result events for all after they complete
+            #
+            # This reduces latency proportionally to the number of parallel calls
+            # (3 serial 500ms searches → 1 parallel 500ms round trip).
+
+            # Separate new calls from duplicates
+            new_calls: list[dict] = []
             for tc in step["tool_calls"]:
-                # Deduplicate: skip calls already made with identical arguments.
                 call_key = (tc["name"], tuple(sorted(tc["input"].items())))
                 if call_key in seen_calls:
                     dup_msg = f"[Skipped duplicate {tc['name']} call — already ran with these arguments]"
                     yield {"type": "tool_result", "tool": tc["name"], "output": dup_msg}
                     messages.append(self._build_tool_result(tc["id"], tc["name"], dup_msg))
-                    continue
-                seen_calls.add(call_key)
+                else:
+                    seen_calls.add(call_key)
+                    new_calls.append(tc)
+                    # Emit tool_call events immediately so UI shows them in parallel
+                    yield {"type": "tool_call", "tool": tc["name"], "input": tc["input"]}
 
-                yield {"type": "tool_call", "tool": tc["name"], "input": tc["input"]}
+            if not new_calls:
+                continue
 
-                # MCP tool call — async, goes through the full MCP protocol
+            # Execute all new calls concurrently — MCP calls are async HTTP round trips
+            async def _run_tool(tc: dict) -> str:
                 try:
-                    result = await self.mcp.call_tool(tc["name"], tc["input"])
+                    return await self.mcp.call_tool(tc["name"], tc["input"])
                 except Exception as e:
-                    result = f"Tool error: {e}"
+                    return f"Tool error: {e}"
 
-                # Collect source metadata from get_file_chunk calls.
-                # The input dict has repo, filepath, start_line, end_line — enough
-                # to construct a SourceCard-compatible object for the UI.
+            parallel_results = await asyncio.gather(*[_run_tool(tc) for tc in new_calls])
+
+            # Process results in the same order as the calls
+            for tc, result in zip(new_calls, parallel_results):
+                # Collect source metadata for the sources panel
                 if tc["name"] == "get_file_chunk":
                     src = _source_from_chunk_call(tc["input"], result)
                     if src:
                         key = (src["repo"], src["filepath"], src["start_line"])
                         collected_sources[key] = src
 
-                # Parse search_code results to extract file references.
-                # search_code returns formatted text blocks with "[Source N | repo | filepath ...]" headers.
                 if tc["name"] in ("search_code", "find_callers") and not result.startswith("No results"):
                     for src in _sources_from_search_result(result, tc["input"].get("repo") or repo_filter):
                         key = (src["repo"], src["filepath"], src["start_line"])
                         collected_sources[key] = src
 
-                # Show truncated output in the UI trace, but pass the full result
-                # to messages so the LLM has complete context for its next reasoning step.
                 display = result[:500] + "…" if len(result) > 500 else result
                 yield {"type": "tool_result", "tool": tc["name"], "output": display}
                 messages.append(self._build_tool_result(tc["id"], tc["name"], result))
@@ -567,7 +669,7 @@ class AgentService:
                 if self._provider in ("groq", "gemini", "openrouter"):
                     stream = self._client.chat.completions.create(
                         model=self._model,
-                        max_tokens=2048,
+                        max_tokens=4096,  # increased: complex answers need room
                         messages=[{"role": "system", "content": SYSTEM_PROMPT}] + final_messages,
                         tools=tools,
                         tool_choice="none",  # know about tools but forced to answer in text
@@ -581,7 +683,7 @@ class AgentService:
                     # Anthropic: omit tools for the final answer (no XML problem with Anthropic)
                     with self._client.messages.stream(
                         model=self._model,
-                        max_tokens=2048,
+                        max_tokens=4096,
                         system=SYSTEM_PROMPT,
                         messages=final_messages,
                     ) as stream:
@@ -686,7 +788,7 @@ class AgentService:
 
         response = self._client.chat.completions.create(
             model=self._model,
-            max_tokens=2048,
+            max_tokens=1024,  # tool-calling turns only need short reasoning + tool name
             messages=[{"role": "system", "content": SYSTEM_PROMPT}] + messages,
             tools=tools,
             tool_choice="auto",
@@ -780,7 +882,7 @@ class AgentService:
         """
         response = self._client.messages.create(
             model=self._model,
-            max_tokens=2048,
+            max_tokens=1024,  # tool-calling turns only need short reasoning + tool name
             system=SYSTEM_PROMPT,
             tools=tools,
             messages=messages,
@@ -821,13 +923,27 @@ class AgentService:
         # History items are bare {role, content} dicts — the agent can re-search
         # any code it needs, so we don't need to re-attach retrieved context.
         messages = [{"role": h["role"], "content": h["content"]} for h in (history or [])]
+
         content = question
+
         if repo_filter:
+            # Inject the repo map so the agent skips list_files and goes straight
+            # to targeted searches. Built from Qdrant metadata — zero LLM calls.
+            # ~300 tokens: entry files, key classes, top-file breakdown.
+            if self._repo_map:
+                try:
+                    repo_map = self._repo_map.get_or_build(repo_filter)
+                    map_text = self._repo_map.format_for_prompt(repo_map)
+                    if map_text:
+                        content = map_text + "\n\n" + content
+                except Exception as e:
+                    print(f"AgentService: repo map failed (non-fatal): {e}")
             content += f"\n\n(Focus search on repo: {repo_filter})"
         else:
             # Cross-repo mode: tell the agent it can search across all indexed repos
             # and should explicitly mention which repo each finding comes from.
             content += "\n\n(Searching across all indexed repos. For each finding, mention which repo it comes from.)"
+
         messages.append({"role": "user", "content": content})
         return messages
 

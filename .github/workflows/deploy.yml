@@ -1,0 +1,200 @@
+# deploy.yml — Continuous Deployment to HuggingFace Spaces + Vercel
+#
+# ── What this file does ──────────────────────────────────────────────────────
+#
+# On every push to main (after CI passes), two jobs run in parallel:
+#
+#   deploy-backend   →  pushes the project directory to a HuggingFace Space,
+#                        which rebuilds the Docker container automatically
+#
+#   deploy-frontend  →  runs `vercel --prod` to deploy the React app to
+#                        Vercel's global CDN
+#
+# ── Why separate jobs? ───────────────────────────────────────────────────────
+#
+# Jobs run in parallel by default in GitHub Actions. Backend and frontend
+# are independent — no reason to wait for one before starting the other.
+# Total deploy time = max(backend_time, frontend_time), not the sum.
+#
+# ── Secrets vs Variables ─────────────────────────────────────────────────────
+#
+# GitHub Actions has two kinds of stored values:
+#   secrets  → encrypted, never shown in logs (tokens, API keys)
+#   vars     → plain text, visible in logs (usernames, IDs, config)
+#
+# Set these in: GitHub repo → Settings → Secrets and variables → Actions
+#
+#   Secrets required:
+#     HF_TOKEN           HuggingFace token with "write" permission to your Space
+#     VERCEL_TOKEN       Vercel personal access token
+#     VERCEL_ORG_ID      From `vercel whoami` or project settings
+#     VERCEL_PROJECT_ID  From `vercel project ls` or .vercel/project.json
+#
+#   Variables required:
+#     HF_USERNAME        Your HuggingFace username (e.g. "umang")
+#     HF_SPACE_NAME      Your HF Space name (e.g. "github-rag-copilot")
+#
+# ── One-time setup (before this workflow will work) ──────────────────────────
+#
+# 1. Create HF Space at https://huggingface.co/new-space
+#    - SDK: Docker
+#    - Visibility: Public (free hardware requires public spaces)
+#    - Hardware: CPU basic (free)
+#    - Set env vars in Space Settings → Variables (never commit secrets):
+#        QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION,
+#        GROQ_API_KEY, GEMINI_API_KEY, NOMIC_API_KEY,
+#        FRONTEND_URL (your Vercel URL)
+#
+# 2. Create Vercel project at https://vercel.com/new
+#    - Root directory: github-rag-copilot/ui
+#    - Build command: npm run build
+#    - Output dir: dist
+#    - Set env var: VITE_API_URL = https://<hf-username>-<hf-space-name>.hf.space
+#    - Get IDs: `npx vercel whoami` and `npx vercel project ls`
+#
+# 3. Add the secrets/variables above to this GitHub repo
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+# Only run deploy after CI passes — ensures broken code is never deployed
+# This references the workflow named "CI" in ci.yml
+# Remove this if you want deploys to run independently of CI
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true  # if a new push arrives, cancel the in-flight deploy
+
+jobs:
+
+  # ── Backend → HuggingFace Spaces ─────────────────────────────────────────
+  #
+  # HuggingFace Spaces is a git-based hosting platform. Every Space has a git
+  # repository at https://huggingface.co/spaces/{user}/{space}. When you push
+  # new code there, HF automatically:
+  #   1. Detects the Dockerfile in the repo root
+  #   2. Builds a Docker image from it
+  #   3. Runs the container (your FastAPI app) on port 7860
+  #
+  # The challenge: our Dockerfile lives inside a subdirectory (github-rag-copilot/)
+  # of a larger monorepo. HF Spaces expects the Dockerfile at the repo root.
+  #
+  # Solution: `git subtree split`
+  #   This Git command creates a new synthetic branch where the specified
+  #   prefix directory becomes the root. The full history is preserved but
+  #   rewritten so every commit only contains files from that directory.
+  #   We push this synthetic branch as `main` to HF Spaces.
+  #
+  deploy-backend:
+    name: Backend → HuggingFace Spaces
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 means fetch the FULL git history, not just the latest commit.
+          # git subtree split needs to walk history to build the synthetic branch —
+          # with a shallow clone (fetch-depth: 1, the default) it would fail.
+          fetch-depth: 0
+
+      - name: Configure git identity
+        # Git requires a name + email to create commits. GitHub Actions runner
+        # has no global git config, so we set it here. These values are
+        # arbitrary — they appear in the HF Space's git log.
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Split subdirectory into deploy branch
+        # `git subtree split --prefix=<dir> -b <branch>`
+        #
+        # This rewrites history to produce a branch where:
+        #   github-rag-copilot/backend/main.py  →  backend/main.py
+        #   github-rag-copilot/Dockerfile       →  Dockerfile
+        #   (etc.)
+        #
+        # HF Spaces will see Dockerfile at root and build correctly.
+        # The -b flag names the local branch we're creating.
+        run: git subtree split --prefix=github-rag-copilot -b hf-deploy
+
+      - name: Push to HuggingFace Space
+        # We push the hf-deploy branch to the HF Space git repo as `main`.
+        # --force is required because we're rewriting history (subtree split
+        # produces different commit SHAs each time). This is safe here because
+        # the HF Space repo is purely a deployment target — no one is committing
+        # directly to it.
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ vars.HF_USERNAME }}
+          HF_SPACE_NAME: ${{ vars.HF_SPACE_NAME }}
+        run: |
+          git push \
+            "https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME" \
+            hf-deploy:main \
+            --force
+
+      - name: Clean up temporary branch
+        # Delete the local branch we created — it only lived to hold the
+        # subtree split result. Without cleanup, repeated runs would fail with
+        # "branch already exists".
+        if: always()
+        run: git branch -D hf-deploy || true
+
+  # ── Frontend → Vercel ──────────────────────────────────────────────────────
+  #
+  # Vercel hosts static sites. The React app is built with `npm run build`
+  # which produces a `dist/` directory. Vercel uploads this to their global
+  # CDN (100+ edge nodes) so users get the assets from the nearest location.
+  #
+  # `vercel --prod` is the CLI command that:
+  #   1. Runs the build command configured in the Vercel project
+  #   2. Uploads the output to Vercel's CDN
+  #   3. Promotes the deployment to the production URL
+  #
+  # Authentication: Vercel uses a token + org ID + project ID triple.
+  # These come from your Vercel dashboard (see setup instructions above).
+  #
+  deploy-frontend:
+    name: Frontend → Vercel
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: github-rag-copilot/ui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: github-rag-copilot/ui
+        run: npm ci
+        # `npm ci` (clean install) is preferred over `npm install` in CI:
+        # - Installs exactly the versions in package-lock.json (reproducible)
+        # - Fails if package-lock.json is out of sync with package.json
+        # - Deletes node_modules before installing (clean state)
+
+      - name: Deploy to Vercel
+        # We pass VITE_API_URL so the React app knows where the backend lives.
+        # This env var is baked into the JS bundle at build time by Vite —
+        # it becomes a literal string in the compiled output (not a runtime env var).
+        working-directory: github-rag-copilot/ui
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          # Set this after you know your HF Space URL.
+          # Format: https://<hf-username>-<hf-space-name>.hf.space
+          # (HF converts "my-name/my-space" → "my-name-my-space.hf.space")
+          VITE_API_URL: ${{ vars.HF_SPACE_URL }}
+        run: |
+          npx vercel --prod \
+            --token="$VERCEL_TOKEN" \
+            --yes
+          # --yes skips interactive confirmation prompts

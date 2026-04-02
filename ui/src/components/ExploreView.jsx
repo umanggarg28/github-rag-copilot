@@ -38,18 +38,26 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { fetchTour } from "../api";
+import { streamTour } from "../api";
+
+// Module-level cache — survives tab switches because ExploreView is unmounted
+// when the user navigates to Architecture/Class tabs and remounted on return.
+// Without this, switching to Explore re-fetches (and re-generates) every time.
+// Key: repo slug → tour data object
+const tourCache = {};
 
 // ── Type → visual token ───────────────────────────────────────────────────────
 // Each concept type gets a distinct accent color so students can visually
 // group "data structures" vs "algorithms" vs "entry points" at a glance.
+// All colors are warm-toned to stay within the sketchbook palette —
+// no cold violet/indigo; teal and amber are the warm analogues.
 const TYPE_STYLE = {
-  class:     { border: "#7C3AED", glow: "rgba(124,58,237,0.4)",  dot: "#a78bfa", tag: "class"  },
-  function:  { border: "#0D9488", glow: "rgba(13,148,136,0.4)",  dot: "#2dd4bf", tag: "fn"     },
-  module:    { border: "#B45309", glow: "rgba(180,83,9,0.4)",    dot: "#fbbf24", tag: "module" },
-  algorithm: { border: "#BE185D", glow: "rgba(190,24,93,0.4)",   dot: "#f472b6", tag: "algo"   },
+  class:     { border: "#C4603A", glow: "rgba(196,96,58,0.40)",  dot: "#E09A72", tag: "class"  }, // sienna — the primary ink
+  function:  { border: "#3A9E8C", glow: "rgba(58,158,140,0.38)", dot: "#5DC4B0", tag: "fn"     }, // warm teal — secondary accent
+  module:    { border: "#B45309", glow: "rgba(180,83,9,0.40)",   dot: "#FBBF24", tag: "module" }, // amber — warm
+  algorithm: { border: "#A0522D", glow: "rgba(160,82,45,0.40)",  dot: "#C4845A", tag: "algo"   }, // sienna-brown — warm
 };
-const FALLBACK_STYLE = { border: "#4F46E5", glow: "rgba(79,70,229,0.4)", dot: "#818CF8", tag: "?" };
+const FALLBACK_STYLE = { border: "#8A7A64", glow: "rgba(138,122,100,0.35)", dot: "#C4B59A", tag: "?" }; // muted parchment
 
 function styleFor(type) {
   return TYPE_STYLE[type] || FALLBACK_STYLE;
@@ -153,6 +161,7 @@ function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, o
           ? "0 4px 24px rgba(0,0,0,0.5)"
           : undefined,
       }}
+      onMouseDown={(e) => e.stopPropagation()}
       onClick={() => onSelect(concept.id)}
       onMouseEnter={() => onHover(concept.id)}
       onMouseLeave={() => onHover(null)}
@@ -206,9 +215,10 @@ function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, o
 }
 
 // ── ExploreView ────────────────────────────────────────────────────────────────
-export default function ExploreView({ repo, onAskAbout }) {
+export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(false);
+  const [loadStage, setStage]   = useState(null);   // { stage, progress, message }
   const [error, setError]       = useState(null);
   const [selectedId, setSelected] = useState(null);
   const [hoveredId, setHovered]   = useState(null);
@@ -218,19 +228,49 @@ export default function ExploreView({ repo, onAskAbout }) {
   const wrapRef  = useRef(null);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
-  const load = useCallback(() => {
+  const load = useCallback((force = false) => {
     if (!repo) return;
+    // Use the in-memory cache on tab switches — no need to re-fetch if we
+    // already have data for this repo (backend disk-caches too, but this
+    // avoids the round-trip entirely and preserves the user's pan/zoom state
+    // by not resetting xform).
+    if (!force && tourCache[repo]) {
+      setData(tourCache[repo]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     setLoading(true);
+    setStage(null);
     setError(null);
     setData(null);
     setSelected(null);
     setXform({ x: 0, y: 0, scale: 0.85 });
-    fetchTour(repo)
-      .then(d => { setLoading(false); setData(d); })
-      .catch(e => { setLoading(false); setError(e.message); });
+    const cancel = streamTour(repo, {
+      onProgress: (ev) => setStage(ev),
+      onDone:     (d)  => {
+        tourCache[repo] = d;   // store for future tab switches
+        setLoading(false);
+        setStage(null);
+        setData(d);
+      },
+      onError:    (e)  => { setLoading(false); setStage(null); setError(e); },
+    });
+    return cancel;
   }, [repo]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Expose a force-reload function to DiagramView via a ref so the header
+  // "Regenerate" button can bust the cache without prop-drilling a callback.
+  useEffect(() => {
+    if (onRegenerateRef) {
+      onRegenerateRef.current = () => {
+        delete tourCache[repo];
+        load(true);
+      };
+    }
+  }, [onRegenerateRef, repo, load]);
 
   // ── Non-passive wheel zoom ─────────────────────────────────────────────────
   useEffect(() => {
@@ -246,23 +286,41 @@ export default function ExploreView({ repo, onAskAbout }) {
   }, []);
 
   // ── Pan handlers ──────────────────────────────────────────────────────────
+  // We attach mousemove/mouseup to the DOCUMENT rather than the wrapper div.
+  //
+  // Why: React synthetic events on the wrapper only fire when the pointer is
+  // directly over the wrapper element. The moment it moves over a child card
+  // the wrapper's onMouseMove stops firing, breaking the drag mid-gesture.
+  //
+  // Document-level listeners receive every mouse event regardless of which
+  // element the cursor is currently over — the standard pattern for drag.
+  useEffect(() => {
+    function onDocMove(e) {
+      if (!dragging.current) return;
+      setXform(t => ({
+        ...t,
+        x: drag0.current.tx + (e.clientX - drag0.current.mx),
+        y: drag0.current.ty + (e.clientY - drag0.current.my),
+      }));
+    }
+    function onDocUp() {
+      if (!dragging.current) return;
+      dragging.current = false;
+      if (wrapRef.current) wrapRef.current.style.cursor = "grab";
+    }
+    document.addEventListener("mousemove", onDocMove);
+    document.addEventListener("mouseup",   onDocUp);
+    return () => {
+      document.removeEventListener("mousemove", onDocMove);
+      document.removeEventListener("mouseup",   onDocUp);
+    };
+  }, []); // empty deps — only refs + setXform (stable) are used inside
+
   function onMouseDown(e) {
     if (e.button !== 0) return;
     dragging.current = true;
     drag0.current = { mx: e.clientX, my: e.clientY, tx: xform.x, ty: xform.y };
-    e.currentTarget.style.cursor = "grabbing";
-  }
-  function onMouseMove(e) {
-    if (!dragging.current) return;
-    setXform(t => ({
-      ...t,
-      x: drag0.current.tx + (e.clientX - drag0.current.mx),
-      y: drag0.current.ty + (e.clientY - drag0.current.my),
-    }));
-  }
-  function onMouseUp(e) {
-    dragging.current = false;
-    if (e.currentTarget) e.currentTarget.style.cursor = "grab";
+    if (wrapRef.current) wrapRef.current.style.cursor = "grabbing";
   }
 
   function handleAsk(concept) {
@@ -274,14 +332,30 @@ export default function ExploreView({ repo, onAskAbout }) {
 
   // ── Loading / error states ─────────────────────────────────────────────────
   if (loading) {
+    const pct   = loadStage ? Math.round(loadStage.progress * 100) : 0;
+    const label = loadStage?.message || "Building your guided tour…";
     return (
       <div className="ec-loading">
         <span className="spinner" />
-        <div>
-          <div style={{ fontWeight: 600 }}>Building your guided tour…</div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-            Analysing {repo.split("/")[1]} to find the key concepts
+        <div style={{ flex: 1, maxWidth: 320 }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>{label}</div>
+          {/* Progress bar */}
+          <div style={{
+            height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden",
+          }}>
+            <div style={{
+              height: "100%",
+              width:  `${pct}%`,
+              background:  "var(--accent)",
+              borderRadius: 2,
+              transition:  "width 0.4s ease",
+            }} />
           </div>
+          {pct > 0 && (
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+              {pct}%
+            </div>
+          )}
         </div>
       </div>
     );
@@ -291,7 +365,7 @@ export default function ExploreView({ repo, onAskAbout }) {
     return (
       <div className="ec-error">
         <div style={{ fontSize: 13, color: "var(--red)" }}>{error}</div>
-        <button className="diagram-retry-btn" onClick={load}>Retry</button>
+        <button className="diagram-retry-btn" onClick={() => load(true)}>Retry</button>
       </div>
     );
   }
@@ -349,9 +423,6 @@ export default function ExploreView({ repo, onAskAbout }) {
         ref={wrapRef}
         className="ec-canvas-wrapper"
         onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
       >
         <div
           className="ec-canvas"
@@ -370,13 +441,13 @@ export default function ExploreView({ repo, onAskAbout }) {
             aria-hidden="true"
           >
             <defs>
-              {/* Default arrowhead */}
+              {/* Default arrowhead — warm sienna */}
               <marker id="ec-arrow" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(139,92,246,0.35)" />
+                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(212,132,90,0.35)" />
               </marker>
               {/* Highlighted arrowhead */}
               <marker id="ec-arrow-hi" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-                <polygon points="0 0, 7 2.5, 0 5" fill="#a78bfa" />
+                <polygon points="0 0, 7 2.5, 0 5" fill="#E09A72" />
               </marker>
             </defs>
 
@@ -393,7 +464,7 @@ export default function ExploreView({ repo, onAskAbout }) {
                   <path
                     key={`${depId}→${c.id}`}
                     d={bezierPath(from, to)}
-                    stroke={isHi ? "#a78bfa" : "rgba(139,92,246,0.2)"}
+                    stroke={isHi ? "#E09A72" : "rgba(212,132,90,0.22)"}
                     strokeWidth={isHi ? 2 : 1.5}
                     strokeDasharray={isHi ? undefined : "none"}
                     fill="none"

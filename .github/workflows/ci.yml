@@ -48,6 +48,9 @@ jobs:
           python -m py_compile backend/services/generation.py
           python -m py_compile backend/services/ingestion_service.py
           python -m py_compile backend/main.py
+          python -m py_compile backend/services/repo_map_service.py
+          python -m py_compile backend/services/agent.py
+          python -m py_compile backend/services/diagram_service.py
           python -m py_compile ingestion/repo_fetcher.py
           python -m py_compile ingestion/file_filter.py
           python -m py_compile ingestion/code_chunker.py

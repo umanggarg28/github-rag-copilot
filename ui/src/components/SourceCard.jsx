@@ -26,11 +26,11 @@ export default function SourceCard({ source, index, showRepo = false }) {
   // hardcoding "main" which breaks repos that still use "master".
   const githubUrl = `https://github.com/${source.repo}/blob/HEAD/${source.filepath}#L${source.start_line}`;
   const scorePercent = source.score != null ? `${Math.round(source.score * 100)}%` : null;
-  // Color-code by confidence: green ≥90%, amber 70–89%, orange <70%
+  // Color-code by confidence using design-system tokens (sage/warning/red)
   const scoreColor = !source.score ? null
-    : source.score >= 0.90 ? "#10B981"   // emerald
-    : source.score >= 0.70 ? "#F59E0B"   // amber
-    : "#EF4444";                          // red
+    : source.score >= 0.90 ? "var(--green)"    // sage green — high confidence
+    : source.score >= 0.70 ? "var(--warning)"  // warm amber — moderate
+    : "var(--red)";                            // muted red — low confidence
 
   function handleCopy(e) {
     e.stopPropagation();
@@ -79,13 +79,20 @@ export default function SourceCard({ source, index, showRepo = false }) {
           title={`Open on GitHub (L${source.start_line})`}
           aria-label="Open on GitHub"
         >
-          ↗
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M7 3H3a1 1 0 00-1 1v9a1 1 0 001 1h9a1 1 0 001-1V9"/>
+            <path d="M13 3h-4m4 0v4m0-4L7 9"/>
+          </svg>
         </a>
         {scorePercent && (
           <span
             className="source-score"
             title={`Relevance: ${source.score}`}
-            style={{ color: scoreColor, borderColor: scoreColor ? `${scoreColor}55` : undefined }}
+            style={scoreColor ? {
+              color: scoreColor,
+              borderColor: `${scoreColor}55`,
+              background: `${scoreColor}18`,
+            } : undefined}
           >{scorePercent}</span>
         )}
         <button
@@ -96,7 +103,15 @@ export default function SourceCard({ source, index, showRepo = false }) {
         >
           {copied ? "✓" : <CopyIcon />}
         </button>
-        <span className={`source-chevron ${open ? "open" : ""}`} aria-hidden="true">▶</span>
+        <svg
+          className={`source-chevron ${open ? "open" : ""}`}
+          width="10" height="10" viewBox="0 0 16 16"
+          fill="none" stroke="currentColor" strokeWidth="2"
+          strokeLinecap="round" strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="m6 4 4 4-4 4"/>
+        </svg>
       </div>
 
       {open && (
@@ -104,8 +119,8 @@ export default function SourceCard({ source, index, showRepo = false }) {
           <SyntaxHighlighter
             language={lang}
             style={oneDark}
-            customStyle={{ fontSize: 12, margin: 0, background: 'rgba(0,0,0,0.50)', borderRadius: 0 }}
-            lineNumberStyle={{ color: 'rgba(255,255,255,0.18)', fontSize: 11, minWidth: 36, paddingRight: 12 }}
+            customStyle={{ fontSize: 12, margin: 0, background: '#141210', borderRadius: 0 }}
+            lineNumberStyle={{ color: 'rgba(237,228,206,0.22)', fontSize: 11, minWidth: 36, paddingRight: 12 }}
             showLineNumbers
             startingLineNumber={source.start_line}
           >

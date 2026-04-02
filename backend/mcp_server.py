@@ -89,6 +89,22 @@ from backend.config import settings
 _retrieval = None  # RetrievalService — set by init_services()
 _store = None      # QdrantStore       — set by init_services()
 
+# ── Session working memory ─────────────────────────────────────────────────────
+# Simple key→value store the agent can write to during a single stream() run.
+# The agent uses note() to record discovered facts (entry points, key classes, etc.)
+# and recall_notes() to read them back — avoiding redundant re-searches.
+#
+# This is a module-level dict (shared across the process) with a clear_notes()
+# function called by AgentService.stream() at the start of each new query.
+# For a single-user local server this is correct.  For multi-user production,
+# replace with a per-request context variable (contextvars.ContextVar).
+_session_notes: dict[str, str] = {}
+
+
+def clear_notes() -> None:
+    """Reset the working memory at the start of each new agent run."""
+    _session_notes.clear()
+
 
 def init_services(retrieval_service, qdrant_store):
     """
@@ -116,9 +132,14 @@ mcp = FastMCP(
     name="github-rag-copilot",
     instructions=(
         "Code search server for indexed GitHub repositories. "
+        "Use list_files to browse directory structure before diving in. "
         "Use search_code to find relevant code by concept or identifier. "
-        "Use find_callers to understand how a function is used. "
-        "Use get_file_chunk to read raw source lines for context. "
+        "Use search_symbol to jump directly to a named function or class definition. "
+        "Use find_callers to understand how a function is used across the codebase. "
+        "Use trace_calls to follow an execution path end-to-end across multiple functions. "
+        "Use read_file to read an entire source file (imports, structure, context). "
+        "Use get_file_chunk to read specific line ranges when you know the location. "
+        "Use note(key, value) to record key discoveries and recall_notes() to retrieve them. "
         "Always search before answering questions about a codebase."
     ),
     streamable_http_path="/",
@@ -262,6 +283,277 @@ def get_file_chunk(
         for i, line in enumerate(lines[start - 1:end])
     )
     return f"# {repo} — {filepath} (lines {start}–{end})\n\n{chunk}"
+
+
+@mcp.tool()
+def search_symbol(symbol_name: str, repo: Optional[str] = None) -> str:
+    """
+    Find the exact definition of a function or class by name.
+
+    This is a STRUCTURAL lookup — it searches the 'name' metadata field in
+    Qdrant, not the vector space. Use this when you know the exact name of
+    a function or class and want its definition immediately, without the
+    approximation of semantic search.
+
+    When to use instead of search_code:
+    - You already know the exact name (e.g. from a previous search result)
+    - search_code returned a caller but not the definition itself
+    - You want to be sure you're reading the right function, not a similar one
+
+    Args:
+        symbol_name: Exact function or class name (e.g. 'backward', 'Value', '_embed')
+        repo:        Optional 'owner/repo' to restrict search
+    """
+    if _store is None:
+        return "Search service not ready."
+
+    matches = _store.find_symbol(symbol_name, repo=repo)
+    if not matches:
+        return (
+            f"No indexed definition found for '{symbol_name}'. "
+            "The symbol may not be in the index — try search_code instead."
+        )
+
+    parts = []
+    for i, c in enumerate(matches[:5], 1):
+        citation = c.get("filepath", "")
+        citation += f" | lines {c.get('start_line', '?')}–{c.get('end_line', '?')}"
+        parts.append(f"[Source {i} | {c.get('repo', '')} | {citation}]\n{c.get('text', '')}")
+
+    return (
+        f"Found {len(matches)} definition(s) of '{symbol_name}':\n\n"
+        + "\n\n" + "─" * 40 + "\n\n".join(parts)
+    )
+
+
+@mcp.tool()
+def read_file(repo: str, filepath: str) -> str:
+    """
+    Read the ENTIRE source file from a GitHub repository.
+
+    Use when you need to understand a module's full structure — all its
+    imports, class definitions, and how functions relate to each other.
+    This reveals things that chunked search cannot: file-level imports,
+    module docstrings, and the order in which things are defined.
+
+    When to use instead of get_file_chunk:
+    - You don't know the line numbers yet and want the full picture
+    - You need to see imports (they're usually not in any function chunk)
+    - You want to understand how multiple functions in a file interact
+
+    Cost: one GitHub API call. Avoid calling on very large files (>500 lines);
+    use get_file_chunk for targeted reads after search_code gives you line numbers.
+
+    Args:
+        repo:     'owner/repo' (e.g. 'karpathy/micrograd')
+        filepath: Path within the repo (e.g. 'micrograd/engine.py')
+    """
+    if "/" not in repo or repo.count("/") != 1:
+        return f"Invalid repo format '{repo}'. Expected 'owner/name'."
+
+    from pathlib import PurePosixPath
+    try:
+        parts = PurePosixPath(filepath).parts
+    except Exception:
+        return "Invalid filepath."
+    if ".." in parts or filepath.startswith("/"):
+        return "Invalid filepath: path traversal not allowed."
+
+    owner, name = repo.split("/", 1)
+    url = f"https://api.github.com/repos/{owner}/{name}/contents/{filepath}"
+    headers = {"Accept": "application/vnd.github.v3.raw"}
+    if settings.github_token:
+        headers["Authorization"] = f"token {settings.github_token}"
+
+    try:
+        resp = http_requests.get(url, headers=headers, timeout=15)
+        if resp.status_code == 404:
+            return f"File not found: {filepath} in {repo}"
+        resp.raise_for_status()
+    except Exception as e:
+        return f"GitHub fetch failed: {e}"
+
+    lines = resp.text.splitlines()
+    total = len(lines)
+
+    # Warn on large files so the agent can decide whether to read a chunk instead.
+    # 300 lines is ~15k characters — comfortably within context limits.
+    header = f"# {repo} — {filepath}  ({total} lines total)\n\n"
+    if total > 500:
+        header += f"# ⚠️  Large file ({total} lines). Consider get_file_chunk for targeted reads.\n\n"
+
+    numbered = "\n".join(f"{i+1}: {line}" for i, line in enumerate(lines))
+    return header + numbered
+
+
+@mcp.tool()
+def list_files(repo: str, path: str = "") -> str:
+    """
+    List files and directories at a path within a GitHub repository.
+
+    Use at the START of exploring an unfamiliar codebase to understand its structure.
+    Then use read_file or get_file_chunk to read specific files you find.
+
+    Returns file names, types (file/dir), and sizes. Directories are marked with /
+    so you can drill down into them with another list_files call.
+
+    Args:
+        repo: 'owner/repo' (e.g. 'karpathy/micrograd')
+        path: Directory path within the repo (e.g. 'src/models'). Empty = repo root.
+    """
+    if "/" not in repo or repo.count("/") != 1:
+        return f"Invalid repo format '{repo}'. Expected 'owner/name'."
+
+    from pathlib import PurePosixPath
+    if path:
+        try:
+            parts = PurePosixPath(path).parts
+        except Exception:
+            return "Invalid path."
+        if ".." in parts or path.startswith("/"):
+            return "Invalid path: traversal not allowed."
+
+    owner, name = repo.split("/", 1)
+    url = f"https://api.github.com/repos/{owner}/{name}/contents/{path}"
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if settings.github_token:
+        headers["Authorization"] = f"token {settings.github_token}"
+
+    try:
+        resp = http_requests.get(url, headers=headers, timeout=15)
+        if resp.status_code == 404:
+            return f"Path not found: '{path}' in {repo}"
+        resp.raise_for_status()
+    except Exception as e:
+        return f"GitHub fetch failed: {e}"
+
+    entries = resp.json()
+    if not isinstance(entries, list):
+        # Single file returned — path was a file, not a directory
+        return f"'{path}' is a file, not a directory. Use read_file to read it."
+
+    lines = [f"# {repo}/{path or ''}\n"]
+    dirs  = sorted([e for e in entries if e["type"] == "dir"],  key=lambda e: e["name"])
+    files = sorted([e for e in entries if e["type"] == "file"], key=lambda e: e["name"])
+
+    for e in dirs:
+        lines.append(f"  {e['name']}/")
+    for e in files:
+        size = e.get("size", 0)
+        size_str = f"{size // 1024}KB" if size >= 1024 else f"{size}B"
+        lines.append(f"  {e['name']}  ({size_str})")
+
+    lines.append(f"\n{len(dirs)} director{'ies' if len(dirs) != 1 else 'y'}, {len(files)} file{'s' if len(files) != 1 else ''}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def note(key: str, value: str) -> str:
+    """
+    Save a key fact to working memory for this session.
+
+    Use this to record important discoveries so you don't need to re-search them:
+      note("entry_point", "train.py:main() at line 234")
+      note("optimizer",   "AdamW, lr=6e-4, defined in model.py:320")
+      note("data_flow",   "DataLoader → batch_encode → model.forward → loss.backward")
+
+    Keeps your reasoning grounded: note facts as you find them, then recall_notes()
+    before answering to make sure you haven't forgotten anything discovered earlier.
+
+    Args:
+        key:   Short label for the fact (e.g. 'entry_point', 'main_class')
+        value: The fact itself — be specific: include file, line, and what it does
+    """
+    _session_notes[key] = value
+    return f"✓ Noted: {key} = {value}"
+
+
+@mcp.tool()
+def recall_notes() -> str:
+    """
+    Retrieve all facts saved with note() during this session.
+
+    Call this before writing your final answer to ensure you haven't
+    forgotten any discoveries from earlier in the conversation.
+    Also useful at the START of a follow-up question to check what you
+    already know before deciding which searches to run.
+
+    Returns all (key, value) pairs recorded so far, or a message if none.
+    """
+    if not _session_notes:
+        return "No notes yet. Use note(key, value) to record discoveries as you search."
+    lines = ["# Session notes\n"]
+    for k, v in _session_notes.items():
+        lines.append(f"**{k}**: {v}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def trace_calls(
+    repo: str,
+    symbol_name: str,
+    max_depth: int = 3,
+) -> str:
+    """
+    Trace the execution path starting from a function — who it calls and who they call.
+
+    Walks the call graph stored during AST indexing (the 'calls' payload field).
+    This answers "what happens when X runs?" by following the chain of function
+    calls up to max_depth levels deep.
+
+    Unlike find_callers (who calls X?), trace_calls answers "what does X call?"
+    and recursively follows those calls to map the full execution path.
+
+    Use this for:
+      - Understanding data flow: "how does the forward pass work end-to-end?"
+      - Tracing feature pipelines: "what does train() actually do step by step?"
+      - Debugging: "which functions does backward() touch?"
+
+    Args:
+        repo:        'owner/repo' (e.g. 'karpathy/micrograd')
+        symbol_name: Starting function or method name (e.g. 'train', 'forward')
+        max_depth:   How many levels deep to follow calls (default 3, max 5)
+    """
+    if _store is None:
+        return "Search service not ready."
+
+    max_depth = min(max_depth, 5)  # hard cap to avoid runaway traversal
+    visited:  set[str] = set()
+    lines:    list[str] = [f"# Call trace from `{symbol_name}` in {repo}\n"]
+    missing:  list[str] = []  # names we saw in calls[] but couldn't find in index
+
+    def _walk(name: str, depth: int, prefix: str) -> None:
+        if depth > max_depth or name in visited:
+            return
+        visited.add(name)
+
+        chunks = _store.find_symbol(name, repo=repo)
+        if not chunks:
+            missing.append(name)
+            return
+
+        c = chunks[0]  # take the first definition (most repos have exactly one)
+        loc = f"{c.get('filepath', '?')} L{c.get('start_line', '?')}"
+        lines.append(f"{prefix}→ **{name}**()  `{loc}`")
+
+        calls = [fn for fn in (c.get("calls") or []) if fn not in visited]
+        # Limit fan-out to 6 per level so the trace stays readable
+        for callee in calls[:6]:
+            _walk(callee, depth + 1, prefix + "  ")
+
+    _walk(symbol_name, 0, "")
+
+    if len(lines) == 1:
+        return (
+            f"Symbol '{symbol_name}' not found in the index for {repo}. "
+            "Try search_symbol() to check the exact name, or search_code() to find it."
+        )
+
+    if missing:
+        lines.append(f"\n_Could not find definitions for: {', '.join(missing[:8])}_")
+
+    lines.append(f"\n_{len(visited)} unique symbol(s) traced · depth limit {max_depth}_")
+    return "\n".join(lines)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -24,7 +24,7 @@ const mdComponents = {
         <SyntaxHighlighter
           language={lang}
           style={oneDark}
-          customStyle={{ fontSize: 13, background: 'rgba(0,0,0,0.45)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)', borderLeft: '2px solid rgba(124,58,237,0.4)', margin: '10px 0' }}
+          customStyle={{ fontSize: 13, background: '#141210', borderRadius: 8, border: '1px solid rgba(237,228,206,0.08)', borderLeft: '2px solid rgba(212,132,90,0.45)', margin: '10px 0' }}
         >
           {String(children).replace(/\n$/, "")}
         </SyntaxHighlighter>
@@ -47,6 +47,27 @@ function AgentThought({ text }) {
       <div className="agent-thought-text">{text}</div>
     </div>
   );
+}
+
+// Convert tool+input into a short human-readable label shown in the step header.
+// Reads like a sentence fragment so the trace feels like watching the agent think,
+// not like reading a JSON dump.
+function formatStepQuery(tool, input) {
+  if (!input) return "";
+  switch (tool) {
+    case "search_code":    return input.query        || JSON.stringify(input);
+    case "search_symbol":  return input.symbol_name  || JSON.stringify(input);
+    case "list_files":     return input.path ? `${input.repo}/${input.path}` : (input.repo || JSON.stringify(input));
+    case "find_callers":   return input.function_name || JSON.stringify(input);
+    case "get_file_chunk": return input.filepath
+      ? `${input.filepath} (L${input.start_line}–${input.end_line})`
+      : JSON.stringify(input);
+    case "read_file":      return input.filepath || JSON.stringify(input);
+    case "note":           return input.key ? `${input.key}: ${input.value}` : JSON.stringify(input);
+    case "recall_notes":   return "checking notes";
+    case "trace_calls":    return input.symbol_name || JSON.stringify(input);
+    default:               return input.query || input.name || JSON.stringify(input);
+  }
 }
 
 // Individual agent step — renders as a node in the connected timeline chain.
@@ -86,7 +107,7 @@ function AgentStep({ step, isLast, icon, streaming }) {
           <span className="agent-step-icon">{icon}</span>
           <span className="agent-step-tool">{step.tool}</span>
           <span className="agent-step-query">
-            {step.input?.query || step.input?.function_name || JSON.stringify(step.input)}
+            {formatStepQuery(step.tool, step.input)}
           </span>
           {isPending && <span className="spinner" style={{ marginLeft: "auto", flexShrink: 0, width: 10, height: 10 }} />}
           {!isActive && step.output && (
@@ -133,11 +154,17 @@ function ToolCallTrace({ steps, streaming, iterations }) {
   const [expanded, setExpanded] = useState(true);
   if (!steps || steps.length === 0) return null;
 
-  // Tool name → icon SVG path for clean visual scanning (no emoji)
+  // Tool name → icon SVG for clean visual scanning (no emoji)
   const toolIcon = {
     search_code:    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5"/><path d="M10 10l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+    search_symbol:  <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M3 8h7M3 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="12" cy="11" r="2.5" stroke="currentColor" strokeWidth="1.3"/><path d="M14 13l1.5 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
+    list_files:     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.5"/><path d="M4 6h8M4 9h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
     get_file_chunk: <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="3" y="1" width="8" height="10" rx="1" stroke="currentColor" strokeWidth="1.5"/><path d="M5 5h4M5 7h3M9 1v3h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>,
+    read_file:      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="2" y="1" width="9" height="12" rx="1" stroke="currentColor" strokeWidth="1.5"/><path d="M4 5h5M4 7h5M4 9h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/><path d="M11 8l3 3-3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
     find_callers:   <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="2" stroke="currentColor" strokeWidth="1.4"/><circle cx="12" cy="12" r="2" stroke="currentColor" strokeWidth="1.4"/><path d="M6 4h2a2 2 0 012 2v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+    note:           <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 2h10a1 1 0 011 1v8l-3 3H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.4"/><path d="M11 11v3l3-3h-3z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/><path d="M4 5h6M4 7h6M4 9h3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>,
+    recall_notes:   <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.4"/><path d="M8 5v3.5l2.5 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    trace_calls:    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="2" stroke="currentColor" strokeWidth="1.4"/><circle cx="13" cy="4" r="2" stroke="currentColor" strokeWidth="1.4"/><circle cx="13" cy="12" r="2" stroke="currentColor" strokeWidth="1.4"/><path d="M5 8h3M8 8L11 5M8 8l3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
   };
   const defaultIcon = <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5" stroke="currentColor" strokeWidth="1.5"/><path d="M8 5v3l2 1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>;
 

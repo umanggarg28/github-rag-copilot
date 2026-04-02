@@ -344,6 +344,50 @@ class QdrantStore:
                 break
         return results
 
+    def find_symbol(self, symbol_name: str, repo: Optional[str] = None) -> list[dict]:
+        """
+        Find chunks whose 'name' field exactly matches a symbol (function or class).
+
+        Unlike search_code (which embeds the query and does nearest-neighbour search),
+        this is a Qdrant filter query — no vectors involved at all.
+        It's like a WHERE name = 'foo' in SQL.
+
+        Why is this different from search_code("foo")?
+        - search_code embeds "foo" and returns semantically similar code.
+          If the function is named 'foo' but the query embeds to a different region
+          of the vector space, it might not be top-ranked.
+        - find_symbol("foo") is an exact key lookup — always returns the definition
+          of 'foo' if it was indexed, regardless of vector proximity.
+
+        Use case: the agent knows the exact name from a previous search result
+        and wants to jump straight to the definition.
+
+        Args:
+            symbol_name: Exact function or class name as it appears in source
+            repo:        Optional 'owner/name' to restrict scope
+        """
+        conditions = [FieldCondition(key="name", match=MatchValue(value=symbol_name))]
+        if repo:
+            conditions.append(FieldCondition(key="repo", match=MatchValue(value=repo)))
+
+        filt = Filter(must=conditions)
+        results = []
+        offset = None
+        while True:
+            points, offset = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=filt,
+                limit=20,
+                offset=offset,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for p in points:
+                results.append(p.payload)
+            if offset is None:
+                break
+        return results
+
     def find_vectors_by_hash(self, hashes: list[str]) -> dict[str, list[float]]:
         """
         Look up existing dense embedding vectors by text hash.
