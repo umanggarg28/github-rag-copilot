@@ -144,6 +144,38 @@ def _parse_xml_tool_calls(content: str) -> list[dict] | None:
     return result or None
 
 
+def _parse_qwen_tool_calls(content: str) -> list[dict] | None:
+    """
+    Parse Qwen3/Kimi-style tool calls emitted as special tokens in plain text.
+
+    Some models (Qwen3, Kimi K2) use a token-delimited format instead of the
+    OpenAI tool_calls JSON field:
+
+        <|tool_calls_section_begin|>
+        <|tool_call_begin|>functions.search_code:0<|tool_call_argument_begin|>
+        {"query": "backward pass"}
+        <|tool_call_end|>
+        <|tool_calls_section_end|>
+
+    We extract the tool name and JSON args and normalise to the same dict format
+    as _parse_xml_tool_calls so the rest of the pipeline is unaffected.
+    """
+    matches = re.findall(
+        r'<\|tool_call_begin\|>functions\.(\w+):\d+<\|tool_call_argument_begin\|>(.*?)<\|tool_call_end\|>',
+        content, re.DOTALL
+    )
+    if not matches:
+        return None
+    result = []
+    for i, (name, args_str) in enumerate(matches):
+        try:
+            params = json.loads(args_str.strip())
+        except json.JSONDecodeError:
+            params = {}
+        result.append({"id": f"call_qwen_{i}_{name}", "name": name, "input": params})
+    return result or None
+
+
 def _source_from_chunk_call(tool_input: dict, result: str) -> dict | None:
     """
     Build a SourceCard-compatible source dict from a get_file_chunk tool call.
@@ -265,7 +297,11 @@ def _sources_from_search_result(result_text: str, fallback_repo: str | None) -> 
 # OpenRouter: free model with confirmed tool-calling support.
 # Required headers: HTTP-Referer (for attribution) and X-Title (app name).
 # Without HTTP-Referer, free tier access may be denied.
-_OPENROUTER_MODEL = "stepfun/step-3.5-flash:free"
+_OPENROUTER_MODEL = "qwen/qwen3-coder:free"
+
+# Groq models tried in order when the primary is over capacity or decommissioned.
+# Kimi K2 → Llama 4 Scout → Qwen3 32B
+_GROQ_MODELS = ["moonshotai/kimi-k2-instruct", "meta-llama/llama-4-scout-17b-16e-instruct", "qwen/qwen3-32b"]
 
 
 def _openrouter_client(api_key: str):
@@ -347,6 +383,15 @@ TOOL SELECTION GUIDE
   get_file_chunk(repo, filepath, start_line, end_line)
     → Read specific lines. Use when search already gave you line numbers.
 
+  draw_diagram(description, diagram_type)
+    → Call this AFTER your research is complete (after search_code/search_symbol/read_file),
+      just before writing the diagram block. Never skip the research step — the diagram
+      must be grounded in what you actually found in the codebase.
+      Output the diagram ONLY as a ```diagram``` fenced block with Mermaid syntax —
+      NEVER as a plain ```mermaid``` or ```classDiagram``` block. Pick whatever type
+      fits best: flowchart, classDiagram, sequenceDiagram, stateDiagram-v2, erDiagram,
+      mindmap, timeline, etc.
+
 ═══════════════════════════════
 STRATEGY
 ═══════════════════════════════
@@ -371,7 +416,8 @@ RULES
 - If search_code gives you a name, use search_symbol to get the full definition
 - Stop when you have enough — over-searching wastes turns
 - If something isn't in the index after 3 targeted searches, say so clearly
-- Cite every claim: file path + function name + line numbers"""
+- Cite every claim: file path + function name + line numbers
+- DIAGRAMS: search the codebase first (search_code/search_symbol/read_file), THEN call draw_diagram() after research is complete, then write 1-3 sentences describing the diagram, then output as ```diagram``` — never as a plain mermaid/code block"""
 
 
 class AgentService:
@@ -402,10 +448,13 @@ class AgentService:
         self._repo_map    = repo_map_svc
 
         # ── Provider detection ─────────────────────────────────────────────────
-        # Priority: Gemini → OpenRouter → Anthropic (Groq excluded — hermes bug).
+        # Priority: Gemini → OpenRouter → Anthropic → Groq (last resort).
+        #
+        # Gemini is first for the agent because it has 1500 free req/day —
+        # agent mode makes multiple LLM calls per query (one per tool call),
+        # so OpenRouter free tiers (heavily rate-limited) exhaust quickly.
         # Groq's Llama 3.3 intermittently generates <function=name{...}> hermes-format
-        # tool calls which Groq's own API rejects with a 400.
-        # Gemini and OpenRouter both emit correct OpenAI JSON tool calls.
+        # tool calls which Groq's own API rejects with a 400, so it's kept last.
         if settings.gemini_api_key:
             from openai import OpenAI
             self._client   = OpenAI(
@@ -430,8 +479,8 @@ class AgentService:
             from groq import Groq
             self._client   = Groq(api_key=settings.groq_api_key)
             self._provider = "groq"
-            self._model    = "llama-3.3-70b-versatile"
-            print("AgentService: using Groq (llama-3.3-70b-versatile) via MCP tools [hermes bug possible]")
+            self._model    = "moonshotai/kimi-k2-instruct"
+            print("AgentService: using Groq (moonshotai/kimi-k2-instruct) via MCP tools [kimi-k2 fallback]")
         else:
             raise ValueError("AgentService requires GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, or ANTHROPIC_API_KEY")
 
@@ -553,7 +602,7 @@ class AgentService:
                 # Emit sources collected across all tool calls before done event
                 if collected_sources:
                     yield {"type": "sources", "sources": list(collected_sources.values())}
-                yield {"type": "done", "iterations": iteration + 1}
+                yield {"type": "done", "iterations": iteration + 1, "model": self._model}
                 return
 
             messages.append(step["assistant_message"])
@@ -611,10 +660,26 @@ class AgentService:
                         key = (src["repo"], src["filepath"], src["start_line"])
                         collected_sources[key] = src
 
-                if tc["name"] in ("search_code", "find_callers") and not result.startswith("No results"):
+                if tc["name"] in ("search_code", "find_callers", "search_symbol") and not result.startswith("No results"):
                     for src in _sources_from_search_result(result, tc["input"].get("repo") or repo_filter):
                         key = (src["repo"], src["filepath"], src["start_line"])
                         collected_sources[key] = src
+
+                # read_file returns a whole file — record it as a single source entry
+                if tc["name"] == "read_file" and tc["input"].get("filepath"):
+                    repo     = tc["input"].get("repo", repo_filter or "")
+                    filepath = tc["input"]["filepath"]
+                    key = (repo, filepath, 0)
+                    if key not in collected_sources:
+                        ext = "." + filepath.rsplit(".", 1)[-1].lower() if "." in filepath else ""
+                        lang = {"py": "python", "js": "javascript", "ts": "typescript",
+                                "go": "go", "rs": "rust", "java": "java"}.get(ext.lstrip("."), "text")
+                        collected_sources[key] = {
+                            "repo": repo, "filepath": filepath, "language": lang,
+                            "chunk_type": "file", "name": filepath.rsplit("/", 1)[-1],
+                            "start_line": 1, "end_line": result.count("\n"),
+                            "score": 1.0, "text": "",
+                        }
 
                 display = result[:500] + "…" if len(result) > 500 else result
                 yield {"type": "tool_result", "tool": tc["name"], "output": display}
@@ -628,7 +693,7 @@ class AgentService:
         # Emit any collected sources even when we hit the iteration cap
         if collected_sources:
             yield {"type": "sources", "sources": list(collected_sources.values())}
-        yield {"type": "done", "iterations": self.MAX_ITERATIONS}
+        yield {"type": "done", "iterations": self.MAX_ITERATIONS, "model": self._model}
 
     async def _stream_final_answer(self, messages: list, mcp_tools: list) -> AsyncIterator[str]:
         """
@@ -709,11 +774,27 @@ class AgentService:
 
     # ── LLM dispatch ───────────────────────────────────────────────────────────
 
+    def _try_groq_model_fallback(self) -> bool:
+        """Within Groq, cycle to the next model when the current one is over capacity."""
+        if self._provider != "groq":
+            return False
+        try:
+            idx = _GROQ_MODELS.index(self._model)
+        except ValueError:
+            idx = -1
+        if idx < len(_GROQ_MODELS) - 1:
+            next_model = _GROQ_MODELS[idx + 1]
+            print(f"AgentService: Groq {self._model} over capacity — trying {next_model}")
+            self._model = next_model
+            return True
+        return False
+
     def _try_fallback(self) -> bool:
         """Switch to the next provider if the current one is quota-exhausted.
 
-        Fallback order: gemini → openrouter → anthropic (Groq intentionally skipped).
-        Groq generates hermes-format tool calls that its own API rejects with 400.
+        Fallback order: gemini → openrouter → anthropic → groq (last resort).
+        Groq has a hermes-format tool-call bug that causes occasional 400s,
+        but it's better than returning nothing when every other provider is exhausted.
         """
         if self._provider == "gemini" and settings.openrouter_api_key:
             self._client   = _openrouter_client(settings.openrouter_api_key)
@@ -727,6 +808,13 @@ class AgentService:
             self._provider = "anthropic"
             self._model    = "claude-haiku-4-5-20251001"
             print("AgentService: switched to Anthropic as final fallback")
+            return True
+        if self._provider in ("gemini", "openrouter", "anthropic") and settings.groq_api_key:
+            from groq import Groq
+            self._client   = Groq(api_key=settings.groq_api_key)
+            self._provider = "groq"
+            self._model    = "moonshotai/kimi-k2-instruct"
+            print("AgentService: switched to Groq as last resort (kimi-k2 fallback)")
             return True
         return False
 
@@ -765,7 +853,19 @@ class AgentService:
             else:
                 return self._call_anthropic(messages, tools)
         except Exception as e:
-            if _is_exhausted(e) and self._try_fallback():
+            msg = str(e).lower()
+            # Groq's hermes bug: model generates <function=name{...}> format which
+            # Groq's own API rejects with 400 "tool call validation failed".
+            # Treat this the same as exhaustion — skip Groq and try the next provider.
+            is_groq_hermes = self._provider == "groq" and "tool call validation" in msg
+            # Groq model unavailable: over capacity (503) or decommissioned (400).
+            # Try the next Groq model before giving up on Groq entirely.
+            is_groq_model_unavailable = self._provider == "groq" and (
+                "over capacity" in msg or "decommissioned" in msg or "model_decommissioned" in msg
+            )
+            if is_groq_model_unavailable and self._try_groq_model_fallback():
+                return self._call_llm(messages, mcp_tools)
+            if (is_groq_hermes or _is_exhausted(e)) and self._try_fallback():
                 return self._call_llm(messages, mcp_tools)  # reformat + retry with new provider
             raise
 
@@ -802,7 +902,7 @@ class AgentService:
             # Some models fall back to XML tool calls mid-conversation instead of
             # using the OpenAI JSON format. Parse and execute them if present.
             if msg.content:
-                xml_calls = _parse_xml_tool_calls(msg.content)
+                xml_calls = _parse_xml_tool_calls(msg.content) or _parse_qwen_tool_calls(msg.content)
                 if xml_calls:
                     # Rewrite history with proper OpenAI tool_calls format so the
                     # role="tool" result messages that follow are coherent.

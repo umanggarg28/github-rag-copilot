@@ -31,8 +31,9 @@ export default function App() {
   const [promptMenu, setPromptMenu]   = useState(false);   // dropdown visible
   const [promptFilter, setPromptFilter] = useState("");    // text after "/"
 
-  const bottomRef      = useRef(null);
-  const scrollRef      = useRef(null);
+  const bottomRef           = useRef(null);
+  const scrollRef           = useRef(null);
+  const latestAssistantRef  = useRef(null); // top of the current streaming assistant message
   const textareaRef    = useRef(null);
   const stopStream     = useRef(null);       // cleanup fn for active SSE
   const streamingRef   = useRef(false);      // always-fresh streaming flag for event handlers
@@ -128,6 +129,7 @@ export default function App() {
     setCurrentSessionId(session.id);
     setMessages(session.messages);
     setLastSources([]);
+    setView("chat");
     // Scroll to the last message after the messages render
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "instant" }), 50);
   }
@@ -239,7 +241,21 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Auto-scroll: instant during streaming, smooth otherwise
+  // Scroll to the TOP of the assistant message the moment it first appears.
+  // We track the last scrolled-to ID so this only fires once per response.
+  const scrolledToId = useRef(null);
+  useEffect(() => {
+    const streamingMsg = messages.find(m => m.role === "assistant" && m.streaming);
+    if (streamingMsg && streamingMsg.id !== scrolledToId.current) {
+      scrolledToId.current = streamingMsg.id;
+      setTimeout(() => {
+        latestAssistantRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
+    }
+  }, [messages]);
+
+  // While streaming, keep scrolling to bottom only if user is already near bottom.
+  // After streaming ends, do a final smooth scroll to bottom.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -429,11 +445,11 @@ export default function App() {
             )
           );
         },
-        onDone: (iterations) => {
+        onDone: (iterations, model) => {
           rateLimitRetries.current = 0; // reset on success
           setMessages((prev) =>
             prev.map((m) => m.id === assistantId
-              ? { ...m, streaming: false, currentTool: null, iterations }
+              ? { ...m, streaming: false, currentTool: null, iterations, model }
               : m
             )
           );
@@ -450,12 +466,12 @@ export default function App() {
         mode,
         history,
         onToken,
-        onSources: (sources, queryType, pipeline) => {
+        onSources: (sources, queryType, pipeline, model) => {
           // Transition from "searching" → "generating" so the phase indicator updates.
           // pipeline = {hyde, expanded, reranker} — shows which quality features fired.
           setMessages((prev) =>
             prev.map((m) => m.id === assistantId
-              ? { ...m, sources, queryType, pipeline, phase: "generating", sourceCount: sources.length }
+              ? { ...m, sources, queryType, pipeline, model, phase: "generating", sourceCount: sources.length }
               : m)
           );
           setLastSources(sources || []);
@@ -706,8 +722,8 @@ export default function App() {
                           {[
                             `Walk through ${activeRepo.split("/")[1]}'s architecture from entry point to output`,
                             "What are the most important functions and how do they connect?",
+                            "Draw a diagram showing how the main components connect",
                             "How is error handling and edge cases managed across the codebase?",
-                            "What design patterns does this codebase use and where?",
                             "How does data flow from input to the final result?",
                           ].map(q => (
                             <button key={q} className="suggestion-btn"
@@ -766,6 +782,7 @@ export default function App() {
                     msg={msg}
                     showRepo={!activeRepo}
                     onDiagramThis={activeRepo ? handleDiagramThis : null}
+                    ref={msg.role === "assistant" && msg.streaming ? latestAssistantRef : null}
                     onRetry={msg.rateLimited && msg.retryQuestion ? (q) => {
                       // User clicked "Retry now" — cancel countdown and re-submit immediately
                       if (countdownTimer.current) { clearInterval(countdownTimer.current); countdownTimer.current = null; }

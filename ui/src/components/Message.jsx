@@ -1,8 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, Suspense, lazy, forwardRef } from "react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import SourceCard from "./SourceCard";
+
+// Lazy-load MermaidBlock — deferred so mermaid.js doesn't bloat the initial bundle.
+const MermaidBlock = lazy(() => import("./MermaidBlock"));
 
 // ReactMarkdown renders fenced code blocks as <pre><code>...</code></pre>.
 // If we override only `code`, ReactMarkdown wraps the whole thing in a <p>,
@@ -18,6 +21,19 @@ const mdComponents = {
   },
   code({ className, children, ...props }) {
     const lang = /language-(\w+)/.exec(className || "")?.[1];
+    if (lang === "diagram" || lang === "mermaid") {
+      // Agent drew a diagram — render as SVG via mermaid.js.
+      // We intercept both "diagram" (our custom tag) and "mermaid" (model's natural tag).
+      return (
+        <Suspense fallback={
+          <div style={{ padding: "12px 0", color: "var(--muted)", fontSize: 12 }}>
+            <span className="spinner" style={{ marginRight: 8 }} /> Rendering diagram…
+          </div>
+        }>
+          <MermaidBlock mermaid={String(children).replace(/\n$/, "")} />
+        </Suspense>
+      );
+    }
     if (lang) {
       // Block code with a language tag → syntax-highlighted
       return (
@@ -150,7 +166,7 @@ function AgentStep({ step, isLast, icon, streaming }) {
 //
 // DURING streaming:  always expanded so user can watch the agent think live.
 // AFTER completion:  collapsible via the toggle header.
-function ToolCallTrace({ steps, streaming, iterations }) {
+function ToolCallTrace({ steps, streaming, iterations, model }) {
   const [expanded, setExpanded] = useState(true);
   if (!steps || steps.length === 0) return null;
 
@@ -211,7 +227,17 @@ function ToolCallTrace({ steps, streaming, iterations }) {
               // (includes the final answer turn, so it's always >= steps.length).
               const count = iterations ?? steps.length;
               const label = iterations ? "iteration" : "tool call";
-              return <span className="agent-trace-count">{count} {label}{count !== 1 ? "s" : ""}</span>;
+              return (
+                <>
+                  <span className="agent-trace-count">{count} {label}{count !== 1 ? "s" : ""}</span>
+                  {model && (
+                    <span style={{ opacity: 0.4, fontStyle: "italic", fontSize: 10.5, marginLeft: 6 }}
+                      title={`Model: ${model}`}>
+                      {model.split("/").pop()}
+                    </span>
+                  )}
+                </>
+              );
             })()
         }
         {!streaming && (
@@ -298,11 +324,11 @@ function CopyAnswerButton({ content }) {
   );
 }
 
-export default function Message({ msg, onDiagramThis, onRetry, showRepo = false }) {
+const Message = forwardRef(function Message({ msg, onDiagramThis, onRetry, showRepo = false }, ref) {
   const isUser = msg.role === "user";
 
   return (
-    <div className={`message ${msg.role}`}>
+    <div ref={ref} className={`message ${msg.role}`}>
       {isUser ? (
         <div className="bubble">{msg.content}</div>
       ) : (
@@ -325,7 +351,7 @@ export default function Message({ msg, onDiagramThis, onRetry, showRepo = false 
           <div className="message-content">
             {/* Agent reasoning trace */}
             {msg.toolCalls && msg.toolCalls.length > 0 && (
-              <ToolCallTrace steps={msg.toolCalls} streaming={msg.streaming} iterations={msg.iterations} />
+              <ToolCallTrace steps={msg.toolCalls} streaming={msg.streaming} iterations={msg.iterations} model={msg.model} />
             )}
 
 
@@ -413,6 +439,18 @@ export default function Message({ msg, onDiagramThis, onRetry, showRepo = false 
                 <span className="pipeline-stage" title={`${msg.sources?.length ?? 0} code chunk${(msg.sources?.length ?? 0) !== 1 ? "s" : ""} were retrieved and passed as context to the LLM`}>{msg.sources?.length ?? 0} source{(msg.sources?.length ?? 0) !== 1 ? "s" : ""}</span>
                 <span className="pipeline-sep">→</span>
                 <span className="pipeline-stage" title="The LLM generated this answer using only the retrieved sources as context — it cannot see code outside these chunks">generated</span>
+                {msg.model && (
+                  <>
+                    <span className="pipeline-sep">·</span>
+                    <span
+                      className="pipeline-stage"
+                      style={{ opacity: 0.45, fontStyle: "italic" }}
+                      title={`Model: ${msg.model}`}
+                    >
+                      {msg.model.split("/").pop()}
+                    </span>
+                  </>
+                )}
                 {msg.grade && msg.grade.confidence !== "unknown" && (
                   <>
                     <span className="pipeline-sep">→</span>
@@ -464,4 +502,6 @@ export default function Message({ msg, onDiagramThis, onRetry, showRepo = false 
       )}
     </div>
   );
-}
+});
+
+export default Message;

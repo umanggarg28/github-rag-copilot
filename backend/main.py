@@ -35,6 +35,7 @@ Endpoints:
 
 import asyncio
 import json
+import os
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -124,7 +125,10 @@ async def lifespan(app: FastAPI):
 
     # ── MCP client + agent setup ───────────────────────────────────────────────
     if settings.groq_api_key or settings.gemini_api_key or settings.openrouter_api_key or settings.anthropic_api_key:
-        _mcp_client    = MCPClient(server_url="http://localhost:8000/mcp")
+        # MCP server is mounted in this same process — connect to ourselves.
+        # Use PORT env var so this works on any host: local (8000), HF Spaces (7860).
+        _port          = int(os.getenv("PORT", "8000"))
+        _mcp_client    = MCPClient(server_url=f"http://localhost:{_port}/mcp")
         _agent_service = AgentService(_mcp_client, repo_map_svc=_repo_map_service)
         print("AgentService ready (MCP-powered agentic RAG enabled).")
     else:
@@ -491,6 +495,7 @@ async def stream_tour(
     owner:       str,
     name:        str,
     diagram_svc: Annotated[DiagramService, Depends(get_diagram_service)],
+    force:       bool = Query(False, description="If true, bypass cache and regenerate"),
 ):
     """
     Stream codebase tour generation as Server-Sent Events.
@@ -511,7 +516,7 @@ async def stream_tour(
 
         def _run():
             try:
-                for event in diagram_svc.build_tour_stream(repo):
+                for event in diagram_svc.build_tour_stream(repo, force=force):
                     loop.call_soon_threadsafe(queue.put_nowait, event)
             except Exception as e:
                 loop.call_soon_threadsafe(
@@ -541,7 +546,8 @@ async def stream_diagram(
     owner:        str,
     name:         str,
     diagram_svc:  Annotated[DiagramService, Depends(get_diagram_service)],
-    type:         str = Query("architecture", description="architecture | class"),
+    type:         str  = Query("architecture", description="architecture | class"),
+    force:        bool = Query(False, description="If true, bypass cache and regenerate"),
 ):
     """
     Stream diagram generation as Server-Sent Events.
@@ -559,7 +565,7 @@ async def stream_diagram(
 
         def _run():
             try:
-                for event in diagram_svc.build_diagram_stream(repo, type):
+                for event in diagram_svc.build_diagram_stream(repo, type, force=force):
                     loop.call_soon_threadsafe(queue.put_nowait, event)
             except Exception as e:
                 loop.call_soon_threadsafe(
@@ -724,6 +730,8 @@ async def query_stream(
             # Pipeline provenance: which quality features fired for this query.
             # Sent to the frontend so users can see HOW the answer was built.
             "pipeline":   pipeline_info,
+            # Which model actually generated this answer — shown subtly in the UI.
+            "model":      generation_svc._model,
         }
         yield f"event: meta\ndata: {json.dumps(meta)}\n\n"
 
@@ -845,7 +853,7 @@ async def agent_stream(request: AgentStreamRequest):
                     yield f"event: sources\ndata: {payload}\n\n"
 
                 elif etype == "done":
-                    payload = json.dumps({"iterations": event["iterations"]})
+                    payload = json.dumps({"iterations": event["iterations"], "model": event.get("model", "")})
                     yield f"event: done\ndata: {payload}\n\n"
                     yield "data: [DONE]\n\n"
 

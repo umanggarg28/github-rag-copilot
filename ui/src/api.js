@@ -45,11 +45,14 @@ export async function fetchDiagram(slug, type = "architecture") {
  *
  * Returns a cancel() function.
  */
-export function streamTour(slug, { onProgress, onDone, onError }) {
+export function streamTour(slug, { onProgress, onDone, onError, force = false }) {
   const [owner, name] = slug.split("/");
   const controller = new AbortController();
+  const url = force
+    ? `${BASE}/repos/${owner}/${name}/tour/stream?force=true`
+    : `${BASE}/repos/${owner}/${name}/tour/stream`;
 
-  fetch(`${BASE}/repos/${owner}/${name}/tour/stream`, { signal: controller.signal })
+  fetch(url, { signal: controller.signal })
     .then(async (res) => {
       if (!res.ok) { onError?.(`Server error ${res.status}`); return; }
 
@@ -100,11 +103,12 @@ export function streamTour(slug, { onProgress, onDone, onError }) {
  *
  * Returns a cancel() function.
  */
-export function streamDiagram(slug, type = "architecture", { onProgress, onDone, onError }) {
+export function streamDiagram(slug, type = "architecture", { onProgress, onDone, onError, force = false }) {
   const [owner, name] = slug.split("/");
   const controller = new AbortController();
+  const url = `${BASE}/repos/${owner}/${name}/diagram/stream?type=${type}${force ? "&force=true" : ""}`;
 
-  fetch(`${BASE}/repos/${owner}/${name}/diagram/stream?type=${type}`, { signal: controller.signal })
+  fetch(url, { signal: controller.signal })
     .then(async (res) => {
       if (!res.ok) { onError?.(`Server error ${res.status}`); return; }
 
@@ -271,8 +275,8 @@ export function streamQuery({ question, repo, mode, history, onToken, onSources,
         if (!data) continue;
 
         if (eventType === "meta") {
-          const { sources, query_type, pipeline } = JSON.parse(data);
-          onSources(sources || [], query_type || "technical", pipeline || {});
+          const { sources, query_type, pipeline, model } = JSON.parse(data);
+          onSources(sources || [], query_type || "technical", pipeline || {}, model || "");
         } else if (eventType === "grade") {
           onGrade?.(JSON.parse(data));
         } else {
@@ -354,8 +358,8 @@ export function streamAgentQuery({ question, repo, history, onThought, onToolCal
           const { sources } = JSON.parse(data);
           onSources?.(sources || []);
         } else if (eventType === "done") {
-          const { iterations } = JSON.parse(data);
-          onDone?.(iterations);
+          const { iterations, model } = JSON.parse(data);
+          onDone?.(iterations, model);
         } else if (eventType === "agent_error") {
           const { message } = JSON.parse(data);
           onError?.(message);

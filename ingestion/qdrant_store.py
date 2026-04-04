@@ -127,7 +127,7 @@ class QdrantStore:
 
     def _ensure_payload_indices(self):
         """Create payload indices for all filterable fields (idempotent)."""
-        for field in ["repo", "filepath", "language", "chunk_type", "text_hash", "calls", "imports", "base_classes"]:
+        for field in ["repo", "filepath", "language", "chunk_type", "name", "text_hash", "calls", "imports", "base_classes"]:
             try:
                 self.client.create_payload_index(
                     collection_name=self.collection,

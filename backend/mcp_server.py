@@ -489,6 +489,92 @@ def recall_notes() -> str:
 
 
 @mcp.tool()
+def draw_diagram(description: str, diagram_type: str = "flowchart") -> str:
+    """
+    Signal that you want to draw a diagram inline in the chat response.
+
+    After calling this tool, include a fenced code block with language 'diagram'
+    in your answer containing valid Mermaid syntax. The frontend renders it as an
+    SVG diagram with an expand-to-fullscreen button.
+
+    When to use:
+    - User asks to "draw", "visualize", "diagram", or "show" a relationship
+    - The answer is clearer as a visual: architecture, data flow, class hierarchy,
+      call graph, sequence of steps, component dependencies
+
+    IMPORTANT: Always search the codebase (search_code, search_symbol, read_file)
+    BEFORE calling this tool. The diagram must be grounded in real code you found.
+    Call draw_diagram LAST in your tool sequence, right before writing the diagram block.
+
+    Use any Mermaid diagram type that best fits the content:
+      flowchart / graph   → components, steps, decisions, data flow
+      classDiagram        → classes, inheritance, methods
+      sequenceDiagram     → call sequences between objects
+      stateDiagram-v2     → state machines, lifecycle
+      erDiagram           → entity relationships
+      gitGraph            → git branching
+      mindmap             → hierarchical concepts
+      timeline            → chronological events
+      Choose whichever type communicates the idea most clearly.
+
+    After calling this tool, always write 1-3 sentences describing what the diagram
+    shows, then output the diagram block:
+
+      Here is a diagram showing how X connects to Y and Z:
+
+      ```diagram
+      flowchart LR
+          A[DataLoader] --> B[Model]
+          B --> C[Loss]
+          C --> D[Optimizer]
+      ```
+
+      Never output just the code block alone — always include a description.
+
+    Args:
+        description:  What you plan to draw (e.g. "class hierarchy for the model")
+        diagram_type: Any Mermaid diagram type (flowchart, classDiagram, sequenceDiagram,
+                      graph, stateDiagram-v2, erDiagram, gitGraph, mindmap, timeline, etc.)
+    """
+    # Only flowchart and graph support direction modifiers (LR/TD).
+    # All other types use their keyword alone as the opening line.
+    directional = {"flowchart", "graph"}
+    if diagram_type in directional:
+        starter = f"{diagram_type} LR"
+    else:
+        starter = diagram_type
+
+    return (
+        f"Ready. Draw '{description}' using Mermaid {diagram_type} syntax.\n\n"
+        f"Output it in your response as a fenced code block with language 'diagram':\n\n"
+        f"```diagram\n"
+        f"{starter}\n"
+        f"    %% nodes and edges here\n"
+        f"```\n\n"
+        f"IMPORTANT rules for valid Mermaid:\n"
+        f"- Node labels must be SHORT (2-4 words max) — they are rendered as-is, no wrapping\n"
+        f"- NEVER use <br>, <br/>, or any HTML tags in labels — they show as literal text\n"
+        f"- NEVER use 'style' commands or 'classDef' — they break the renderer\n"
+        f"- Keep node IDs short, no spaces (e.g. Value, MLP, Neuron)\n"
+        f"- ALWAYS quote labels that contain parentheses, operators, or special chars:\n"
+        f"  WRONG: D[Call backward()]   RIGHT: D[\"Call backward()\"]\n"
+        f"  WRONG: K[grad += x * y]     RIGHT: K[\"grad += x * y\"]\n"
+        f"  Special chars that REQUIRE quotes: ( ) [ ] {{ }} + = * / % < > & | # ;\n"
+        f"- classDiagram: always include key attributes and methods inside curly braces, then list relationships\n"
+        f"  class Foo {{\n    +type attr\n    +method()\n  }}\n"
+        f"  WRONG: class Foo <|-- Bar  (cannot combine declaration + relationship)\n"
+        f"  RIGHT: declare all classes first (with members), then relationships on their own lines\n"
+        f"  Relationship arrows: <|-- inheritance, --> association, *-- composition\n"
+        f"  Empty class boxes are useless — always populate them with real attributes/methods from the code\n"
+        f"- flowchart/graph: use LR or TD direction, quote labels with spaces: A[\"My Label\"]\n"
+        f"- sequenceDiagram: use participant declarations, ->> for messages\n"
+        f"- Good label example: Value, MLP, Neuron, Layer\n"
+        f"- Bad label example: Value Class<br>Core scalar unit — NEVER do this\n"
+        f"The frontend renders this as a live SVG diagram with expand-to-fullscreen."
+    )
+
+
+@mcp.tool()
 def trace_calls(
     repo: str,
     symbol_name: str,
