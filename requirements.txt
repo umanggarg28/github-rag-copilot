@@ -24,6 +24,7 @@ tree-sitter-python   # Python grammar for tree-sitter
 # LLM providers
 groq
 anthropic
+openai          # OpenAI-compatible API calls (Gemini + OpenRouter both use this SDK)
 
 # Utilities
 python-dotenv
