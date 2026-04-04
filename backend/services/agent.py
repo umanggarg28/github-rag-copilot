@@ -114,11 +114,19 @@ def _extract_thought(assistant_message: dict | None, provider: str) -> str:
 
 
 import re as _re
-_XML_TAG_RE = _re.compile(r"<(thought|plan|thinking|reflection)>.*?</(thought|plan|thinking|reflection)>", _re.DOTALL | _re.IGNORECASE)
+_XML_TAG_RE = _re.compile(r"<(thought|plan|thinking|reflection)>(.*?)</(thought|plan|thinking|reflection)>", _re.DOTALL | _re.IGNORECASE)
 
 def _strip_xml_tags(text: str) -> str:
-    """Remove <thought>, <plan>, <thinking> etc. XML blocks that some models emit."""
-    return _XML_TAG_RE.sub("", text).strip()
+    """
+    Unwrap <thought>, <plan>, <thinking> XML blocks emitted by some models.
+
+    Keep the inner content — the tags are just wrapper markup, not the thinking itself.
+    E.g. "<thought>I should search for X</thought>" → "I should search for X"
+
+    This is different from the final-answer stream filter which strips thought blocks
+    entirely (those are internal monologue not meant for the user).
+    """
+    return _XML_TAG_RE.sub(lambda m: m.group(2), text).strip()
 
 
 def _parse_xml_tool_calls(content: str) -> list[dict] | None:
