@@ -495,7 +495,7 @@ class DiagramService:
         self._save_tour(repo, tour)
         return tour
 
-    def build_tour_stream(self, repo: str):
+    def build_tour_stream(self, repo: str, force: bool = False):
         """
         Generator version of build_tour that yields progress events.
 
@@ -510,15 +510,23 @@ class DiagramService:
           parsing    (0.90) — validating and caching result
           done       (1.00) — full tour data in payload
           error      (1.00) — error message in payload
-        """
-        if repo in self._tour_cache:
-            yield {"stage": "done", "progress": 1.0, **self._tour_cache[repo]}
-            return
 
-        disk = self._load_tour(repo)
-        if disk is not None:
-            yield {"stage": "done", "progress": 1.0, **disk}
-            return
+        force=True skips both memory and disk cache — used by the Regenerate button.
+        """
+        if force:
+            self._tour_cache.pop(repo, None)
+            disk_path = self._tour_path(repo)
+            if disk_path.exists():
+                disk_path.unlink()
+        else:
+            if repo in self._tour_cache:
+                yield {"stage": "done", "progress": 1.0, **self._tour_cache[repo]}
+                return
+
+            disk = self._load_tour(repo)
+            if disk is not None:
+                yield {"stage": "done", "progress": 1.0, **disk}
+                return
 
         yield {"stage": "loading", "progress": 0.10, "message": "Loading repository chunks…"}
         chunks = self._list_chunks(repo)
@@ -587,7 +595,7 @@ class DiagramService:
         self._save_tour(repo, tour)
         yield {"stage": "done", "progress": 1.0, **tour}
 
-    def build_diagram_stream(self, repo: str, diagram_type: str):
+    def build_diagram_stream(self, repo: str, diagram_type: str, force: bool = False):
         """
         Generator version of build_diagram that yields progress events.
 
@@ -597,6 +605,8 @@ class DiagramService:
           enriching  (0.70) — LLM call for node descriptions
           done       (1.00) — full diagram data in payload
           error      (1.00) — error message in payload
+
+        force=True skips both memory and disk cache — used by the Regenerate button.
         """
         import json as _json
 
@@ -606,15 +616,23 @@ class DiagramService:
             return
 
         cache_key = (repo, diagram_type)
-        if cache_key in self._cache:
-            yield {"stage": "done", "progress": 1.0,
-                   "diagram": self._cache[cache_key], "type": diagram_type}
-            return
 
-        disk = self._load_diagram(repo, diagram_type)
-        if disk is not None:
-            yield {"stage": "done", "progress": 1.0, "diagram": disk, "type": diagram_type}
-            return
+        if force:
+            # Bust both caches so a fresh diagram is generated
+            self._cache.pop(cache_key, None)
+            disk_path = self._diagram_path(repo, diagram_type)
+            if disk_path.exists():
+                disk_path.unlink()
+        else:
+            if cache_key in self._cache:
+                yield {"stage": "done", "progress": 1.0,
+                       "diagram": self._cache[cache_key], "type": diagram_type}
+                return
+
+            disk = self._load_diagram(repo, diagram_type)
+            if disk is not None:
+                yield {"stage": "done", "progress": 1.0, "diagram": disk, "type": diagram_type}
+                return
 
         yield {"stage": "loading", "progress": 0.10, "message": "Loading repository chunks…"}
         chunks = self._list_chunks(repo)

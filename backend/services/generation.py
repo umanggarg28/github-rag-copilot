@@ -36,8 +36,9 @@ from typing import Iterator
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from backend.config import settings
 
-# OpenRouter free model for generation (no tool calls, so any model works)
-_OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+# DeepSeek-V3 via OpenRouter free tier — strong coding model, often beats GPT-4 on code tasks.
+# The `:free` suffix means OpenRouter serves it at no cost (rate limited but generous).
+_OPENROUTER_MODEL = "qwen/qwen3-coder:free"
 
 
 def _openrouter_client(api_key: str):
@@ -155,13 +156,23 @@ class GenerationService:
         self.provider = self._init_provider()
 
     def _init_provider(self) -> str:
-        """Pick a provider in priority order: Groq → Gemini → OpenRouter → Anthropic.
+        """Pick a provider in priority order: OpenRouter → Groq → Gemini → Anthropic.
 
-        Groq, Gemini, and OpenRouter are all free. Anthropic is a paid fallback.
-        Gemini and OpenRouter use OpenAI-compatible endpoints so they reuse the
-        same _groq_complete / _groq_stream code paths — only the client differs.
+        Priority is quality-first:
+          1. OpenRouter (DeepSeek-V3) — best coding quality, free tier
+          2. Groq (Llama 3.3 70B)    — fast, generous free tier, good quality
+          3. Gemini 2.0 Flash         — Google's fast free model
+          4. Anthropic (claude-haiku) — paid fallback
+
+        Gemini and OpenRouter use OpenAI-compatible endpoints so they share
+        the same _groq_complete / _groq_stream code paths.
         """
-        if settings.groq_api_key:
+        if settings.openrouter_api_key:
+            self._client = _openrouter_client(settings.openrouter_api_key)
+            self._model  = _OPENROUTER_MODEL
+            print(f"Generation: using OpenRouter ({self._model})")
+            return "openrouter"
+        elif settings.groq_api_key:
             from groq import Groq
             self._client = Groq(api_key=settings.groq_api_key)
             self._model  = "llama-3.3-70b-versatile"
@@ -176,11 +187,6 @@ class GenerationService:
             self._model  = "gemini-2.0-flash"
             print(f"Generation: using Google Gemini ({self._model})")
             return "gemini"
-        elif settings.openrouter_api_key:
-            self._client = _openrouter_client(settings.openrouter_api_key)
-            self._model  = _OPENROUTER_MODEL
-            print(f"Generation: using OpenRouter ({self._model})")
-            return "openrouter"
         elif settings.anthropic_api_key:
             import anthropic
             self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -189,7 +195,7 @@ class GenerationService:
             return "anthropic"
         else:
             raise ValueError(
-                "No LLM API key found. Set GROQ_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, or ANTHROPIC_API_KEY in .env"
+                "No LLM API key found. Set OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY in .env"
             )
 
     def _try_fallback(self) -> bool:
@@ -200,9 +206,16 @@ class GenerationService:
         Returns True if a fallback was found and initialized, False if we're already
         on the last provider.
 
-        Priority: groq → gemini → openrouter → anthropic
+        Priority: openrouter (DeepSeek-V3) → groq → gemini → anthropic
         """
-        if self.provider == "groq" and settings.gemini_api_key:
+        if self.provider == "openrouter" and settings.groq_api_key:
+            from groq import Groq
+            self._client  = Groq(api_key=settings.groq_api_key)
+            self._model   = "llama-3.3-70b-versatile"
+            self.provider = "groq"
+            print("Generation: OpenRouter limit hit — switched to Groq (llama-3.3-70b-versatile)")
+            return True
+        if self.provider in ("openrouter", "groq") and settings.gemini_api_key:
             from openai import OpenAI
             self._client = OpenAI(
                 api_key=settings.gemini_api_key,
@@ -210,15 +223,9 @@ class GenerationService:
             )
             self._model  = "gemini-2.0-flash"
             self.provider = "gemini"
-            print("Generation: Groq limit hit — switched to Google Gemini (gemini-2.0-flash)")
+            print("Generation: switched to Google Gemini (gemini-2.0-flash)")
             return True
-        if self.provider in ("groq", "gemini") and settings.openrouter_api_key:
-            self._client = _openrouter_client(settings.openrouter_api_key)
-            self._model  = _OPENROUTER_MODEL
-            self.provider = "openrouter"
-            print(f"Generation: switched to OpenRouter ({_OPENROUTER_MODEL})")
-            return True
-        if self.provider in ("groq", "gemini", "openrouter") and settings.anthropic_api_key:
+        if self.provider in ("openrouter", "groq", "gemini") and settings.anthropic_api_key:
             import anthropic
             self._client  = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             self._model   = "claude-haiku-4-5-20251001"
@@ -294,14 +301,13 @@ class GenerationService:
             return {"confidence": "unknown", "faithful": True, "note": ""}
 
     def _reset_to_primary(self) -> None:
-        """Reset provider to Groq (primary) so recovered rate limits get used again.
-        Called at the start of each public method — if Groq is still exhausted,
-        the fallback chain will kick in as normal."""
-        if self.provider != "groq" and settings.groq_api_key:
-            from groq import Groq
-            self._client  = Groq(api_key=settings.groq_api_key)
-            self._model   = "llama-3.3-70b-versatile"
-            self.provider = "groq"
+        """Reset provider to OpenRouter/DeepSeek-V3 (primary) so recovered rate limits
+        get used again. Called at the start of each public method — if DeepSeek is still
+        exhausted, the fallback chain will kick in as normal."""
+        if self.provider != "openrouter" and settings.openrouter_api_key:
+            self._client  = _openrouter_client(settings.openrouter_api_key)
+            self._model   = _OPENROUTER_MODEL
+            self.provider = "openrouter"
 
     def generate(self, system: str, prompt: str, temperature: float = 0.2, json_mode: bool = False, max_tokens: int = 2048) -> str:
         """

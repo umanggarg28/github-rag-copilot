@@ -247,6 +247,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     setSelected(null);
     setXform({ x: 0, y: 0, scale: 0.85 });
     const cancel = streamTour(repo, {
+      force,
       onProgress: (ev) => setStage(ev),
       onDone:     (d)  => {
         tourCache[repo] = d;   // store for future tab switches
@@ -267,7 +268,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     if (onRegenerateRef) {
       onRegenerateRef.current = () => {
         delete tourCache[repo];
-        load(true);
+        load(true);  // force=true → api passes ?force=true → backend busts disk cache
       };
     }
   }, [onRegenerateRef, repo, load]);

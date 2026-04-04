@@ -88,7 +88,11 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
     setLoadStage(null);
     setError(null);
     setDiagramData(null);
+    // force=true when retryKeys[diagramType] > 0 (user hit Regenerate) so the
+    // backend bypasses its disk cache and actually produces a fresh diagram.
+    const isForced = !!retryKeys[diagramType];
     const cancel = streamDiagram(repo, diagramType, {
+      force: isForced,
       onProgress: (ev) => setLoadStage(ev),
       onDone: ({ diagram, type }) => {
         setLoading(false);
