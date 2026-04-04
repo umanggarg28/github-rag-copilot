@@ -706,6 +706,28 @@ textarea:focus-visible {
     0 4px 12px rgba(212, 132, 90, 0.30);
 }
 
+/* ── GFM table styles (remark-gfm renders <table> inside .bubble) ── */
+.bubble table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+  margin: 12px 0;
+}
+.bubble th, .bubble td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  line-height: 1.5;
+}
+.bubble th {
+  background: rgba(237,228,206,0.06);
+  font-weight: 600;
+  color: var(--text);
+}
+.bubble tr:nth-child(even) td {
+  background: rgba(237,228,206,0.03);
+}
+
 /* ── Message bubbles ──────────────────────────────────────── */
 .bubble {
   padding: 14px 18px;
