@@ -2703,3 +2703,124 @@ Before the GitHub Actions workflow will succeed, you need:
 - [ ] `VERCEL_ORG_ID` (secret), `VERCEL_PROJECT_ID` (secret)
 - [ ] `HF_USERNAME` (var), `HF_SPACE_NAME` (var), `HF_SPACE_URL` (var)
 Only the delivery mechanism changes — progress events are pure metadata.
+
+---
+
+## How HuggingFace Spaces deployment actually works
+
+HuggingFace Spaces is a Git-based hosting platform. Every Space is a Git repo —
+you push code to it and HF builds + runs the Docker container automatically.
+
+### The two-remote setup
+
+```
+origin  → https://github.com/umanggarg28/github-rag-copilot.git  (GitHub)
+hf      → https://huggingface.co/spaces/umanggarg/github-agent   (HF Space)
+```
+
+We have two remotes pointing to two different services:
+- **GitHub** is the source-of-truth repo for collaboration, PRs, history
+- **HF Space** is the deployment target — pushing here triggers a Docker build
+
+```bash
+git remote add hf https://huggingface.co/spaces/umanggarg/github-agent
+git push origin main   # updates GitHub
+git push hf main       # triggers HF rebuild
+```
+
+### What happens after `git push hf main`
+
+1. HF receives the new commit
+2. HF rebuilds the Docker image from scratch using the `Dockerfile` in the repo root
+3. The new container starts, runs `uvicorn backend.main:app --host 0.0.0.0 --port 7860`
+4. HF proxies `https://umanggarg-github-agent.hf.space` → container port 7860
+5. The Space is live — cold start after a build takes ~3-5 minutes
+
+### Why port 7860?
+
+HuggingFace Spaces hard-codes port 7860. Their proxy layer always routes
+`https://YOUR_SPACE.hf.space` → `localhost:7860` inside the container.
+You cannot change this — your app MUST listen on 7860.
+
+```dockerfile
+EXPOSE 7860
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "7860"]
+```
+
+The MCPClient inside the backend connects to itself:
+```python
+_port = int(os.getenv("PORT", "8000"))  # 8000 locally, 7860 on HF
+_mcp_client = MCPClient(server_url=f"http://localhost:{_port}/mcp")
+```
+
+Set `PORT=7860` in the HF Space env vars so the backend can find its own MCP endpoint.
+
+### Why non-root user (uid 1000)?
+
+HuggingFace Spaces runs all containers as a non-root user with uid 1000 for security.
+If your Dockerfile runs as root, file writes and pip installs can silently fail.
+The Dockerfile creates this user explicitly:
+
+```dockerfile
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user PATH=/home/user/.local/bin:$PATH
+```
+
+`pip install --user` installs packages into `/home/user/.local/lib/` instead of
+the system Python path, which is writable by uid 1000 but not root directories.
+
+### Pre-baking the re-ranker model
+
+The local re-ranker (~80MB) is downloaded from HuggingFace Hub on first use.
+If we let it lazy-load, the first search query after a cold start takes 30+ seconds.
+
+```dockerfile
+RUN python -c "from sentence_transformers import CrossEncoder; \
+CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+```
+
+This runs during `docker build` and bakes the model into an image layer.
+Docker layers are cached — if only source code changes (not requirements), pip
+re-runs but this download step is skipped (the layer is already cached).
+
+### CORS: why you must set FRONTEND_URL
+
+Browsers enforce the Same-Origin Policy: a page at `vercel.app` can't call an
+API at `hf.space` unless the API explicitly allows it via CORS headers.
+
+```python
+if settings.frontend_url:
+    _origins.append(settings.frontend_url)  # e.g. https://your-app.vercel.app
+
+app.add_middleware(CORSMiddleware, allow_origins=_origins, ...)
+```
+
+Without `FRONTEND_URL` set in the HF Space, the browser blocks every API call
+with a "CORS policy" error — the app appears broken even though the backend works.
+
+### Deployment checklist for this project
+
+```
+Step 1 — Set env vars in HF Space Settings → Variables:
+  QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION
+  NOMIC_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY
+  GITHUB_TOKEN (optional), COHERE_API_KEY (optional)
+  PORT=7860
+  FRONTEND_URL=https://your-app.vercel.app  (set after step 3)
+
+Step 2 — Push backend to HF:
+  git remote add hf https://huggingface.co/spaces/umanggarg/github-agent
+  git push hf main
+  → Watch the build logs at huggingface.co/spaces/umanggarg/github-agent (Logs tab)
+  → Wait ~3-5 min for the Docker build
+
+Step 3 — Deploy frontend to Vercel:
+  cd ui && npx vercel --prod
+  → Set VITE_API_URL=https://umanggarg-github-agent.hf.space in Vercel env vars
+  → Redeploy after setting the env var so Vite bakes the URL into the bundle
+
+Step 4 — Update FRONTEND_URL:
+  → Go back to HF Space Settings → Variables → set FRONTEND_URL to your Vercel URL
+  → HF restarts the container (no rebuild needed for env var changes)
+```
