@@ -159,7 +159,7 @@ class GenerationService:
         """Pick a provider in priority order: Cerebras → OpenRouter → Groq → Gemini → Anthropic.
 
         Priority is speed + free-tier generosity:
-          1. Cerebras (llama-3.3-70b) — 2600 tok/s, 1M tokens/day free, JSON mode supported
+          1. Cerebras (llama3.1-8b) — fast free tier, JSON mode supported
           2. OpenRouter (DeepSeek-V3) — best coding quality, free tier
           3. Groq (Llama 3.3 70B)    — fast, generous free tier, good quality
           4. Gemini 2.0 Flash         — Google's fast free model
@@ -175,7 +175,7 @@ class GenerationService:
                 base_url="https://api.cerebras.ai/v1",
             )
             self._model  = "llama3.1-8b"
-            print("Generation: using Cerebras (llama-3.3-70b) — 2600 tok/s free tier")
+            print("Generation: using Cerebras (llama3.1-8b) — fast free tier")
             return "cerebras"
         elif settings.openrouter_api_key:
             self._client = _openrouter_client(settings.openrouter_api_key)
