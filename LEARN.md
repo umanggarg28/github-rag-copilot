@@ -2986,3 +2986,99 @@ the raw model name which can change between versions.
 
 Separating `id` (stable, opaque) from `model` (the actual API name, can change)
 means you can update the underlying model without breaking user preferences.
+
+---
+
+## How production RAG systems actually work
+
+Traditional RAG (vector DB + chunks → LLM) is for **scale** — searching across
+100 repos simultaneously where you can't fit everything in context. But
+production code assistants like Claude Code don't use it the same way:
+
+**Claude Code:**
+- Uses exact search (grep, glob) — precise, no hallucination risk
+- AST parsing — understands code structure, not just text similarity
+- Reads full files on demand — no pre-chunked vector index
+- No vector DB — the codebase fits in context directly
+
+**GitHub Copilot / Cursor at scale:**
+- DO use embeddings, but combine with:
+  - Full file reads after retrieval (chunks are just pointers, not the context)
+  - BM25 + semantic fusion (same as us)
+  - Graph-based code relationships (call graphs, import graphs)
+  - Real-time re-indexing on file save
+
+The key insight: **chunks are for finding, not for reading**. The retrieval step
+tells you WHERE the answer is. A separate step then reads the full context around
+that location. This is parent-document retrieval.
+
+---
+
+## The chunking problem and parent-document retrieval
+
+When you chunk a file at function boundaries, you lose surrounding context:
+- A function chunk doesn't contain the class it belongs to
+- A code block chunk doesn't contain the imports at the top of the file
+- The answer to a question might span the boundary between two chunks
+
+**Parent-document retrieval** fixes this:
+1. **Index** small chunks (for precise matching — a 50-line function is easier
+   to embed accurately than a 500-line file)
+2. **Retrieve** the small chunk that matches the query
+3. **Expand** to the parent context before sending to the LLM — the full function,
+   the full class, or the full file depending on what makes sense
+
+The UI can show this as two line ranges on each source card:
+- `matched L45-52` — what the vector search found
+- `retrieved L1-94` — what was actually sent to the LLM
+
+This teaches users a critical production concept: **the retrieved context ≠ the
+matched chunk**.
+
+---
+
+## The lost-in-the-middle problem
+
+Research shows LLMs reliably attend to context at the **beginning and end** of
+their input, but ignore content in the **middle**. For RAG with 6 sources, if
+the most relevant source is chunk 3 or 4, the model may not use it.
+
+Fix: reorder retrieved chunks so the highest-scored ones appear first AND last:
+```python
+# Instead of: [1st, 2nd, 3rd, 4th, 5th, 6th]  (by score)
+# Use:        [1st, 3rd, 5th, 6th, 4th, 2nd]  (best at edges)
+```
+
+One-line change, measurable improvement on multi-source questions.
+
+---
+
+## Iterative retrieval
+
+Standard RAG does one retrieval round. Iterative retrieval does:
+1. Retrieve → generate partial answer
+2. Identify what's missing or uncertain
+3. Retrieve again with a refined query
+4. Generate the final answer
+
+This directly fixes cases like "which functions call `get_batch`" — the first
+retrieval might find the function definition, the second retrieval (with a more
+specific query) finds the call sites.
+
+Iterative retrieval is the bridge between RAG and agent mode. The agent loop IS
+iterative retrieval with tool use — the same idea, just more general.
+
+---
+
+## Why model quality matters more than speed for a learning tool
+
+For a learning-focused app, answer quality > speed. Users are trying to
+understand code deeply — a faster but wrong or shallow answer is worse than
+a slower but accurate one.
+
+Provider priority for RAG generation should favour quality:
+- Gemma 4 31B (Gemini, free) — highest quality, ~15-30s
+- Qwen3-Coder (OpenRouter, free) — strong coding model
+- llama3.1-8b (Cerebras) — fastest but lower quality
+
+For an API-first product, you'd flip this and optimise for speed.
