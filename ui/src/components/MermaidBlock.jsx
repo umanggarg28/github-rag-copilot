@@ -62,10 +62,16 @@ function Diagram({ mermaid: rawText }) {
       .then(() => mermaid.render(id, text))
       .then(({ svg: rendered }) => {
           if (cancelled) return;
-          // Mermaid sets max-width on the SVG which compresses wide flowcharts.
-          // Remove it so the SVG renders at its natural width and the container scrolls.
-          const natural = rendered.replace(/max-width\s*:\s*[^;'"]+[;]?/gi, "");
-          setSvg(natural);
+          // Mermaid sets max-width but no explicit width, so browsers shrink the SVG
+          // to fit its container. Fix: extract the natural pixel width from max-width
+          // and set it as an explicit width attribute so the container scrolls instead.
+          const mw = rendered.match(/max-width\s*:\s*([\d.]+)px/i);
+          const naturalWidth = mw ? Math.ceil(parseFloat(mw[1])) : null;
+          let fixed = rendered.replace(/max-width\s*:\s*[^;'"]+;?\s*/gi, "");
+          if (naturalWidth) {
+            fixed = fixed.replace(/^<svg /, `<svg width="${naturalWidth}" `);
+          }
+          setSvg(fixed);
         })
       .catch((err)             => { if (!cancelled) setError(String(err)); });
 
