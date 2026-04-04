@@ -448,23 +448,17 @@ class AgentService:
         self._repo_map    = repo_map_svc
 
         # ── Provider detection ─────────────────────────────────────────────────
-        # Priority: Cerebras → Gemini → OpenRouter → Anthropic → Groq (last resort).
+        # Priority: Gemini → OpenRouter → Anthropic → Groq (last resort).
         #
-        # Cerebras is first: 1M free tokens/day, 2600+ tok/s, llama-3.3-70b,
-        # OpenAI-compatible API — fastest option with the most generous free tier.
-        # Gemini is second: 1500 free req/day, good tool-use support.
+        # Cerebras is NOT used here — llama3.1-8b (the only suitable Cerebras model)
+        # is too small for reliable tool calling. It answers from context instead of
+        # calling search tools, so users see no agent steps or sources.
+        # Cerebras is great for GenerationService (JSON generation, no tool use).
+        #
+        # Gemini is first: 1500 free req/day, excellent tool-use support.
         # Groq's Llama 3.3 intermittently generates <function=name{...}> hermes-format
         # tool calls which Groq's own API rejects with a 400, so it's kept last.
-        if settings.cerebras_api_key:
-            from openai import OpenAI
-            self._client   = OpenAI(
-                api_key=settings.cerebras_api_key,
-                base_url="https://api.cerebras.ai/v1",
-            )
-            self._provider = "cerebras"
-            self._model    = "llama3.1-8b"
-            print("AgentService: using Cerebras (llama-3.3-70b) — 2600 tok/s free tier")
-        elif settings.gemini_api_key:
+        if settings.gemini_api_key:
             from openai import OpenAI
             self._client   = OpenAI(
                 api_key=settings.gemini_api_key,
@@ -491,7 +485,7 @@ class AgentService:
             self._model    = "moonshotai/kimi-k2-instruct"
             print("AgentService: using Groq (moonshotai/kimi-k2-instruct) via MCP tools [kimi-k2 fallback]")
         else:
-            raise ValueError("AgentService requires CEREBRAS_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, or ANTHROPIC_API_KEY")
+            raise ValueError("AgentService requires GEMINI_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, or ANTHROPIC_API_KEY")
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -740,7 +734,7 @@ class AgentService:
 
         def _run_sync():
             try:
-                if self._provider in ("cerebras", "groq", "gemini", "openrouter"):
+                if self._provider in ("groq", "gemini", "openrouter"):
                     stream = self._client.chat.completions.create(
                         model=self._model,
                         max_tokens=4096,  # increased: complex answers need room
@@ -801,34 +795,24 @@ class AgentService:
     def _try_fallback(self) -> bool:
         """Switch to the next provider if the current one is quota-exhausted.
 
-        Fallback order: cerebras → gemini → openrouter → anthropic → groq (last resort).
+        Fallback order: gemini → openrouter → anthropic → groq (last resort).
         Groq has a hermes-format tool-call bug that causes occasional 400s,
         but it's better than returning nothing when every other provider is exhausted.
         """
-        if self._provider == "cerebras" and settings.gemini_api_key:
-            from openai import OpenAI
-            self._client   = OpenAI(
-                api_key=settings.gemini_api_key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            )
-            self._provider = "gemini"
-            self._model    = "gemini-2.0-flash"
-            print("AgentService: Cerebras limit hit — switched to Gemini")
-            return True
-        if self._provider in ("cerebras", "gemini") and settings.openrouter_api_key:
+        if self._provider == "gemini" and settings.openrouter_api_key:
             self._client   = _openrouter_client(settings.openrouter_api_key)
             self._provider = "openrouter"
             self._model    = _OPENROUTER_MODEL
             print(f"AgentService: Gemini limit hit — switched to OpenRouter ({_OPENROUTER_MODEL})")
             return True
-        if self._provider in ("cerebras", "gemini", "openrouter") and settings.anthropic_api_key:
+        if self._provider in ("gemini", "openrouter") and settings.anthropic_api_key:
             import anthropic
             self._client   = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             self._provider = "anthropic"
             self._model    = "claude-haiku-4-5-20251001"
             print("AgentService: switched to Anthropic as final fallback")
             return True
-        if self._provider in ("cerebras", "gemini", "openrouter", "anthropic") and settings.groq_api_key:
+        if self._provider in ("gemini", "openrouter", "anthropic") and settings.groq_api_key:
             from groq import Groq
             self._client   = Groq(api_key=settings.groq_api_key)
             self._provider = "groq"
@@ -839,7 +823,7 @@ class AgentService:
 
     def _format_tools(self, mcp_tools: list) -> list:
         """Convert MCP tool definitions to provider-specific format."""
-        if self._provider in ("cerebras", "groq", "gemini", "openrouter"):
+        if self._provider in ("groq", "gemini", "openrouter"):
             return self.mcp.tools_as_openai_format(mcp_tools)
         else:
             return self.mcp.tools_as_anthropic_format(mcp_tools)
@@ -867,7 +851,7 @@ class AgentService:
         """
         tools = self._format_tools(mcp_tools)  # format for current provider
         try:
-            if self._provider in ("cerebras", "groq", "gemini", "openrouter"):
+            if self._provider in ("groq", "gemini", "openrouter"):
                 return self._call_groq(messages, tools)
             else:
                 return self._call_anthropic(messages, tools)
@@ -1078,7 +1062,7 @@ class AgentService:
         Anthropic: all results in one user turn, role="user"
           {"role": "user", "content": [{"type": "tool_result", "tool_use_id": id, ...}]}
         """
-        if self._provider in ("cerebras", "groq", "gemini", "openrouter"):
+        if self._provider in ("groq", "gemini", "openrouter"):
             return {
                 "role":         "tool",
                 "tool_call_id": tool_id,
