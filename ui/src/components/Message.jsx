@@ -358,12 +358,11 @@ const Message = forwardRef(function Message({ msg, onDiagramThis, onRetry, showR
           {/* All assistant content in a column wrapper */}
           <div className="message-content">
             {/* Mode tag — always shown on assistant responses so chat history is scannable.
-                "phase" is the reliable mode signal: null = agent, string = RAG (set at message
-                creation in App.jsx). Compact label: "✦ Agent · 4 steps" or "◎ RAG · hybrid". */}
-            {"phase" in msg && (
+                Uses msg.mode (set explicitly at creation, never mutated) so async callbacks
+                updating queryType/phase/model can never flip the label to the wrong mode. */}
+            {msg.mode && (
               <div className="msg-mode-tag">
-                {msg.phase === null ? (
-                  // Agent mode: phase is explicitly null (set before any tools run)
+                {msg.mode === "agent" ? (
                   <>
                     <span className="msg-mode-icon">✦</span>
                     <span className="msg-mode-label">Agent</span>
@@ -372,7 +371,6 @@ const Message = forwardRef(function Message({ msg, onDiagramThis, onRetry, showR
                     )}
                   </>
                 ) : (
-                  // RAG mode: phase = "searching" → "generating" → done
                   <>
                     <span className="msg-mode-icon">◎</span>
                     <span className="msg-mode-label">RAG</span>

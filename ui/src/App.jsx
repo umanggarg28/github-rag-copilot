@@ -47,6 +47,7 @@ export default function App() {
   const streamingRef   = useRef(false);      // always-fresh streaming flag for event handlers
   const countdownTimer = useRef(null);       // setInterval handle for rate-limit auto-retry
   const handleSubmitRef = useRef(null);      // stable ref so closures can call handleSubmit
+  const msgIdCounter    = useRef(0);         // monotonic counter for message IDs — avoids Date.now() collisions
   const rateLimitRetries = useRef(0);        // consecutive rate-limit count — resets on success
 
   // ── Multi-session persistence (localStorage, up to 10 sessions per repo) ───
@@ -329,9 +330,15 @@ export default function App() {
     // On auto-retry (retryQuestion set), skip the user message — it's already in the chat
     // from the first attempt. Adding it again causes duplicate question bubbles.
     const userMsg = { role: "user", content: question };
-    const assistantId = Date.now();
+    // Use a unique counter (not Date.now()) so auto-retry can never create a
+    // new message with the same ID as the old one — preventing a stale onSources
+    // callback from the old RAG stream polluting the new message's state.
+    const assistantId = ++msgIdCounter.current;
     const assistantMsg = {
       id: assistantId, role: "assistant",
+      // Store mode explicitly so Message.jsx never has to infer it from mutable state.
+      // phase, queryType, etc. can all be overwritten by async callbacks; mode cannot.
+      mode: agentMode ? "agent" : "rag",
       content: "", sources: [], queryType: null, streaming: true,
       phase: agentMode ? null : "searching",
       sourceCount: null,
@@ -405,6 +412,10 @@ export default function App() {
           if (secsLeft <= 0) {
             clearInterval(countdownTimer.current);
             countdownTimer.current = null;
+            // Stop the old stream before retrying — prevents stale onSources/onToken
+            // callbacks from the previous attempt firing on the new message.
+            stopStream.current?.();
+            stopStream.current = null;
             setMessages(prev => prev.filter(m => m.id !== assistantId));
             handleSubmitRef.current?.(question);
           } else {
