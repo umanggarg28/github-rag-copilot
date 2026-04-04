@@ -360,24 +360,14 @@ const Message = forwardRef(function Message({ msg, onDiagramThis, onRetry, showR
             {/* Mode tag — always shown on assistant responses so chat history is scannable.
                 Uses msg.mode (set explicitly at creation, never mutated) so async callbacks
                 updating queryType/phase/model can never flip the label to the wrong mode. */}
-            {msg.mode && (
+            {/* Mode tag — RAG only. Agent already has the ToolCallTrace header showing
+                "Agent · N iterations · model", so a second label would be redundant. */}
+            {msg.mode === "rag" && (
               <div className="msg-mode-tag">
-                {msg.mode === "agent" ? (
-                  <>
-                    <span className="msg-mode-icon">✦</span>
-                    <span className="msg-mode-label">Agent</span>
-                    {msg.iterations > 0 && (
-                      <span className="msg-mode-detail">· {msg.iterations} step{msg.iterations !== 1 ? "s" : ""}</span>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <span className="msg-mode-icon">◎</span>
-                    <span className="msg-mode-label">RAG</span>
-                    {msg.queryType && (
-                      <span className="msg-mode-detail">· {msg.queryType}</span>
-                    )}
-                  </>
+                <span className="msg-mode-icon">◎</span>
+                <span className="msg-mode-label">RAG</span>
+                {msg.queryType && (
+                  <span className="msg-mode-detail">· {msg.queryType}</span>
                 )}
                 {msg.model && (
                   <span className="msg-mode-model" title={`Model: ${msg.model}`}>
