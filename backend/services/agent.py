@@ -842,12 +842,61 @@ class AgentService:
         # to propagate any exception raised inside _run_sync.
         task = loop.run_in_executor(None, _run_sync)
 
-        # Consume tokens as they arrive from the background thread
+        # Consume tokens as they arrive from the background thread.
+        # Some models (Gemma 4) emit <thought>...</thought> tags at the start
+        # of their final answer. We strip them here with a stateful buffer so
+        # the UI never renders raw XML thought tags.
+        buf        = ""   # accumulates partial text while we check for tags
+        in_thought = False
+        OPEN_TAG   = "<thought>"
+        CLOSE_TAG  = "</thought>"
+
         while True:
             token = await queue.get()
             if token is None:
+                # Flush whatever is buffered (can't be inside a tag at EOF)
+                if buf and not in_thought:
+                    yield buf
                 break
-            yield token
+
+            buf += token
+
+            # Process buf until no more complete decisions can be made
+            while buf:
+                if in_thought:
+                    # Looking for </thought>
+                    idx = buf.find(CLOSE_TAG)
+                    if idx != -1:
+                        # Found the close tag — discard everything up to and including it
+                        buf = buf[idx + len(CLOSE_TAG):]
+                        in_thought = False
+                    else:
+                        # Might be a partial </thought> at the end — keep the last
+                        # len(CLOSE_TAG)-1 chars buffered in case the tag spans chunks
+                        safe = len(buf) - (len(CLOSE_TAG) - 1)
+                        if safe > 0:
+                            buf = buf[safe:]  # discard confirmed-inside-thought text
+                        break
+                else:
+                    # Looking for <thought>
+                    idx = buf.find(OPEN_TAG)
+                    if idx == 0:
+                        # Tag starts right here — enter thought mode, discard the tag
+                        buf = buf[len(OPEN_TAG):]
+                        in_thought = True
+                    elif idx > 0:
+                        # Emit everything before the tag, then enter thought mode
+                        yield buf[:idx]
+                        buf = buf[idx + len(OPEN_TAG):]
+                        in_thought = True
+                    else:
+                        # No open tag found — safe to emit, but keep a small tail
+                        # in case <thought> is split across chunks
+                        safe = len(buf) - (len(OPEN_TAG) - 1)
+                        if safe > 0:
+                            yield buf[:safe]
+                            buf = buf[safe:]
+                        break
 
         await task  # re-raises any exception from the streaming thread
 
