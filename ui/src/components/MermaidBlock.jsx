@@ -60,7 +60,13 @@ function Diagram({ mermaid: rawText }) {
     // parse() rejects on bad syntax — prevents mermaid from rendering a bomb SVG
     mermaid.parse(text)
       .then(() => mermaid.render(id, text))
-      .then(({ svg: rendered }) => { if (!cancelled) setSvg(rendered); })
+      .then(({ svg: rendered }) => {
+          if (cancelled) return;
+          // Mermaid sets max-width on the SVG which compresses wide flowcharts.
+          // Remove it so the SVG renders at its natural width and the container scrolls.
+          const natural = rendered.replace(/max-width\s*:\s*[^;'"]+[;]?/gi, "");
+          setSvg(natural);
+        })
       .catch((err)             => { if (!cancelled) setError(String(err)); });
 
     return () => { cancelled = true; };
@@ -93,7 +99,7 @@ function Diagram({ mermaid: rawText }) {
   return (
     <div
       dangerouslySetInnerHTML={{ __html: svg }}
-      style={{ display: "flex", justifyContent: "center", padding: "12px 0" }}
+      style={{ display: "flex", justifyContent: "flex-start", padding: "12px 16px", minWidth: "max-content" }}
     />
   );
 }
