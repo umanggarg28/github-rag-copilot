@@ -156,18 +156,28 @@ class GenerationService:
         self.provider = self._init_provider()
 
     def _init_provider(self) -> str:
-        """Pick a provider in priority order: OpenRouter → Groq → Gemini → Anthropic.
+        """Pick a provider in priority order: Cerebras → OpenRouter → Groq → Gemini → Anthropic.
 
-        Priority is quality-first:
-          1. OpenRouter (DeepSeek-V3) — best coding quality, free tier
-          2. Groq (Llama 3.3 70B)    — fast, generous free tier, good quality
-          3. Gemini 2.0 Flash         — Google's fast free model
-          4. Anthropic (claude-haiku) — paid fallback
+        Priority is speed + free-tier generosity:
+          1. Cerebras (llama-3.3-70b) — 2600 tok/s, 1M tokens/day free, JSON mode supported
+          2. OpenRouter (DeepSeek-V3) — best coding quality, free tier
+          3. Groq (Llama 3.3 70B)    — fast, generous free tier, good quality
+          4. Gemini 2.0 Flash         — Google's fast free model
+          5. Anthropic (claude-haiku) — paid fallback
 
-        Gemini and OpenRouter use OpenAI-compatible endpoints so they share
+        Cerebras, Gemini, and OpenRouter use OpenAI-compatible endpoints so they share
         the same _groq_complete / _groq_stream code paths.
         """
-        if settings.openrouter_api_key:
+        if settings.cerebras_api_key:
+            from openai import OpenAI
+            self._client = OpenAI(
+                api_key=settings.cerebras_api_key,
+                base_url="https://api.cerebras.ai/v1",
+            )
+            self._model  = "llama-3.3-70b"
+            print("Generation: using Cerebras (llama-3.3-70b) — 2600 tok/s free tier")
+            return "cerebras"
+        elif settings.openrouter_api_key:
             self._client = _openrouter_client(settings.openrouter_api_key)
             self._model  = _OPENROUTER_MODEL
             print(f"Generation: using OpenRouter ({self._model})")
@@ -195,7 +205,7 @@ class GenerationService:
             return "anthropic"
         else:
             raise ValueError(
-                "No LLM API key found. Set OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY in .env"
+                "No LLM API key found. Set CEREBRAS_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY in .env"
             )
 
     def _try_fallback(self) -> bool:
@@ -206,16 +216,22 @@ class GenerationService:
         Returns True if a fallback was found and initialized, False if we're already
         on the last provider.
 
-        Priority: openrouter (DeepSeek-V3) → groq → gemini → anthropic
+        Priority: cerebras → openrouter (DeepSeek-V3) → groq → gemini → anthropic
         """
-        if self.provider == "openrouter" and settings.groq_api_key:
+        if self.provider == "cerebras" and settings.openrouter_api_key:
+            self._client  = _openrouter_client(settings.openrouter_api_key)
+            self._model   = _OPENROUTER_MODEL
+            self.provider = "openrouter"
+            print(f"Generation: Cerebras limit hit — switched to OpenRouter ({_OPENROUTER_MODEL})")
+            return True
+        if self.provider in ("cerebras", "openrouter") and settings.groq_api_key:
             from groq import Groq
             self._client  = Groq(api_key=settings.groq_api_key)
             self._model   = "llama-3.3-70b-versatile"
             self.provider = "groq"
             print("Generation: OpenRouter limit hit — switched to Groq (llama-3.3-70b-versatile)")
             return True
-        if self.provider in ("openrouter", "groq") and settings.gemini_api_key:
+        if self.provider in ("cerebras", "openrouter", "groq") and settings.gemini_api_key:
             from openai import OpenAI
             self._client = OpenAI(
                 api_key=settings.gemini_api_key,
@@ -225,7 +241,7 @@ class GenerationService:
             self.provider = "gemini"
             print("Generation: switched to Google Gemini (gemini-2.0-flash)")
             return True
-        if self.provider in ("openrouter", "groq", "gemini") and settings.anthropic_api_key:
+        if self.provider in ("cerebras", "openrouter", "groq", "gemini") and settings.anthropic_api_key:
             import anthropic
             self._client  = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             self._model   = "claude-haiku-4-5-20251001"
@@ -332,7 +348,7 @@ class GenerationService:
         messages = [{"role": "user", "content": prompt}]
         params   = {"temperature": temperature, "max_tokens": max_tokens, "json_mode": json_mode}
         try:
-            if self.provider in ("groq", "gemini", "openrouter"):
+            if self.provider in ("cerebras", "groq", "gemini", "openrouter"):
                 return self._groq_complete(system, messages, params)
             else:
                 return self._anthropic_complete(system, messages, params)
@@ -360,7 +376,7 @@ class GenerationService:
         messages = _build_messages(question, context, history)
 
         try:
-            if self.provider in ("groq", "gemini", "openrouter"):
+            if self.provider in ("cerebras", "groq", "gemini", "openrouter"):
                 return self._groq_complete(system, messages, params)
             else:
                 return self._anthropic_complete(system, messages, params)
@@ -393,7 +409,7 @@ class GenerationService:
         messages = _build_messages(question, context, history)
 
         try:
-            if self.provider in ("groq", "gemini", "openrouter"):
+            if self.provider in ("cerebras", "groq", "gemini", "openrouter"):
                 yield from self._groq_stream(system, messages, params)
             else:
                 yield from self._anthropic_stream(system, messages, params)
