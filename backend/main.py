@@ -412,8 +412,15 @@ async def ingest_stream(repo: str, request: Request):
     asyncio.create_task(_run())
 
     async def _event_stream():
+        # Same keepalive pattern as the agent route: if no progress event arrives
+        # within 15s (e.g. during embedding), send an SSE comment to prevent the
+        # HF Spaces / Cloudflare proxy from dropping the idle connection.
         while True:
-            event = await queue.get()
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+                continue
             if event is None:
                 break
             yield f"data: {json.dumps(event)}\n\n"
