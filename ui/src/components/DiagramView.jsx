@@ -76,13 +76,31 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
   const isExplore = diagramType === "explore";
   const selectedTypeDef = ALL_TABS.find(t => t.id === diagramType);
 
+  // localStorage key for a diagram — used to persist across page refreshes.
+  function diagLsKey(r, type) { return `ghrc_diagram_${r.replace(/\//g, "_")}_${type}`; }
+
   // ── Fetch diagram ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!repo || isExplore) return;
-    if (!retryKeys[diagramType] && cache[diagramType]) {
+    const isForced = !!retryKeys[diagramType];
+    // 1. In-memory cache: survives tab switches.
+    if (!isForced && cache[diagramType]) {
       setDiagramData(cache[diagramType]);
       setError(null);
       return;
+    }
+    // 2. localStorage cache: survives page refreshes.
+    if (!isForced) {
+      try {
+        const stored = localStorage.getItem(diagLsKey(repo, diagramType));
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setCache(prev => ({ ...prev, [diagramType]: parsed }));
+          setDiagramData(parsed);
+          setError(null);
+          return;
+        }
+      } catch { /* corrupt — fall through to fetch */ }
     }
     setLoading(true);
     setLoadStage(null);
@@ -90,7 +108,6 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
     setDiagramData(null);
     // force=true when retryKeys[diagramType] > 0 (user hit Regenerate) so the
     // backend bypasses its disk cache and actually produces a fresh diagram.
-    const isForced = !!retryKeys[diagramType];
     const cancel = streamDiagram(repo, diagramType, {
       force: isForced,
       onProgress: (ev) => setLoadStage(ev),
@@ -100,6 +117,7 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
         setCache(prev => ({ ...prev, [diagramType]: diagram }));
         setDiagramData(diagram);
         setRetryKeys(prev => ({ ...prev, [diagramType]: 0 }));
+        try { localStorage.setItem(diagLsKey(repo, diagramType), JSON.stringify(diagram)); } catch {}
       },
       onError: (msg) => {
         setLoading(false);
@@ -131,6 +149,7 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
   }, [fullscreen]);
 
   function handleRegenerate() {
+    try { localStorage.removeItem(diagLsKey(repo, diagramType)); } catch {}
     setCache(prev => { const n = {...prev}; delete n[diagramType]; return n; });
     setDiagramData(null);
     setError(null);

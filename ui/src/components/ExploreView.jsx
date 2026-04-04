@@ -46,6 +46,11 @@ import { streamTour } from "../api";
 // Key: repo slug → tour data object
 const tourCache = {};
 
+// localStorage key for a given repo's tour.
+// We persist tour data across page refreshes so the backend (and LLM quota)
+// is only hit once per repo, not on every refresh.
+function tourLsKey(repo) { return `ghrc_tour_${repo.replace(/\//g, "_")}`; }
+
 // ── Type → visual token ───────────────────────────────────────────────────────
 // Each concept type gets a distinct accent color so students can visually
 // group "data structures" vs "algorithms" vs "entry points" at a glance.
@@ -230,15 +235,27 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const load = useCallback((force = false) => {
     if (!repo) return;
-    // Use the in-memory cache on tab switches — no need to re-fetch if we
-    // already have data for this repo (backend disk-caches too, but this
-    // avoids the round-trip entirely and preserves the user's pan/zoom state
-    // by not resetting xform).
+    // 1. In-memory cache: survives tab switches within the same page session.
     if (!force && tourCache[repo]) {
       setData(tourCache[repo]);
       setLoading(false);
       setError(null);
       return;
+    }
+    // 2. localStorage cache: survives page refreshes. Avoids re-generating
+    //    expensive LLM calls just because the user hit F5.
+    if (!force) {
+      try {
+        const stored = localStorage.getItem(tourLsKey(repo));
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          tourCache[repo] = parsed;
+          setData(parsed);
+          setLoading(false);
+          setError(null);
+          return;
+        }
+      } catch { /* corrupt entry — fall through to fetch */ }
     }
     setLoading(true);
     setStage(null);
@@ -250,7 +267,8 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
       force,
       onProgress: (ev) => setStage(ev),
       onDone:     (d)  => {
-        tourCache[repo] = d;   // store for future tab switches
+        tourCache[repo] = d;
+        try { localStorage.setItem(tourLsKey(repo), JSON.stringify(d)); } catch { /* quota full */ }
         setLoading(false);
         setStage(null);
         setData(d);
@@ -268,6 +286,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     if (onRegenerateRef) {
       onRegenerateRef.current = () => {
         delete tourCache[repo];
+        try { localStorage.removeItem(tourLsKey(repo)); } catch {}
         load(true);  // force=true → api passes ?force=true → backend busts disk cache
       };
     }
