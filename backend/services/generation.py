@@ -67,48 +67,85 @@ def _openrouter_client(api_key: str):
 # (e.g. "<" then "thought>"). We keep a small look-ahead buffer to handle this.
 
 def _strip_thought_tokens(tokens: Iterator[str]) -> Iterator[str]:
-    """Strip <thought>...</thought> blocks from a token stream."""
-    buf   = ""   # accumulates tokens to detect partial tags
-    inside = False
+    """Strip <thought>...</thought> blocks from a token stream.
+
+    Gemma 4 and some other reasoning models wrap their chain-of-thought in
+    <thought>...</thought> before (or instead of) the final answer. We strip
+    the tags but keep the answer. If the entire response is inside a thought
+    block with nothing after it (Gemma 4 sometimes does this when the answer
+    IS the reasoning), we fall back to yielding the thought content so the
+    user always gets a response.
+
+    State machine:
+      outside  → yield tokens, detect <thought> opening tag
+      inside   → buffer and discard, detect </thought> closing tag
+      fallback → at EOF, if no answer tokens were ever yielded, yield thought buf
+    """
+    OPEN  = "<thought>"
+    CLOSE = "</thought>"
+
+    buf           = ""   # look-ahead window for partial tag detection
+    inside        = False
+    thought_buf   = ""   # accumulates full thought content (for fallback)
+    answer_yielded = False
 
     for tok in tokens:
         buf += tok
 
         while True:
             if inside:
-                # Look for closing tag
-                end = buf.find("</thought>")
+                end = buf.find(CLOSE)
                 if end != -1:
-                    buf = buf[end + len("</thought>"):]
+                    # Found closing tag — everything before it is thought content
+                    thought_buf += buf[:end]
+                    buf = buf[end + len(CLOSE):]
                     inside = False
                 else:
-                    # Keep the last len("</thought>")-1 chars in the buffer
-                    # in case the closing tag is split across token boundaries.
-                    keep = len("</thought>") - 1
+                    # Discard confirmed-thought text, keep tail for partial-tag detection
+                    keep = len(CLOSE) - 1
                     if len(buf) > keep:
+                        thought_buf += buf[:-keep]
                         buf = buf[-keep:]
                     break
             else:
-                # Look for opening tag
-                start = buf.find("<thought>")
+                start = buf.find(OPEN)
                 if start != -1:
-                    # Yield everything before the tag
+                    # Yield everything before the opening tag as answer text
                     if start > 0:
-                        yield buf[:start]
-                    buf = buf[start + len("<thought>"):]
+                        pre = buf[:start]
+                        if pre.strip():
+                            answer_yielded = True
+                        yield pre
+                    buf = buf[start + len(OPEN):]
                     inside = True
                 else:
-                    # No open tag — yield everything except the last few chars
-                    # (they might be the start of a partial "<thought>" tag).
-                    keep = len("<thought>") - 1
+                    # No opening tag — safe to yield all but the partial-tag tail
+                    keep = len(OPEN) - 1
                     if len(buf) > keep:
-                        yield buf[:-keep]
+                        chunk = buf[:-keep]
+                        if chunk.strip():
+                            answer_yielded = True
+                        yield chunk
                         buf = buf[-keep:]
                     break
 
-    # Flush remaining buffer (only if we're not still inside a thought block)
-    if buf and not inside:
+    # ── End of stream ──────────────────────────────────────────────────────────
+    if inside:
+        # Stream ended mid-thought (no closing tag found).
+        # Yield the accumulated thought content — it IS the answer.
+        yield thought_buf + buf
+        return  # skip the fallback check — we just yielded
+
+    if buf:
+        if buf.strip():
+            answer_yielded = True
         yield buf
+
+    # Fallback: model wrapped everything in <thought>...</thought> with nothing
+    # substantive after (either empty or only whitespace). Rather than leaving
+    # the answer blank, yield the thought content so the user always gets output.
+    if not answer_yielded and thought_buf:
+        yield thought_buf
 
 
 # ── LLM parameters per query type ─────────────────────────────────────────────
