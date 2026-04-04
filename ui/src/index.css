@@ -717,6 +717,7 @@ textarea:focus-visible {
   padding: 6px 10px;
   text-align: left;
   line-height: 1.5;
+  white-space: nowrap;
 }
 .bubble th {
   background: rgba(237,228,206,0.06);
