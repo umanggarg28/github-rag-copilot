@@ -153,8 +153,8 @@ def _strip_thought_tokens(tokens: Iterator[str]) -> Iterator[str]:
 # max_tokens is higher for creative to allow longer explanations/analogies.
 
 _PARAMS = {
-    "technical": {"temperature": 0.1, "max_tokens": 1024},
-    "creative":  {"temperature": 0.7, "max_tokens": 1536},
+    "technical": {"temperature": 0.1, "max_tokens": 4096},
+    "creative":  {"temperature": 0.7, "max_tokens": 4096},
 }
 
 # ── Query classifier signals ───────────────────────────────────────────────────
