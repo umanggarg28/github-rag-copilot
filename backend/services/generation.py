@@ -316,13 +316,17 @@ class GenerationService:
             return {"confidence": "unknown", "faithful": True, "note": ""}
 
     def _reset_to_primary(self) -> None:
-        """Reset provider to OpenRouter/DeepSeek-V3 (primary) so recovered rate limits
-        get used again. Called at the start of each public method — if DeepSeek is still
-        exhausted, the fallback chain will kick in as normal."""
-        if self.provider != "openrouter" and settings.openrouter_api_key:
-            self._client  = _openrouter_client(settings.openrouter_api_key)
-            self._model   = _OPENROUTER_MODEL
-            self.provider = "openrouter"
+        """Reset to Gemma 4 (primary) so recovered rate limits get used again.
+        Called at the start of each public method — if Gemma 4 is still exhausted,
+        the fallback chain will kick in as normal."""
+        if self.provider != "gemini" and settings.gemini_api_key:
+            from openai import OpenAI
+            self._client  = OpenAI(
+                api_key=settings.gemini_api_key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            )
+            self._model   = "gemma-4-31b-it"
+            self.provider = "gemini"
 
     def generate(self, system: str, prompt: str, temperature: float = 0.2, json_mode: bool = False, max_tokens: int = 2048) -> str:
         """
