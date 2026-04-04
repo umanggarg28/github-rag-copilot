@@ -16,6 +16,10 @@ const MermaidBlock = lazy(() => import("./MermaidBlock"));
 // SyntaxHighlighter's own <pre> is the only one. Then in `code` we check
 // whether it has a language class (block code) or not (inline code).
 const mdComponents = {
+  // Wrap tables in a scrollable container so wide tables don't wrap cells
+  table({ children }) {
+    return <div style={{ overflowX: "auto", margin: "12px 0" }}><table style={{ margin: 0 }}>{children}</table></div>;
+  },
   // Strip the <pre> wrapper — SyntaxHighlighter adds its own
   pre({ children }) {
     return <>{children}</>;

@@ -711,7 +711,6 @@ textarea:focus-visible {
   border-collapse: collapse;
   width: 100%;
   font-size: 13px;
-  margin: 12px 0;
 }
 .bubble th, .bubble td {
   border: 1px solid var(--border);
