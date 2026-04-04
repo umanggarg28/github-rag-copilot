@@ -114,6 +114,7 @@ QDRANT_API_KEY=      # Qdrant Cloud API key
 QDRANT_COLLECTION=   # Default: github_repos_nomic (create a new one if you change dims)
 
 # LLM (at least one required)
+CEREBRAS_API_KEY=    # Free at https://cloud.cerebras.ai — llama-3.3-70b, 1M tok/day, 2600 tok/s (FASTEST)
 GROQ_API_KEY=        # Free at https://console.groq.com
 GEMINI_API_KEY=      # Free at https://aistudio.google.com
 OPENROUTER_API_KEY=  # Free tier at https://openrouter.ai

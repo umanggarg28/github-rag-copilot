@@ -14,6 +14,7 @@ load_dotenv()
 
 class Settings:
     # ── LLM ──────────────────────────────────────────────────────────────────
+    cerebras_api_key: str     = os.getenv("CEREBRAS_API_KEY", "")     # free: https://cloud.cerebras.ai (1M tok/day, 2600 tok/s)
     groq_api_key: str         = os.getenv("GROQ_API_KEY", "")         # free: https://console.groq.com
     gemini_api_key: str       = os.getenv("GEMINI_API_KEY", "")       # free: https://aistudio.google.com
     openrouter_api_key: str   = os.getenv("OPENROUTER_API_KEY", "")   # free: https://openrouter.ai
