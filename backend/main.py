@@ -835,20 +835,43 @@ async def agent_stream(request: AgentStreamRequest):
             return
 
         try:
-            # Keepalive loop: SSE proxies (HF Spaces, Cloudflare) drop connections
-            # that go idle for ~30s. We wrap each generator step in a 15s timeout
-            # and send an SSE comment (": keepalive") if nothing arrives in time.
-            # SSE comments are ignored by the browser but reset the proxy idle timer.
-            gen = svc.stream(question, repo_filter=repo, history=history)
+            # Keepalive via queue — the safe pattern for long-running SSE streams.
+            #
+            # Problem with asyncio.wait_for(gen.__anext__(), timeout=N):
+            #   wait_for CANCELS the coroutine on timeout, which propagates
+            #   CancelledError into the async generator, corrupting its state.
+            #   After cancellation, subsequent __anext__() calls hang forever.
+            #
+            # Solution: run the generator in a separate background task that
+            #   pushes events onto a queue. The main loop waits on queue.get()
+            #   with a timeout. queue.get() being cancelled is safe — the item
+            #   stays in the queue and is picked up on the next iteration.
+            #   The producer task is never interrupted.
+            queue: asyncio.Queue = asyncio.Queue()
+
+            async def _producer():
+                try:
+                    async for event in svc.stream(question, repo_filter=repo, history=history):
+                        await queue.put(("event", event))
+                    await queue.put(("done", None))
+                except Exception as exc:
+                    await queue.put(("error", exc))
+
+            asyncio.create_task(_producer())
+
             while True:
                 try:
-                    event = await asyncio.wait_for(gen.__anext__(), timeout=15.0)
-                except StopAsyncIteration:
-                    break
+                    kind, value = await asyncio.wait_for(queue.get(), timeout=15.0)
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
                     continue
 
+                if kind == "done":
+                    break
+                if kind == "error":
+                    raise value
+
+                event = value
                 etype = event["type"]
 
                 if etype == "thought":
