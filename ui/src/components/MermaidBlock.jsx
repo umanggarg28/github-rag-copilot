@@ -230,17 +230,19 @@ export default function MermaidBlock({ mermaid: text }) {
 
   return (
     <>
-      <div style={{
-        position: "relative",
-        margin: "12px 0",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius)",
-        background: "#1a1714",
-        overflow: "auto",
-        minHeight: 120,
-        maxHeight: 480,
-      }}>
-        <Diagram mermaid={text} />
+      {/* Outer wrapper: position:relative so the expand button anchors to the corner,
+          not to the scrollable inner div */}
+      <div style={{ position: "relative", margin: "12px 0" }}>
+        <div style={{
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius)",
+          background: "#1a1714",
+          overflow: "auto",
+          minHeight: 120,
+          maxHeight: 480,
+        }}>
+          <Diagram mermaid={text} />
+        </div>
         <button
           onClick={() => setExpanded(true)}
           title="Expand diagram"
