@@ -462,7 +462,7 @@ class AgentService:
                 base_url="https://api.cerebras.ai/v1",
             )
             self._provider = "cerebras"
-            self._model    = "llama-3.3-70b"
+            self._model    = "llama3.3-70b"
             print("AgentService: using Cerebras (llama-3.3-70b) — 2600 tok/s free tier")
         elif settings.gemini_api_key:
             from openai import OpenAI

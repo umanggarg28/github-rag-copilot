@@ -174,7 +174,7 @@ class GenerationService:
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
             )
-            self._model  = "llama-3.3-70b"
+            self._model  = "llama3.3-70b"
             print("Generation: using Cerebras (llama-3.3-70b) — 2600 tok/s free tier")
             return "cerebras"
         elif settings.openrouter_api_key:
