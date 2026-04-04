@@ -444,6 +444,14 @@ const Message = forwardRef(function Message({ msg, onDiagramThis, onRetry, showR
                   {msg.pipeline?.reranker === "cohere" ? "cohere re-ranked" : "re-ranked"}
                 </span>
                 <span className="pipeline-sep">→</span>
+                {msg.pipeline?.parent_docs > 0 && (
+                  <>
+                    <span className="pipeline-stage pipeline-quality" title={`Parent-document retrieval: ${msg.pipeline.parent_docs} function chunk${msg.pipeline.parent_docs !== 1 ? "s" : ""} expanded to enclosing class for richer LLM context`}>
+                      ↕ {msg.pipeline.parent_docs} expanded
+                    </span>
+                    <span className="pipeline-sep">→</span>
+                  </>
+                )}
                 <span className="pipeline-stage" title={`${msg.sources?.length ?? 0} code chunk${(msg.sources?.length ?? 0) !== 1 ? "s" : ""} were retrieved and passed as context to the LLM`}>{msg.sources?.length ?? 0} source{(msg.sources?.length ?? 0) !== 1 ? "s" : ""}</span>
                 <span className="pipeline-sep">→</span>
                 <span className="pipeline-stage" title="The LLM generated this answer using only the retrieved sources as context — it cannot see code outside these chunks">generated</span>

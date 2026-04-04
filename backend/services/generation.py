@@ -156,19 +156,29 @@ class GenerationService:
         self.provider = self._init_provider()
 
     def _init_provider(self) -> str:
-        """Pick a provider in priority order: Cerebras → OpenRouter → Groq → Gemini → Anthropic.
+        """Pick a provider in priority order: Gemini (Gemma 4) → Cerebras → OpenRouter → Groq → Anthropic.
 
-        Priority is speed + free-tier generosity:
-          1. Cerebras (llama3.1-8b) — fast free tier, JSON mode supported
-          2. OpenRouter (DeepSeek-V3) — best coding quality, free tier
-          3. Groq (Llama 3.3 70B)    — fast, generous free tier, good quality
-          4. Gemini 2.0 Flash         — Google's fast free model
+        Priority is answer quality for RAG — Gemma 4 has a 128K context window and
+        strong instruction-following, making it ideal for synthesising retrieved code:
+          1. Gemini API (gemma-4-31b-it) — best quality, 128K ctx, free via Google AI Studio
+          2. Cerebras (llama3.1-8b) — fast free tier, good for quick responses
+          3. OpenRouter (qwen3-coder) — best coding quality, free tier
+          4. Groq (Llama 3.3 70B)    — fast, generous free tier, good quality
           5. Anthropic (claude-haiku) — paid fallback
 
         Cerebras, Gemini, and OpenRouter use OpenAI-compatible endpoints so they share
         the same _groq_complete / _groq_stream code paths.
         """
-        if settings.cerebras_api_key:
+        if settings.gemini_api_key:
+            from openai import OpenAI
+            self._client = OpenAI(
+                api_key=settings.gemini_api_key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            )
+            self._model  = "gemma-4-31b-it"
+            print("Generation: using Gemma 4 31B (gemma-4-31b-it) via Google Gemini API")
+            return "gemini"
+        elif settings.cerebras_api_key:
             from openai import OpenAI
             self._client = OpenAI(
                 api_key=settings.cerebras_api_key,
@@ -188,15 +198,6 @@ class GenerationService:
             self._model  = "llama-3.3-70b-versatile"
             print(f"Generation: using Groq ({self._model})")
             return "groq"
-        elif settings.gemini_api_key:
-            from openai import OpenAI
-            self._client = OpenAI(
-                api_key=settings.gemini_api_key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            )
-            self._model  = "gemini-2.0-flash"
-            print(f"Generation: using Google Gemini ({self._model})")
-            return "gemini"
         elif settings.anthropic_api_key:
             import anthropic
             self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -216,37 +217,37 @@ class GenerationService:
         Returns True if a fallback was found and initialized, False if we're already
         on the last provider.
 
-        Priority: cerebras → openrouter (DeepSeek-V3) → groq → gemini → anthropic
+        Priority: gemini (Gemma 4) → cerebras → openrouter → groq → anthropic
         """
-        if self.provider == "cerebras" and settings.openrouter_api_key:
+        if self.provider == "gemini" and settings.cerebras_api_key:
+            from openai import OpenAI
+            self._client  = OpenAI(
+                api_key=settings.cerebras_api_key,
+                base_url="https://api.cerebras.ai/v1",
+            )
+            self._model   = "llama3.1-8b"
+            self.provider = "cerebras"
+            print("Generation: Gemma 4 limit hit — switched to Cerebras (llama3.1-8b)")
+            return True
+        if self.provider in ("gemini", "cerebras") and settings.openrouter_api_key:
             self._client  = _openrouter_client(settings.openrouter_api_key)
             self._model   = _OPENROUTER_MODEL
             self.provider = "openrouter"
-            print(f"Generation: Cerebras limit hit — switched to OpenRouter ({_OPENROUTER_MODEL})")
+            print(f"Generation: switched to OpenRouter ({_OPENROUTER_MODEL})")
             return True
-        if self.provider in ("cerebras", "openrouter") and settings.groq_api_key:
+        if self.provider in ("gemini", "cerebras", "openrouter") and settings.groq_api_key:
             from groq import Groq
             self._client  = Groq(api_key=settings.groq_api_key)
             self._model   = "llama-3.3-70b-versatile"
             self.provider = "groq"
-            print("Generation: OpenRouter limit hit — switched to Groq (llama-3.3-70b-versatile)")
+            print("Generation: switched to Groq (llama-3.3-70b-versatile)")
             return True
-        if self.provider in ("cerebras", "openrouter", "groq") and settings.gemini_api_key:
-            from openai import OpenAI
-            self._client = OpenAI(
-                api_key=settings.gemini_api_key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            )
-            self._model  = "gemini-2.0-flash"
-            self.provider = "gemini"
-            print("Generation: switched to Google Gemini (gemini-2.0-flash)")
-            return True
-        if self.provider in ("cerebras", "openrouter", "groq", "gemini") and settings.anthropic_api_key:
+        if self.provider in ("gemini", "cerebras", "openrouter", "groq") and settings.anthropic_api_key:
             import anthropic
             self._client  = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             self._model   = "claude-haiku-4-5-20251001"
             self.provider = "anthropic"
-            print("Generation: switched to Anthropic (claude-haiku) as final fallback")
+            print("Generation: switched to Anthropic (claude-haiku-4-5) as final fallback")
             return True
         return False
 

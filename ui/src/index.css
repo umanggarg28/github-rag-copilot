@@ -923,6 +923,19 @@ textarea:focus-visible {
   font-family: var(--mono);
 }
 
+/* Parent-doc expansion badge — shown when a function was expanded to its class */
+.source-lines-expanded {
+  font-size: 10px;
+  color: var(--accent);
+  white-space: nowrap;
+  font-family: var(--mono);
+  border: 1px solid var(--accent-border);
+  background: var(--accent-dim);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  cursor: help;
+}
+
 .source-score {
   font-size: 10px;
   color: var(--green);

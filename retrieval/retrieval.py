@@ -356,9 +356,127 @@ class RetrievalService:
         else:
             results = candidates[:top_k]
 
+        # ── Stage 3: Parent-document expansion ────────────────────────────────
+        # For each matched function chunk, try to find and substitute the
+        # enclosing class chunk. This gives the LLM the full class context
+        # (all methods + class docstring) instead of just one isolated method.
+        # The original matched line range is preserved in matched_start/end_line
+        # so the UI can show exactly which part of the class was retrieved.
+        results, n_expanded = self._expand_to_parent(results)
+        if n_expanded:
+            pipeline["parent_docs"] = n_expanded
+
         if return_pipeline:
             return results, pipeline
         return results
+
+    # ── Parent-document retrieval ──────────────────────────────────────────────
+
+    def _expand_to_parent(self, results: list[dict]) -> tuple[list[dict], int]:
+        """
+        Parent-document retrieval: expand matched function chunks to their
+        enclosing class for richer LLM context.
+
+        WHY THIS MATTERS
+        ─────────────────
+        When we retrieve an isolated method like `def _backward(self):`, the LLM
+        sees one function without knowing what class it belongs to, what other
+        methods exist, or what the class invariants are.
+
+        Expanding to the parent class gives the LLM:
+          - The class definition and docstring (explains the overall contract)
+          - All sibling methods (shows how the matched function fits in)
+          - Class-level attributes (__init__) that the method may rely on
+
+        IMPLEMENTATION
+        ──────────────
+        1. Group results by (repo, filepath) to batch Qdrant queries per file
+        2. For each unique file, scroll Qdrant for all its class chunks
+        3. For each matched function chunk, find the class whose line range
+           fully contains the function's start_line..end_line
+        4. If found, replace the chunk's text with the class text (bigger window)
+           while keeping matched_start_line/matched_end_line for the UI
+
+        DEDUPLICATION
+        ─────────────
+        If two sibling methods from the same class both matched (e.g. forward()
+        and backward() are both in results), we skip expanding the second one
+        — we already have the full class from the first expansion.
+
+        Returns:
+            (expanded_results, n_chunks_expanded)
+        """
+        # Group result indices by (repo, filepath) — one Qdrant scroll per file
+        file_groups: dict[tuple, list[int]] = {}
+        for i, r in enumerate(results):
+            key = (r["repo"], r["filepath"])
+            file_groups.setdefault(key, []).append(i)
+
+        expanded = list(results)
+        n_expanded = 0
+        # Track which class ranges we've already used to avoid duplicates
+        seen_class_ranges: set[tuple] = set()
+
+        for (repo, filepath), indices in file_groups.items():
+            # Only fetch class chunks — functions and modules don't have parents here
+            filt = Filter(must=[
+                FieldCondition(key="repo",        match=MatchValue(value=repo)),
+                FieldCondition(key="filepath",    match=MatchValue(value=filepath)),
+                FieldCondition(key="chunk_type",  match=MatchValue(value="class")),
+            ])
+            # Scroll all class chunks for this file (there are rarely more than ~10)
+            class_points, _ = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=filt,
+                limit=50,
+                with_payload=True,
+                with_vectors=False,
+            )
+            class_chunks = [p.payload for p in class_points if p.payload]
+
+            for idx in indices:
+                chunk = results[idx]
+                # Only expand function-level chunks — class/module already broad
+                if chunk.get("chunk_type") != "function":
+                    continue
+
+                # Find the smallest class that fully contains this function
+                enclosing = None
+                for cls in class_chunks:
+                    cls_start = cls.get("start_line", 0)
+                    cls_end   = cls.get("end_line", 0)
+                    if cls_start <= chunk["start_line"] and cls_end >= chunk["end_line"]:
+                        if enclosing is None or (cls_end - cls_start) < (enclosing["end_line"] - enclosing["start_line"]):
+                            enclosing = cls
+
+                if not enclosing:
+                    continue
+
+                # Deduplicate: skip if we already included this class from a sibling match
+                class_key = (repo, filepath, enclosing.get("start_line"), enclosing.get("end_line"))
+                if class_key in seen_class_ranges:
+                    # Still record matched lines so the UI shows the exact function
+                    new_chunk = dict(chunk)
+                    new_chunk["matched_start_line"] = chunk["start_line"]
+                    new_chunk["matched_end_line"]   = chunk["end_line"]
+                    expanded[idx] = new_chunk
+                    continue
+                seen_class_ranges.add(class_key)
+
+                # Replace the function chunk with the parent class chunk
+                new_chunk = dict(chunk)
+                new_chunk["matched_start_line"] = chunk["start_line"]
+                new_chunk["matched_end_line"]   = chunk["end_line"]
+                # Use raw_text (un-contextualised) if available so we don't send
+                # the contextual prefix twice (it's already embedded, not needed for LLM)
+                new_chunk["text"]       = enclosing.get("raw_text") or enclosing.get("text", chunk["text"])
+                new_chunk["name"]       = enclosing.get("name", chunk.get("name", ""))
+                new_chunk["start_line"] = enclosing.get("start_line", chunk["start_line"])
+                new_chunk["end_line"]   = enclosing.get("end_line",   chunk["end_line"])
+                expanded[idx] = new_chunk
+                n_expanded += 1
+
+        return expanded, n_expanded
 
     # ── LLM-powered query enhancement ─────────────────────────────────────────
 
@@ -509,6 +627,12 @@ class RetrievalService:
         Each chunk is numbered and labelled with its file path and line range
         so the LLM can produce traceable citations like:
           "According to Source 3 (src/auth/middleware.py, lines 45–72)..."
+
+        When parent-document expansion is active, the citation shows both the
+        matched function range and the expanded class range, e.g.:
+          "src/model.py — Transformer() | matched lines 45–72, class lines 1–120"
+        This helps the LLM understand that the context is the whole class, but
+        the relevant part is the function that was originally retrieved.
         """
         if not results:
             return "No relevant code found in the indexed repositories."
@@ -518,7 +642,14 @@ class RetrievalService:
             citation = f"{r['filepath']}"
             if r.get("name"):
                 citation += f" — {r['name']}()"
-            citation += f" | lines {r['start_line']}–{r['end_line']}"
+            if r.get("matched_start_line"):
+                # Parent-doc expansion: cite both the matched function and class range
+                citation += (
+                    f" | matched lines {r['matched_start_line']}–{r['matched_end_line']}"
+                    f" (class context lines {r['start_line']}–{r['end_line']})"
+                )
+            else:
+                citation += f" | lines {r['start_line']}–{r['end_line']}"
             parts.append(f"[Source {i} | {r['repo']} | {citation}]\n{r['text']}")
 
         return "\n\n" + "─" * 40 + "\n\n".join(parts)

@@ -75,6 +75,12 @@ class CodeChunk(BaseModel):
     start_line: int
     end_line: int
     score: float
+    # Parent-document retrieval: when a function chunk is expanded to its
+    # enclosing class, start_line/end_line become the class range while these
+    # fields track the original matched function's exact line range.
+    # None means no expansion happened — the chunk is already the full parent scope.
+    matched_start_line: Optional[int] = None
+    matched_end_line: Optional[int] = None
 
 
 class SearchResponse(BaseModel):

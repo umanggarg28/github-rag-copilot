@@ -22,9 +22,13 @@ export default function SourceCard({ source, index, showRepo = false }) {
   const lang = LANG_MAP[source.language] || "text";
   const name = source.name ? `${source.name}()` : null;
 
-  // blob/HEAD always resolves to the default branch (main or master), avoiding
-  // hardcoding "main" which breaks repos that still use "master".
-  const githubUrl = `https://github.com/${source.repo}/blob/HEAD/${source.filepath}#L${source.start_line}`;
+  // When parent-doc expansion ran, the GitHub link points to the original matched
+  // function (matched_start_line), not the full class range (start_line).
+  // blob/HEAD resolves to the default branch (main or master) without hardcoding.
+  const lineAnchor = (source.matched_start_line && source.matched_start_line !== source.start_line)
+    ? source.matched_start_line
+    : source.start_line;
+  const githubUrl = `https://github.com/${source.repo}/blob/HEAD/${source.filepath}#L${lineAnchor}`;
   const scorePercent = source.score != null ? `${Math.round(source.score * 100)}%` : null;
   // Color-code by confidence using design-system tokens (sage/warning/red)
   const scoreColor = !source.score ? null
@@ -69,14 +73,25 @@ export default function SourceCard({ source, index, showRepo = false }) {
           {source.filepath}
         </a>
         {name && <span className="source-name">{name}</span>}
-        <span className="source-lines">L{source.start_line}–{source.end_line}</span>
+        {source.matched_start_line && source.matched_start_line !== source.start_line ? (
+          // Parent-doc expanded: the matched function was swapped out for its enclosing class.
+          // Show the original function lines + a badge indicating the class expansion.
+          <>
+            <span className="source-lines">L{source.matched_start_line}–{source.matched_end_line}</span>
+            <span className="source-lines-expanded" title={`Expanded to enclosing class (L${source.start_line}–${source.end_line}) for richer LLM context`}>
+              ↕ class
+            </span>
+          </>
+        ) : (
+          <span className="source-lines">L{source.start_line}–{source.end_line}</span>
+        )}
         <a
           className="source-open-btn"
           href={githubUrl}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
-          title={`Open on GitHub (L${source.start_line})`}
+          title={`Open on GitHub (L${lineAnchor})`}
           aria-label="Open on GitHub"
         >
           <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -122,7 +137,7 @@ export default function SourceCard({ source, index, showRepo = false }) {
             customStyle={{ fontSize: 12, margin: 0, background: '#141210', borderRadius: 0 }}
             lineNumberStyle={{ color: 'rgba(237,228,206,0.22)', fontSize: 11, minWidth: 36, paddingRight: 12 }}
             showLineNumbers
-            startingLineNumber={source.start_line}
+            startingLineNumber={source.start_line}  /* start_line = class range when expanded */
           >
             {source.text}
           </SyntaxHighlighter>
