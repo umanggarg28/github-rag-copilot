@@ -684,6 +684,40 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+/* ── Mode tag (RAG / Agent label) ─────────────────────────── */
+/* Compact label above each assistant response — makes chat history scannable.
+   "✦ Agent · 4 steps" vs "◎ RAG · hybrid" at a glance. */
+.msg-mode-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.msg-mode-icon {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.msg-mode-label {
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text-2);
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+.msg-mode-detail {
+  color: var(--muted);
+}
+
+.msg-mode-model {
+  color: var(--faint);
+  font-style: italic;
+}
+
 /* ── Avatar ───────────────────────────────────────────────── */
 .message-avatar {
   width: 32px;

@@ -357,6 +357,38 @@ const Message = forwardRef(function Message({ msg, onDiagramThis, onRetry, showR
 
           {/* All assistant content in a column wrapper */}
           <div className="message-content">
+            {/* Mode tag — always shown on assistant responses so chat history is scannable.
+                "phase" is the reliable mode signal: null = agent, string = RAG (set at message
+                creation in App.jsx). Compact label: "✦ Agent · 4 steps" or "◎ RAG · hybrid". */}
+            {"phase" in msg && (
+              <div className="msg-mode-tag">
+                {msg.phase === null ? (
+                  // Agent mode: phase is explicitly null (set before any tools run)
+                  <>
+                    <span className="msg-mode-icon">✦</span>
+                    <span className="msg-mode-label">Agent</span>
+                    {msg.iterations > 0 && (
+                      <span className="msg-mode-detail">· {msg.iterations} step{msg.iterations !== 1 ? "s" : ""}</span>
+                    )}
+                  </>
+                ) : (
+                  // RAG mode: phase = "searching" → "generating" → done
+                  <>
+                    <span className="msg-mode-icon">◎</span>
+                    <span className="msg-mode-label">RAG</span>
+                    {msg.queryType && (
+                      <span className="msg-mode-detail">· {msg.queryType}</span>
+                    )}
+                  </>
+                )}
+                {msg.model && (
+                  <span className="msg-mode-model" title={`Model: ${msg.model}`}>
+                    · {msg.model.split("/").pop()}
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Agent reasoning trace */}
             {msg.toolCalls && msg.toolCalls.length > 0 && (
               <ToolCallTrace steps={msg.toolCalls} streaming={msg.streaming} iterations={msg.iterations} model={msg.model} />
