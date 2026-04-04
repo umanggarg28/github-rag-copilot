@@ -1,6 +1,9 @@
 import { useState, useCallback, Suspense, lazy, forwardRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import SourceCard from "./SourceCard";
@@ -399,7 +402,7 @@ const Message = forwardRef(function Message({ msg, onDiagramThis, onRetry, showR
 
             {/* Answer bubble */}
             <div className="bubble" style={{ position: "relative", display: msg.rateLimited ? "none" : undefined }}>
-              <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown components={mdComponents} remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                 {msg.content || " "}
               </ReactMarkdown>
               {/* Show cursor whenever streaming, not just when no tool active */}
