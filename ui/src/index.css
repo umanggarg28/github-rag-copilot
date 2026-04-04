@@ -1567,6 +1567,151 @@ textarea:focus-visible {
 }
 
 /* ══════════════════════════════════════════════════════════
+   INPUT FOOTER ROW — wraps agent badge + model selector
+   ══════════════════════════════════════════════════════════ */
+.input-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  /* Remove the margin-top from badge when it's inside this row */
+}
+.input-footer-row .input-mode-badge {
+  margin-top: 0;
+}
+
+/* ══════════════════════════════════════════════════════════
+   MODEL SELECTOR — dropdown button + floating menu
+   ══════════════════════════════════════════════════════════ */
+.model-selector {
+  position: relative;
+}
+
+.model-selector-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid rgba(237,228,206,0.10);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px 2px 6px;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
+  white-space: nowrap;
+  line-height: 1.6;
+}
+.model-selector-btn:hover {
+  color: var(--text-2);
+  border-color: rgba(237,228,206,0.20);
+  background: rgba(237,228,206,0.04);
+}
+
+.model-selector-name {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Speed badge: fast = green-ish, slow = amber */
+.model-speed-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 0px 4px;
+  border-radius: 3px;
+  letter-spacing: 0;
+}
+.model-speed-fast {
+  background: rgba(114,184,126,0.15);
+  color: var(--green, #72b87e);
+  border: 1px solid rgba(114,184,126,0.25);
+}
+.model-speed-slow {
+  background: rgba(212,171,90,0.12);
+  color: #c9a85a;
+  border: 1px solid rgba(212,171,90,0.22);
+}
+
+.model-chevron {
+  color: var(--muted);
+  transition: transform var(--transition);
+  flex-shrink: 0;
+}
+.model-chevron.open {
+  transform: rotate(180deg);
+}
+
+/* The dropdown panel — opens above the button */
+.model-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 300px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow:
+    0 -4px 24px rgba(10,6,4,0.55),
+    0 0 0 1px rgba(237,228,206,0.06);
+  z-index: 200;
+  overflow: hidden;
+  padding: 4px;
+}
+
+.model-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: calc(var(--radius) - 3px);
+  padding: 8px 10px;
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: background var(--transition);
+}
+.model-menu-item:hover:not(:disabled) {
+  background: rgba(237,228,206,0.06);
+}
+.model-menu-item.active {
+  background: rgba(212,132,90,0.10);
+}
+.model-menu-item.unavailable {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.model-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.model-menu-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.model-menu-note {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+}
+
+.model-menu-unavail {
+  font-size: 10px;
+  color: var(--red, #c86858);
+  margin-top: 2px;
+  font-style: italic;
+}
+
+/* ══════════════════════════════════════════════════════════
    STATUS BAR
    ══════════════════════════════════════════════════════════ */
 .status-bar {

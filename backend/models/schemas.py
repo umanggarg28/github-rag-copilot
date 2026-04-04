@@ -172,6 +172,11 @@ class AgentRequest(BaseModel):
         default=None,
         description="Restrict search to a specific repo slug (e.g. 'karpathy/micrograd')",
     )
+    model_id: Optional[str] = Field(
+        default=None,
+        description="Model catalog ID to use (e.g. 'cerebras/qwen3-235b'). Defaults to the server's priority chain.",
+    )
+    history: list = Field(default_factory=list, description="Prior conversation turns")
 
 
 class AgentResponse(BaseModel):

@@ -57,7 +57,7 @@ from backend.models.schemas import (
 from backend.config import settings
 from backend.services.ingestion_service import IngestionService
 from backend.services.generation import GenerationService, classify_query
-from backend.services.agent import AgentService
+from backend.services.agent import AgentService, AGENT_MODELS
 from backend.services.diagram_service import DiagramService
 from backend.services.repo_map_service import RepoMapService
 from backend.mcp_server import mcp, init_services as init_mcp_services
@@ -801,8 +801,40 @@ class AgentStreamRequest(BaseModel):
     """Request body for POST /agent/stream — agentic RAG with conversation history."""
     question: str
     repo:     str | None = None
+    model_id: str | None = None   # catalog ID from /agent/models; None = auto priority chain
     # Conversation history: prior [{role, content}] turns for follow-up questions.
     history:  list[dict] = []
+
+
+@app.get("/agent/models", tags=["agent"])
+async def agent_models():
+    """
+    Return the list of available agent models with metadata for the model selector UI.
+
+    Each entry has:
+      id:          unique catalog ID sent back as model_id in /agent/stream requests
+      name:        display name shown in the UI
+      provider:    which API this model is served by
+      speed:       "fast" | "slow" — used to show a visual indicator
+      speed_label: human-readable time estimate (e.g. "~40s")
+      note:        one-sentence tradeoff description shown in the tooltip / expanded row
+      available:   whether the required API key is configured on this server
+    """
+    from backend.config import settings
+    result = []
+    for m in AGENT_MODELS:
+        key_attr = m.get("requires", "")
+        available = bool(getattr(settings, key_attr, ""))
+        result.append({
+            "id":          m["id"],
+            "name":        m["name"],
+            "provider":    m["provider"],
+            "speed":       m["speed"],
+            "speed_label": m["speed_label"],
+            "note":        m["note"],
+            "available":   available,
+        })
+    return {"models": result}
 
 
 @app.post("/agent/stream", tags=["agent"])
@@ -825,6 +857,7 @@ async def agent_stream(request: AgentStreamRequest):
     svc      = _agent_service  # may be None if no API key configured
     question = request.question
     repo     = request.repo
+    model_id = request.model_id
     history  = request.history[-10:]  # cap at 5 exchanges
 
     async def event_stream():
@@ -851,7 +884,7 @@ async def agent_stream(request: AgentStreamRequest):
 
             async def _producer():
                 try:
-                    async for event in svc.stream(question, repo_filter=repo, history=history):
+                    async for event in svc.stream(question, repo_filter=repo, history=history, model_id=model_id):
                         await queue.put(("event", event))
                     await queue.put(("done", None))
                 except Exception as exc:

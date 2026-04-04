@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Sidebar from "./components/Sidebar";
 import Message from "./components/Message";
 import DiagramView from "./components/DiagramView";
-import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpPrompt } from "./api";
+import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpPrompt, fetchAgentModels } from "./api";
 
 export default function App() {
   const [repos, setRepos]           = useState([]);
@@ -30,6 +30,14 @@ export default function App() {
   const [prompts, setPrompts]         = useState([]);      // MCP prompt list
   const [promptMenu, setPromptMenu]   = useState(false);   // dropdown visible
   const [promptFilter, setPromptFilter] = useState("");    // text after "/"
+
+  // Model selector: available models fetched from /agent/models
+  const [agentModels, setAgentModels] = useState([]);
+  const [selectedModelId, setSelectedModelId] = useState(
+    () => localStorage.getItem('ghrc_selectedModel') || null
+  );
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const modelMenuRef = useRef(null);
 
   const bottomRef           = useRef(null);
   const scrollRef           = useRef(null);
@@ -83,6 +91,33 @@ export default function App() {
   useEffect(() => { streamingRef.current = streaming; }, [streaming]);
   // Persist agent mode preference across page loads
   useEffect(() => { localStorage.setItem('ghrc_agentMode', agentMode); }, [agentMode]);
+  // Persist selected model
+  useEffect(() => {
+    if (selectedModelId) localStorage.setItem('ghrc_selectedModel', selectedModelId);
+    else localStorage.removeItem('ghrc_selectedModel');
+  }, [selectedModelId]);
+  // Fetch available agent models once on mount
+  useEffect(() => {
+    fetchAgentModels().then(models => {
+      setAgentModels(models);
+      // If no model selected yet, default to the first available one
+      setSelectedModelId(prev => {
+        if (prev && models.some(m => m.id === prev)) return prev;
+        const first = models.find(m => m.available);
+        return first ? first.id : null;
+      });
+    });
+  }, []);
+  // Close model menu when clicking outside
+  useEffect(() => {
+    function onClickOutside(e) {
+      if (modelMenuRef.current && !modelMenuRef.current.contains(e.target)) {
+        setModelMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
   // Keep handleSubmitRef pointing at the latest handleSubmit (avoids stale closures
   // in the rate-limit countdown which captures this ref via closure).
   // We update it on every render so it always has the current state in scope.
@@ -390,6 +425,7 @@ export default function App() {
       stop = streamAgentQuery({
         question,
         repo: activeRepo,
+        model_id: selectedModelId || undefined,
         history,
         onThought: (text) => {
           // Append a thought entry to the trace — rendered as a reasoning bubble
@@ -846,9 +882,55 @@ export default function App() {
                   <div className="input-hint" aria-hidden="true">{isMac ? "⌘K" : "Ctrl+K"}</div>
                 )}
               </div>
-              {/* Agent mode indicator — small label below the textarea row */}
+              {/* Agent mode footer: badge + model selector */}
               {agentMode && (
-                <div className="input-mode-badge" aria-hidden="true" title="Agent mode — runs the ReAct loop (Reason + Act): searches the codebase, reads the result, decides if it needs more context, then searches again. The same pattern production agents use.">✦ Agent</div>
+                <div className="input-footer-row">
+                  <div className="input-mode-badge" title="Agent mode — runs the ReAct loop (Reason + Act): searches the codebase, reads the result, decides if it needs more context, then searches again. The same pattern production agents use.">✦ Agent</div>
+                  {agentModels.length > 0 && (() => {
+                    const active = agentModels.find(m => m.id === selectedModelId) || agentModels.find(m => m.available) || agentModels[0];
+                    return (
+                      <div className="model-selector" ref={modelMenuRef}>
+                        <button
+                          className="model-selector-btn"
+                          onClick={() => setModelMenuOpen(o => !o)}
+                          title={active?.note}
+                        >
+                          <span className="model-selector-name">{active?.name ?? "Auto"}</span>
+                          {active && <span className={`model-speed-badge model-speed-${active.speed}`}>{active.speed_label}</span>}
+                          {/* chevron */}
+                          <svg className={`model-chevron${modelMenuOpen ? " open" : ""}`} width="10" height="10" viewBox="0 0 10 10" fill="none">
+                            <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </button>
+                        {modelMenuOpen && (
+                          <div className="model-menu">
+                            {agentModels.map(m => (
+                              <button
+                                key={m.id}
+                                className={`model-menu-item${m.id === selectedModelId ? " active" : ""}${!m.available ? " unavailable" : ""}`}
+                                onClick={() => { setSelectedModelId(m.id); setModelMenuOpen(false); }}
+                                disabled={!m.available}
+                                title={!m.available ? `Requires ${m.provider} API key` : undefined}
+                              >
+                                <div className="model-menu-row">
+                                  <span className="model-menu-name">{m.name}</span>
+                                  <span className={`model-speed-badge model-speed-${m.speed}`}>{m.speed_label}</span>
+                                  {m.id === selectedModelId && (
+                                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{marginLeft:"auto",flexShrink:0}}>
+                                      <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="model-menu-note">{m.note}</div>
+                                {!m.available && <div className="model-menu-unavail">API key not configured</div>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
               )}
             </div>
           </>

@@ -297,6 +297,54 @@ def _sources_from_search_result(result_text: str, fallback_repo: str | None) -> 
 # OpenRouter: free model with confirmed tool-calling support.
 # Required headers: HTTP-Referer (for attribution) and X-Title (app name).
 # Without HTTP-Referer, free tier access may be denied.
+# ── Model catalog ─────────────────────────────────────────────────────────────
+# Each entry describes a model the user can select from the UI.
+# "requires" is the settings key that must be non-empty for this model to appear.
+# "provider" must match the strings used in _call_groq / _call_anthropic routing.
+AGENT_MODELS: list[dict] = [
+    {
+        "id":          "cerebras/qwen3-235b",
+        "name":        "Qwen3 235B",
+        "provider":    "cerebras",
+        "model":       "qwen-3-235b-a22b-instruct-2507",
+        "requires":    "cerebras_api_key",
+        "speed":       "fast",
+        "speed_label": "~40s",
+        "note":        "Best balance. Fast inference (1400 tok/s), strong tool use, generous free quota.",
+    },
+    {
+        "id":          "google/gemma4-31b",
+        "name":        "Gemma 4 31B",
+        "provider":    "gemini",
+        "model":       "gemma-4-31b-it",
+        "requires":    "gemini_api_key",
+        "speed":       "slow",
+        "speed_label": "~90s",
+        "note":        "Highest quality. Reads actual source files. Slower but thorough. Free via AI Studio.",
+    },
+    {
+        "id":          "google/gemini-flash",
+        "name":        "Gemini 2.0 Flash",
+        "provider":    "gemini",
+        "model":       "gemini-2.0-flash",
+        "requires":    "gemini_api_key",
+        "speed":       "fast",
+        "speed_label": "~15s",
+        "note":        "Fastest. Lower quality than Gemma 4. 1500 req/day free limit.",
+    },
+]
+
+def _make_client(model_entry: dict):
+    """Instantiate the right API client for a model catalog entry."""
+    from openai import OpenAI
+    if model_entry["provider"] == "cerebras":
+        return OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1")
+    else:  # gemini
+        return OpenAI(
+            api_key=settings.gemini_api_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        )
+
 _OPENROUTER_MODEL = "qwen/qwen3-coder:free"
 
 # Groq models tried in order when the primary is over capacity or decommissioned.
@@ -472,8 +520,8 @@ class AgentService:
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
             self._provider = "gemini"
-            self._model    = "gemini-2.0-flash"
-            print("AgentService: using Google Gemini (gemini-2.0-flash) via MCP tools")
+            self._model    = "gemma-4-31b-it"
+            print("AgentService: using Gemma 4 31B (gemma-4-31b-it) via MCP tools")
         elif settings.openrouter_api_key:
             self._client   = _openrouter_client(settings.openrouter_api_key)
             self._provider = "openrouter"
@@ -557,7 +605,11 @@ class AgentService:
         }
 
     async def stream(
-        self, question: str, repo_filter: str | None = None, history: list[dict] | None = None
+        self,
+        question: str,
+        repo_filter: str | None = None,
+        history: list[dict] | None = None,
+        model_id: str | None = None,
     ) -> AsyncIterator[dict]:
         """
         Stream agent progress as an async generator.
@@ -581,129 +633,146 @@ class AgentService:
           we re-run with stream=True so tokens arrive in real time.
           This is one extra LLM call but delivers genuine streaming UX.
         """
-        # Discover tools from MCP server (cached after first call)
-        mcp_tools = await self.mcp.list_tools()
-        messages  = self._build_initial_messages(question, repo_filter, history)
+        # ── Per-request model override ────────────────────────────────────────
+        # If the user selected a specific model in the UI, temporarily swap to it.
+        # We save/restore self._client/provider/model in a finally block so the
+        # default priority chain is preserved for the next request.
+        _orig = (self._client, self._provider, self._model)
+        entry = next((m for m in AGENT_MODELS if m["id"] == model_id), None)
+        if entry:
+            self._client   = _make_client(entry)
+            self._provider = entry["provider"]
+            self._model    = entry["model"]
 
-        # Clear session notes from any previous run so this conversation starts fresh.
-        # Note: we import here to avoid circular imports at module load time.
-        from backend.mcp_server import clear_notes
-        clear_notes()
+        try:
+            # Discover tools from MCP server (cached after first call)
+            mcp_tools = await self.mcp.list_tools()
+            messages  = self._build_initial_messages(question, repo_filter, history)
 
-        # Loop detection: skip duplicate tool calls in the stream path too.
-        seen_calls: set[tuple] = set()
+            # Clear session notes from any previous run so this conversation starts fresh.
+            # Note: we import here to avoid circular imports at module load time.
+            from backend.mcp_server import clear_notes
+            clear_notes()
 
-        # Collect source references from tool calls for the sources panel.
-        # Keyed by (repo, filepath, start_line) to deduplicate across iterations.
-        collected_sources: dict[tuple, dict] = {}
+            # Loop detection: skip duplicate tool calls in the stream path too.
+            seen_calls: set[tuple] = set()
 
-        for iteration in range(self.MAX_ITERATIONS):
-            # Run sync LLM call in thread pool — doesn't block the event loop
-            # Pass raw mcp_tools so _call_llm can reformat if provider switches mid-run
-            step = await asyncio.to_thread(self._call_llm, messages, mcp_tools)
+            # Collect source references from tool calls for the sources panel.
+            # Keyed by (repo, filepath, start_line) to deduplicate across iterations.
+            collected_sources: dict[tuple, dict] = {}
 
-            if step["done"]:
-                # Stream the final answer with real token-by-token delivery.
-                # We pass messages (with all tool results) to the streaming call
-                # and tell the LLM not to use tools (tool_choice="none") so it
-                # goes straight to answering.
-                async for token in self._stream_final_answer(messages, mcp_tools):
-                    yield {"type": "token", "text": token}
-                # Emit sources collected across all tool calls before done event
-                if collected_sources:
-                    yield {"type": "sources", "sources": list(collected_sources.values())}
-                yield {"type": "done", "iterations": iteration + 1, "model": self._model}
-                return
+            for iteration in range(self.MAX_ITERATIONS):
+                # Run sync LLM call in thread pool — doesn't block the event loop
+                # Pass raw mcp_tools so _call_llm can reformat if provider switches mid-run
+                step = await asyncio.to_thread(self._call_llm, messages, mcp_tools)
 
-            messages.append(step["assistant_message"])
+                if step["done"]:
+                    # Stream the final answer with real token-by-token delivery.
+                    # We pass messages (with all tool results) to the streaming call
+                    # and tell the LLM not to use tools (tool_choice="none") so it
+                    # goes straight to answering.
+                    async for token in self._stream_final_answer(messages, mcp_tools):
+                        yield {"type": "token", "text": token}
+                    # Emit sources collected across all tool calls before done event
+                    if collected_sources:
+                        yield {"type": "sources", "sources": list(collected_sources.values())}
+                    yield {"type": "done", "iterations": iteration + 1, "model": self._model}
+                    return
 
-            # Emit any pre-tool reasoning text the LLM produced before calling tools.
-            # This lets the UI show "thought bubbles" in the trace timeline —
-            # the user sees WHY each tool was chosen, not just WHAT was called.
-            thought = _extract_thought(step["assistant_message"], self._provider)
-            if thought:
-                yield {"type": "thought", "text": thought}
+                messages.append(step["assistant_message"])
 
-            # ── Parallel tool execution ───────────────────────────────────────
-            # The LLM may return multiple tool calls in one turn (e.g. search_code
-            # called 2-3 times for different query angles simultaneously).
-            # Instead of serial execution, we:
-            #   1. Emit tool_call events for all new (non-duplicate) calls upfront
-            #   2. Run them concurrently with asyncio.gather
-            #   3. Emit tool_result events for all after they complete
-            #
-            # This reduces latency proportionally to the number of parallel calls
-            # (3 serial 500ms searches → 1 parallel 500ms round trip).
+                # Emit any pre-tool reasoning text the LLM produced before calling tools.
+                # This lets the UI show "thought bubbles" in the trace timeline —
+                # the user sees WHY each tool was chosen, not just WHAT was called.
+                thought = _extract_thought(step["assistant_message"], self._provider)
+                if thought:
+                    yield {"type": "thought", "text": thought}
 
-            # Separate new calls from duplicates
-            new_calls: list[dict] = []
-            for tc in step["tool_calls"]:
-                call_key = (tc["name"], tuple(sorted(tc["input"].items())))
-                if call_key in seen_calls:
-                    dup_msg = f"[Skipped duplicate {tc['name']} call — already ran with these arguments]"
-                    yield {"type": "tool_result", "tool": tc["name"], "output": dup_msg}
-                    messages.append(self._build_tool_result(tc["id"], tc["name"], dup_msg))
-                else:
-                    seen_calls.add(call_key)
-                    new_calls.append(tc)
-                    # Emit tool_call events immediately so UI shows them in parallel
-                    yield {"type": "tool_call", "tool": tc["name"], "input": tc["input"]}
+                # ── Parallel tool execution ───────────────────────────────────────
+                # The LLM may return multiple tool calls in one turn (e.g. search_code
+                # called 2-3 times for different query angles simultaneously).
+                # Instead of serial execution, we:
+                #   1. Emit tool_call events for all new (non-duplicate) calls upfront
+                #   2. Run them concurrently with asyncio.gather
+                #   3. Emit tool_result events for all after they complete
+                #
+                # This reduces latency proportionally to the number of parallel calls
+                # (3 serial 500ms searches → 1 parallel 500ms round trip).
 
-            if not new_calls:
-                continue
+                # Separate new calls from duplicates
+                new_calls: list[dict] = []
+                for tc in step["tool_calls"]:
+                    call_key = (tc["name"], tuple(sorted(tc["input"].items())))
+                    if call_key in seen_calls:
+                        dup_msg = f"[Skipped duplicate {tc['name']} call — already ran with these arguments]"
+                        yield {"type": "tool_result", "tool": tc["name"], "output": dup_msg}
+                        messages.append(self._build_tool_result(tc["id"], tc["name"], dup_msg))
+                    else:
+                        seen_calls.add(call_key)
+                        new_calls.append(tc)
+                        # Emit tool_call events immediately so UI shows them in parallel
+                        yield {"type": "tool_call", "tool": tc["name"], "input": tc["input"]}
 
-            # Execute all new calls concurrently — MCP calls are async HTTP round trips
-            async def _run_tool(tc: dict) -> str:
-                try:
-                    return await self.mcp.call_tool(tc["name"], tc["input"])
-                except Exception as e:
-                    return f"Tool error: {e}"
+                if not new_calls:
+                    continue
 
-            parallel_results = await asyncio.gather(*[_run_tool(tc) for tc in new_calls])
+                # Execute all new calls concurrently — MCP calls are async HTTP round trips
+                async def _run_tool(tc: dict) -> str:
+                    try:
+                        return await self.mcp.call_tool(tc["name"], tc["input"])
+                    except Exception as e:
+                        return f"Tool error: {e}"
 
-            # Process results in the same order as the calls
-            for tc, result in zip(new_calls, parallel_results):
-                # Collect source metadata for the sources panel
-                if tc["name"] == "get_file_chunk":
-                    src = _source_from_chunk_call(tc["input"], result)
-                    if src:
-                        key = (src["repo"], src["filepath"], src["start_line"])
-                        collected_sources[key] = src
+                parallel_results = await asyncio.gather(*[_run_tool(tc) for tc in new_calls])
 
-                if tc["name"] in ("search_code", "find_callers", "search_symbol") and not result.startswith("No results"):
-                    for src in _sources_from_search_result(result, tc["input"].get("repo") or repo_filter):
-                        key = (src["repo"], src["filepath"], src["start_line"])
-                        collected_sources[key] = src
+                # Process results in the same order as the calls
+                for tc, result in zip(new_calls, parallel_results):
+                    # Collect source metadata for the sources panel
+                    if tc["name"] == "get_file_chunk":
+                        src = _source_from_chunk_call(tc["input"], result)
+                        if src:
+                            key = (src["repo"], src["filepath"], src["start_line"])
+                            collected_sources[key] = src
 
-                # read_file returns a whole file — record it as a single source entry
-                if tc["name"] == "read_file" and tc["input"].get("filepath"):
-                    repo     = tc["input"].get("repo", repo_filter or "")
-                    filepath = tc["input"]["filepath"]
-                    key = (repo, filepath, 0)
-                    if key not in collected_sources:
-                        ext = "." + filepath.rsplit(".", 1)[-1].lower() if "." in filepath else ""
-                        lang = {"py": "python", "js": "javascript", "ts": "typescript",
-                                "go": "go", "rs": "rust", "java": "java"}.get(ext.lstrip("."), "text")
-                        collected_sources[key] = {
-                            "repo": repo, "filepath": filepath, "language": lang,
-                            "chunk_type": "file", "name": filepath.rsplit("/", 1)[-1],
-                            "start_line": 1, "end_line": result.count("\n"),
-                            "score": 1.0, "text": "",
-                        }
+                    if tc["name"] in ("search_code", "find_callers", "search_symbol") and not result.startswith("No results"):
+                        for src in _sources_from_search_result(result, tc["input"].get("repo") or repo_filter):
+                            key = (src["repo"], src["filepath"], src["start_line"])
+                            collected_sources[key] = src
 
-                display = result[:500] + "…" if len(result) > 500 else result
-                yield {"type": "tool_result", "tool": tc["name"], "output": display}
-                messages.append(self._build_tool_result(tc["id"], tc["name"], result))
+                    # read_file returns a whole file — record it as a single source entry
+                    if tc["name"] == "read_file" and tc["input"].get("filepath"):
+                        repo     = tc["input"].get("repo", repo_filter or "")
+                        filepath = tc["input"]["filepath"]
+                        key = (repo, filepath, 0)
+                        if key not in collected_sources:
+                            ext = "." + filepath.rsplit(".", 1)[-1].lower() if "." in filepath else ""
+                            lang = {"py": "python", "js": "javascript", "ts": "typescript",
+                                    "go": "go", "rs": "rust", "java": "java"}.get(ext.lstrip("."), "text")
+                            collected_sources[key] = {
+                                "repo": repo, "filepath": filepath, "language": lang,
+                                "chunk_type": "file", "name": filepath.rsplit("/", 1)[-1],
+                                "start_line": 1, "end_line": result.count("\n"),
+                                "score": 1.0, "text": "",
+                            }
 
-        # MAX_ITERATIONS hit — LLM never voluntarily stopped, but it has gathered
-        # context from all its tool calls. Force a final answer from that context
-        # rather than returning silence.
-        async for token in self._stream_final_answer(messages, mcp_tools):
-            yield {"type": "token", "text": token}
-        # Emit any collected sources even when we hit the iteration cap
-        if collected_sources:
-            yield {"type": "sources", "sources": list(collected_sources.values())}
-        yield {"type": "done", "iterations": self.MAX_ITERATIONS, "model": self._model}
+                    display = result[:500] + "…" if len(result) > 500 else result
+                    yield {"type": "tool_result", "tool": tc["name"], "output": display}
+                    messages.append(self._build_tool_result(tc["id"], tc["name"], result))
+
+            # MAX_ITERATIONS hit — LLM never voluntarily stopped, but it has gathered
+            # context from all its tool calls. Force a final answer from that context
+            # rather than returning silence.
+            async for token in self._stream_final_answer(messages, mcp_tools):
+                yield {"type": "token", "text": token}
+            # Emit any collected sources even when we hit the iteration cap
+            if collected_sources:
+                yield {"type": "sources", "sources": list(collected_sources.values())}
+            yield {"type": "done", "iterations": self.MAX_ITERATIONS, "model": self._model}
+
+        finally:
+            # Restore original client/provider/model so the next request uses the
+            # default priority chain regardless of what model was selected this time.
+            self._client, self._provider, self._model = _orig
 
     async def _stream_final_answer(self, messages: list, mcp_tools: list) -> AsyncIterator[str]:
         """
@@ -813,8 +882,8 @@ class AgentService:
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
             self._provider = "gemini"
-            self._model    = "gemini-2.0-flash"
-            print("AgentService: Cerebras limit hit — switched to Gemini (gemini-2.0-flash)")
+            self._model    = "gemma-4-31b-it"
+            print("AgentService: Cerebras limit hit — switched to Gemma 4 31B (gemma-4-31b-it)")
             return True
         if self._provider in ("cerebras", "gemini") and settings.openrouter_api_key:
             self._client   = _openrouter_client(settings.openrouter_api_key)

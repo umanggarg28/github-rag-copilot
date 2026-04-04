@@ -2,6 +2,13 @@
 // In production:  set VITE_API_URL in Vercel environment variables
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+export async function fetchAgentModels() {
+  const res = await fetch(`${BASE}/agent/models`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.models || [];
+}
+
 export async function fetchRepos() {
   const res = await fetch(`${BASE}/repos`);
   if (!res.ok) throw new Error("Failed to fetch repos");
@@ -312,13 +319,13 @@ export function streamQuery({ question, repo, mode, history, onToken, onSources,
  *   onDone(iterations)         — agent finished
  *   onError(msg)               — connection or server error
  */
-export function streamAgentQuery({ question, repo, history, onThought, onToolCall, onToolResult, onToken, onSources, onDone, onError }) {
+export function streamAgentQuery({ question, repo, model_id, history, onThought, onToolCall, onToolResult, onToken, onSources, onDone, onError }) {
   const controller = new AbortController();
 
   fetch(`${BASE}/agent/stream`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ question, repo: repo || null, history: history || [] }),
+    body:    JSON.stringify({ question, repo: repo || null, model_id: model_id || null, history: history || [] }),
     signal:  controller.signal,
   }).then(async (res) => {
     if (!res.ok) { onError?.(`Server error ${res.status}`); return; }
