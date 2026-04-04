@@ -729,38 +729,56 @@ async def query_stream(
 
     context = retrieval_svc.format_context(results)
 
-    def token_stream():
+    async def token_stream():
         import json
         meta = {
             "sources":    [CodeChunk(**r).model_dump() for r in results],
             "query_type": query_type,
-            # Pipeline provenance: which quality features fired for this query.
-            # Sent to the frontend so users can see HOW the answer was built.
             "pipeline":   pipeline_info,
-            # Which model actually generated this answer — shown subtly in the UI.
             "model":      generation_svc._model,
         }
         yield f"event: meta\ndata: {json.dumps(meta)}\n\n"
 
-        # Buffer tokens for grading. Wrap in try/except so a mid-stream rate-limit
-        # crash yields a readable error token instead of killing the ASGI connection.
+        # Queue-based keepalive — same pattern as /agent/stream.
+        # generation_svc.stream() is a blocking sync iterator; run it in a
+        # background thread so we can send keepalive pings while waiting.
+        queue: asyncio.Queue = asyncio.Queue()
         full_answer: list[str] = []
-        try:
-            for token in generation_svc.stream(question, context, query_type, history=history):
-                full_answer.append(token)
-                safe_token = token.replace("\n", "\\n")
-                yield f"data: {safe_token}\n\n"
-        except Exception as e:
-            err = "⚠ All LLM providers are currently rate-limited. Please wait 60 seconds and retry."
-            yield f"data: {err.replace(chr(10), ' ')}\n\n"
-            yield "data: [DONE]\n\n"
-            return
 
-        # Model-based grading: second LLM call evaluates faithfulness.
-        grade = generation_svc.grade_answer(question, context, "".join(full_answer), query_type)
-        yield f"event: grade\ndata: {json.dumps(grade)}\n\n"
+        def _run_generation():
+            try:
+                for token in generation_svc.stream(question, context, query_type, history=history):
+                    queue.put_nowait(("token", token))
+                # Grade synchronously in the same thread after streaming finishes
+                answer = "".join(full_answer)
+                grade = generation_svc.grade_answer(question, context, answer, query_type)
+                queue.put_nowait(("grade", grade))
+                queue.put_nowait(("done", None))
+            except Exception as exc:
+                queue.put_nowait(("error", exc))
 
-        yield "data: [DONE]\n\n"
+        asyncio.get_event_loop().run_in_executor(None, _run_generation)
+
+        while True:
+            try:
+                kind, value = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+                continue
+
+            if kind == "token":
+                full_answer.append(value)
+                yield f"data: {value.replace(chr(10), chr(92) + 'n')}\n\n"
+            elif kind == "grade":
+                yield f"event: grade\ndata: {json.dumps(value)}\n\n"
+            elif kind == "done":
+                yield "data: [DONE]\n\n"
+                break
+            elif kind == "error":
+                err = "⚠ All LLM providers are currently rate-limited. Please wait 60 seconds and retry."
+                yield f"data: {err}\n\n"
+                yield "data: [DONE]\n\n"
+                break
 
     return StreamingResponse(token_stream(), media_type="text/event-stream")
 
