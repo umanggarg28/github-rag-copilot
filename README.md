@@ -1,3 +1,12 @@
+---
+title: GitHub Agent
+emoji: 🤖
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 # GitHub RAG Copilot
 
 A production-grade Retrieval-Augmented Generation (RAG) system that indexes any GitHub repository and answers questions about code — built entirely from scratch, without LangChain or LlamaIndex.
