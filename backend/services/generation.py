@@ -53,6 +53,64 @@ def _openrouter_client(api_key: str):
     )
 
 
+# ── Thought-token stripping ────────────────────────────────────────────────────
+# Gemma 4 (and some other reasoning models) wrap their internal chain-of-thought
+# in <thought>...</thought> tags before the final answer. These tags are useful
+# for the model's reasoning but should NOT be shown to the user — they're noisy
+# and often incomplete mid-stream.
+#
+# We strip them with a simple state machine over the token stream:
+#   - "outside": normal text, yield tokens as-is
+#   - "inside":  inside a <thought> block, buffer but don't yield
+#
+# Edge case: the opening/closing tag may be split across multiple tokens
+# (e.g. "<" then "thought>"). We keep a small look-ahead buffer to handle this.
+
+def _strip_thought_tokens(tokens: Iterator[str]) -> Iterator[str]:
+    """Strip <thought>...</thought> blocks from a token stream."""
+    buf   = ""   # accumulates tokens to detect partial tags
+    inside = False
+
+    for tok in tokens:
+        buf += tok
+
+        while True:
+            if inside:
+                # Look for closing tag
+                end = buf.find("</thought>")
+                if end != -1:
+                    buf = buf[end + len("</thought>"):]
+                    inside = False
+                else:
+                    # Keep the last len("</thought>")-1 chars in the buffer
+                    # in case the closing tag is split across token boundaries.
+                    keep = len("</thought>") - 1
+                    if len(buf) > keep:
+                        buf = buf[-keep:]
+                    break
+            else:
+                # Look for opening tag
+                start = buf.find("<thought>")
+                if start != -1:
+                    # Yield everything before the tag
+                    if start > 0:
+                        yield buf[:start]
+                    buf = buf[start + len("<thought>"):]
+                    inside = True
+                else:
+                    # No open tag — yield everything except the last few chars
+                    # (they might be the start of a partial "<thought>" tag).
+                    keep = len("<thought>") - 1
+                    if len(buf) > keep:
+                        yield buf[:-keep]
+                        buf = buf[-keep:]
+                    break
+
+    # Flush remaining buffer (only if we're not still inside a thought block)
+    if buf and not inside:
+        yield buf
+
+
 # ── LLM parameters per query type ─────────────────────────────────────────────
 # Technical queries need precision; creative queries need warmth.
 # max_tokens is higher for creative to allow longer explanations/analogies.
@@ -413,9 +471,10 @@ class GenerationService:
 
         try:
             if self.provider in ("cerebras", "groq", "gemini", "openrouter"):
-                yield from self._groq_stream(system, messages, params)
+                raw = self._groq_stream(system, messages, params)
             else:
-                yield from self._anthropic_stream(system, messages, params)
+                raw = self._anthropic_stream(system, messages, params)
+            yield from _strip_thought_tokens(raw)
         except Exception as e:
             if _is_exhausted(e) and self._try_fallback():
                 self._in_fallback = True
