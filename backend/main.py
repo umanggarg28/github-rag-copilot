@@ -709,28 +709,59 @@ async def query_stream(
     """
     question = request.question
     history  = request.history[-10:]  # cap at 5 exchanges
-
     query_type = classify_query(question)
-    results, pipeline_info = retrieval_svc.search(
-        query=question,
-        top_k=request.top_k,
-        repo_filter=request.repo,
-        language_filter=request.language,
-        mode=request.mode,
-        relevance_threshold=request.relevance_threshold,
-        return_pipeline=True,
-    )
-
-    if not results:
-        async def no_results():
-            yield "data: No relevant code found in the indexed repositories.\n\n"
-            yield "data: [DONE]\n\n"
-        return StreamingResponse(no_results(), media_type="text/event-stream")
-
-    context = retrieval_svc.format_context(results)
 
     async def token_stream():
         import json
+
+        # ── Phase 1: Retrieval (with keepalive) ───────────────────────────────
+        # retrieval_svc.search() is blocking and can take 30-60s on first request
+        # (HyDE LLM call + reranker model load). Run it in a background thread
+        # and send keepalive pings every 15s so HF's proxy doesn't kill the
+        # connection before sources arrive. Without this the frontend gets stuck
+        # at "Searching code..." indefinitely.
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def _run_retrieval():
+            try:
+                res, pipe = retrieval_svc.search(
+                    query=question,
+                    top_k=request.top_k,
+                    repo_filter=request.repo,
+                    language_filter=request.language,
+                    mode=request.mode,
+                    relevance_threshold=request.relevance_threshold,
+                    return_pipeline=True,
+                )
+                queue.put_nowait(("results", (res, pipe)))
+            except Exception as exc:
+                queue.put_nowait(("error", exc))
+
+        asyncio.get_event_loop().run_in_executor(None, _run_retrieval)
+
+        results = pipeline_info = None
+        while True:
+            try:
+                kind, value = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                yield ": keepalive\n\n"
+                continue
+            if kind == "results":
+                results, pipeline_info = value
+                break
+            elif kind == "error":
+                yield "data: ⚠ Retrieval failed. Please try again.\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+        if not results:
+            yield "data: No relevant code found in the indexed repositories.\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        context = retrieval_svc.format_context(results)
+
+        # ── Phase 2: Send meta event (sources → frontend transitions to "generating") ─
         meta = {
             "sources":    [CodeChunk(**r).model_dump() for r in results],
             "query_type": query_type,
@@ -739,17 +770,14 @@ async def query_stream(
         }
         yield f"event: meta\ndata: {json.dumps(meta)}\n\n"
 
-        # Queue-based keepalive — same pattern as /agent/stream.
-        # generation_svc.stream() is a blocking sync iterator; run it in a
-        # background thread so we can send keepalive pings while waiting.
-        queue: asyncio.Queue = asyncio.Queue()
+        # ── Phase 3: Generation (with keepalive) ──────────────────────────────
+        # Same queue pattern — generation_svc.stream() is also a blocking iterator.
         full_answer: list[str] = []
 
         def _run_generation():
             try:
                 for token in generation_svc.stream(question, context, query_type, history=history):
                     queue.put_nowait(("token", token))
-                # Grade synchronously in the same thread after streaming finishes
                 answer = "".join(full_answer)
                 grade = generation_svc.grade_answer(question, context, answer, query_type)
                 queue.put_nowait(("grade", grade))
