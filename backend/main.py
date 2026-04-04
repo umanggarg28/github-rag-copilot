@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI):
     init_mcp_services(_retrieval_service, _qdrant_store)
 
     # ── MCP client + agent setup ───────────────────────────────────────────────
-    if settings.groq_api_key or settings.gemini_api_key or settings.openrouter_api_key or settings.anthropic_api_key:
+    if settings.cerebras_api_key or settings.groq_api_key or settings.gemini_api_key or settings.openrouter_api_key or settings.anthropic_api_key:
         # MCP server is mounted in this same process — connect to ourselves.
         # Use PORT env var so this works on any host: local (8000), HF Spaces (7860).
         _port          = int(os.getenv("PORT", "8000"))
