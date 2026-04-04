@@ -828,8 +828,20 @@ async def agent_stream(request: AgentStreamRequest):
             return
 
         try:
-            # async for — consumes the async generator from AgentService.stream()
-            async for event in svc.stream(question, repo_filter=repo, history=history):
+            # Keepalive loop: SSE proxies (HF Spaces, Cloudflare) drop connections
+            # that go idle for ~30s. We wrap each generator step in a 15s timeout
+            # and send an SSE comment (": keepalive") if nothing arrives in time.
+            # SSE comments are ignored by the browser but reset the proxy idle timer.
+            gen = svc.stream(question, repo_filter=repo, history=history)
+            while True:
+                try:
+                    event = await asyncio.wait_for(gen.__anext__(), timeout=15.0)
+                except StopAsyncIteration:
+                    break
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+
                 etype = event["type"]
 
                 if etype == "thought":
