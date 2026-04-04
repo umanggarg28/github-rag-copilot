@@ -101,7 +101,7 @@ def _extract_thought(assistant_message: dict | None, provider: str) -> str:
     if not content:
         return ""
     if isinstance(content, str):
-        return content.strip()
+        return _strip_xml_tags(content)
     if isinstance(content, list):
         # Anthropic format: list of content blocks, some with type="text"
         parts = [
@@ -109,8 +109,16 @@ def _extract_thought(assistant_message: dict | None, provider: str) -> str:
             for b in content
             if hasattr(b, "type") and b.type == "text" and b.text
         ]
-        return " ".join(parts).strip()
+        return _strip_xml_tags(" ".join(parts))
     return ""
+
+
+import re as _re
+_XML_TAG_RE = _re.compile(r"<(thought|plan|thinking|reflection)>.*?</(thought|plan|thinking|reflection)>", _re.DOTALL | _re.IGNORECASE)
+
+def _strip_xml_tags(text: str) -> str:
+    """Remove <thought>, <plan>, <thinking> etc. XML blocks that some models emit."""
+    return _XML_TAG_RE.sub("", text).strip()
 
 
 def _parse_xml_tool_calls(content: str) -> list[dict] | None:

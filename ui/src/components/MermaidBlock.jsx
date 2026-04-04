@@ -224,8 +224,9 @@ export default function MermaidBlock({ mermaid: text }) {
         border: "1px solid var(--border)",
         borderRadius: "var(--radius)",
         background: "#1a1714",
-        overflow: "hidden",
-        maxHeight: 320,
+        overflow: "auto",
+        minHeight: 120,
+        maxHeight: 480,
       }}>
         <Diagram mermaid={text} />
         <button
