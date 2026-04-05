@@ -743,23 +743,21 @@ export default function App() {
                       <span className="step-num">1</span>
                       <div>
                         <strong>Paste a GitHub URL in the sidebar</strong>
-                        <p>e.g. <code>github.com/karpathy/nanoGPT</code> or <code>github.com/langchain-ai/langchain</code></p>
-                        <p>The app downloads and indexes every function and class.</p>
+                        <p>e.g. <code>github.com/karpathy/nanoGPT</code> — indexes every function and class.</p>
                       </div>
                     </div>
                     <div className="onboarding-step">
                       <span className="step-num">2</span>
                       <div>
-                        <strong>Ask anything about the repo</strong>
-                        <p>e.g. <em>"How does the main loop work?"</em>, <em>"What does the Trainer class do?"</em>, <em>"How is data loaded?"</em></p>
-                        <p>The app finds the relevant code and explains it with citations.</p>
+                        <strong>Ask anything about the code</strong>
+                        <p>e.g. <em>"How does the main loop work?"</em> — finds relevant code and explains it with citations.</p>
                       </div>
                     </div>
                     <div className="onboarding-step">
                       <span className="step-num">3</span>
                       <div>
-                        <strong>Start with Explore — it maps the codebase structure</strong>
-                        <p>Explore generates a concept map of the repo's key components and how they connect. Great starting point for any unfamiliar repo.</p>
+                        <strong>Use Explore to map the structure</strong>
+                        <p>Generates a concept map of key components and how they connect.</p>
                       </div>
                     </div>
                   </div>

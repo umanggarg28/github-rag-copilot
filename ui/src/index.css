@@ -1211,8 +1211,8 @@ textarea:focus-visible {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  /* Extra bottom padding so the last step card has breathing room above the chat bar */
-  padding: 40px 24px 80px;
+  /* Symmetric padding — logo has room above, last card has room before chat bar */
+  padding: 60px 24px 60px;
   overflow-y: auto;
   position: relative;
 }
