@@ -652,11 +652,9 @@ export default function App() {
             )}
             {activeRepo ? (
               <span className="repo-badge">
-                {(() => {
+                {activeRepo === "all" ? "All repos" : (() => {
                   const [owner, name] = activeRepo.split("/");
-                  return name ? (
-                    <><span style={{ opacity: 0.55, fontWeight: 400 }}>{owner}/</span><span style={{ fontWeight: 600 }}>{name}</span></>
-                  ) : activeRepo;
+                  return <><span style={{ opacity: 0.55, fontWeight: 400 }}>{owner}/</span><span style={{ fontWeight: 600 }}>{name}</span></>;
                 })()}
               </span>
             ) : (
