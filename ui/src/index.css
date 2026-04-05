@@ -450,9 +450,8 @@ textarea:focus-visible {
   padding: 7px 10px;
   border-radius: var(--radius);
   cursor: pointer;
-  border: 1px solid transparent;
   border-left: 2px solid transparent;
-  transition: background var(--transition), border-color var(--transition);
+  transition: background var(--transition), border-left-color var(--transition);
   gap: 7px;
 }
 
@@ -486,13 +485,11 @@ textarea:focus-visible {
 
 .repo-item:hover {
   background: var(--surface-2);
-  border-color: var(--border-strong);
   border-left-color: rgba(212, 132, 90, 0.4);
 }
 
 .repo-item.active {
   background: var(--accent-dim);
-  border-color: var(--accent-border);
   border-left-color: var(--accent);
 }
 /* Active repo: text pops to accent brightness and weight */
@@ -2880,17 +2877,17 @@ textarea:focus-visible {
   align-items: center;
   gap: 4px;
   border-radius: var(--radius);
-  transition: background var(--transition);
+  border-left: 2px solid transparent;
+  transition: background var(--transition), border-left-color var(--transition);
 }
 
 .session-item:hover {
   background: var(--surface-2);
-  box-shadow: inset 2px 0 0 rgba(212, 132, 90, 0.35);
+  border-left-color: rgba(212, 132, 90, 0.4);
 }
 .session-item.active {
   background: var(--accent-dim);
-  border-radius: var(--radius-sm);
-  box-shadow: inset 3px 0 0 var(--accent);
+  border-left-color: var(--accent);
 }
 .session-item.active .session-title { color: var(--accent-soft); }
 
