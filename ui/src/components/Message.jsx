@@ -65,13 +65,19 @@ const mdComponents = {
 function AgentThought({ text, isActive }) {
   const [expanded, setExpanded] = useState(false);
 
+  // Shared node — same ○ → structure as tool steps so both rows align
+  const node = (
+    <div className="agent-step-node">
+      <span className="agent-step-dot thought-dot" />
+      <span className="agent-step-arrow">→</span>
+    </div>
+  );
+
   // While the agent is still writing this thought, show it fully
   if (isActive) {
     return (
       <div className="agent-thought">
-        <div className="agent-step-node">
-          <span className="agent-step-dot thought-dot" />
-        </div>
+        {node}
         <div className="agent-thought-text">{text}</div>
       </div>
     );
@@ -85,15 +91,13 @@ function AgentThought({ text, isActive }) {
       onClick={() => setExpanded(v => !v)}
       style={{ cursor: "pointer", alignItems: "center" }}
     >
-      <div className="agent-step-node">
-        <span className="agent-step-dot thought-dot" />
-      </div>
+      {node}
       <div className="agent-thought-text" style={{ flex: 1 }}>
         {expanded ? text : preview}
       </div>
       <span className="agent-thought-chevron">
-        <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          {expanded ? <path d="m4 10 4-4 4 4"/> : <path d="m4 6 4 4 4-4"/>}
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          {expanded ? <path d="m4 6 4 4 4-4"/> : <path d="m6 4 4 4-4 4"/>}
         </svg>
       </span>
     </div>
