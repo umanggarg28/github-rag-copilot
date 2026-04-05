@@ -24,7 +24,7 @@
 }
 @font-face {
   font-family: "Anthropic Mono";
-  src: url(https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a1438a2ed14d4acca5f_AnthropicMono-Roman-Web.woff2) format("woff2");
+  src: url(https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a2e55d24d61bc045b1a_AnthropicMono-Roman-Web.woff2) format("woff2");
   font-weight: 300 800;
   font-style: normal;
   font-display: swap;
@@ -119,13 +119,14 @@ html { height: 100dvh; background: #1A1916; overflow: hidden; }
 /* ── Smooth page entry ──────────────────────────────────────────────────────── */
 body {
   font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.65;
   background: #1A1916;
   color: var(--text);
   height: 100%;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.01em;
   /* Deep atmospheric bloom — LiteLLM style: bold primary bloom, counter-bloom, center warmth */
   background-image:
     radial-gradient(ellipse 70% 55% at -5% 0%,   rgba(180, 80, 40, 0.32) 0%, transparent 65%),
