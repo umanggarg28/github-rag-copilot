@@ -269,17 +269,18 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
 
       {/* ── Brand ── */}
       <div className="sidebar-brand">
-        {/* Compass mark — matches favicon design */}
-        <svg width="28" height="28" viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
-          <circle cx="16" cy="16" r="11.5" stroke="var(--accent)" strokeWidth="0.6" strokeDasharray="1.8 2.8" opacity="0.35"/>
-          <line x1="16" y1="4.5" x2="16" y2="7" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round" opacity="0.7"/>
-          <line x1="16" y1="25" x2="16" y2="27.5" stroke="var(--accent)" strokeWidth="1" strokeLinecap="round" opacity="0.25"/>
-          <line x1="4.5" y1="16" x2="7" y2="16" stroke="var(--accent)" strokeWidth="1" strokeLinecap="round" opacity="0.25"/>
-          <line x1="25" y1="16" x2="27.5" y2="16" stroke="var(--accent)" strokeWidth="1" strokeLinecap="round" opacity="0.25"/>
-          <path d="M16 6.5 L18.2 15.8 L16 14 L13.8 15.8 Z" fill="var(--accent)"/>
-          <path d="M16 25.5 L18.2 16.2 L16 18 L13.8 16.2 Z" fill="var(--accent)" opacity="0.22"/>
-          <circle cx="16" cy="16" r="2.6" fill="var(--bg)"/>
-          <circle cx="16" cy="16" r="1.5" fill="var(--accent)" opacity="0.7"/>
+        {/* Compass rose — 4-pointed cardinal directions, classic cartography mark */}
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+          {/* North point — tall, full accent */}
+          <path d="M12 2 L14 11 L12 9.5 L10 11 Z" fill="var(--accent)"/>
+          {/* South point — shorter, dim */}
+          <path d="M12 22 L14 13 L12 14.5 L10 13 Z" fill="var(--accent)" opacity="0.35"/>
+          {/* East point — short, dim */}
+          <path d="M22 12 L13 10 L14.5 12 L13 14 Z" fill="var(--accent)" opacity="0.35"/>
+          {/* West point — short, dim */}
+          <path d="M2 12 L11 10 L9.5 12 L11 14 Z" fill="var(--accent)" opacity="0.35"/>
+          {/* Center dot */}
+          <circle cx="12" cy="12" r="1.8" fill="var(--accent)"/>
         </svg>
         <div style={{ flex: 1 }}>
           <div className="sidebar-brand-name">Cartographer</div>
