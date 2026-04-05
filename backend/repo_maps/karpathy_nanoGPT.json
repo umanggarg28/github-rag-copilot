@@ -1,0 +1,82 @@
+{
+  "repo": "karpathy/nanoGPT",
+  "updated_at": "2026-04-02T15:51:00.534831",
+  "total_chunks": 56,
+  "total_files": 19,
+  "entry_files": [
+    "model.py",
+    "train.py"
+  ],
+  "key_classes": [
+    "CausalSelfAttention",
+    "GPTConfig",
+    "LayerNorm",
+    "GPT",
+    "MLP",
+    "Block"
+  ],
+  "files": {
+    "model.py": {
+      "classes": [
+        "CausalSelfAttention",
+        "GPTConfig",
+        "LayerNorm",
+        "GPT",
+        "MLP",
+        "Block"
+      ],
+      "functions": []
+    },
+    "train.py": {
+      "classes": [],
+      "functions": [
+        "get_lr",
+        "get_batch",
+        "estimate_loss"
+      ]
+    },
+    "data/shakespeare_char/prepare.py": {
+      "classes": [],
+      "functions": [
+        "decode",
+        "encode"
+      ]
+    },
+    "config/eval_gpt2.py": {
+      "classes": [],
+      "functions": []
+    },
+    "README.md": {
+      "classes": [],
+      "functions": []
+    },
+    "bench.py": {
+      "classes": [],
+      "functions": []
+    },
+    "configurator.py": {
+      "classes": [],
+      "functions": []
+    },
+    "config/eval_gpt2_xl.py": {
+      "classes": [],
+      "functions": []
+    },
+    "config/eval_gpt2_medium.py": {
+      "classes": [],
+      "functions": []
+    },
+    "config/train_shakespeare_char.py": {
+      "classes": [],
+      "functions": []
+    },
+    "data/shakespeare_char/readme.md": {
+      "classes": [],
+      "functions": []
+    },
+    "config/train_gpt2.py": {
+      "classes": [],
+      "functions": []
+    }
+  }
+}

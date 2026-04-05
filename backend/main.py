@@ -152,7 +152,7 @@ async def lifespan(app: FastAPI):
 # ── App ────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="GitHub RAG Copilot",
+    title="Cartographer",
     description="Ask questions about any GitHub repository. Powered by MCP.",
     version="0.2.0",
     lifespan=lifespan,

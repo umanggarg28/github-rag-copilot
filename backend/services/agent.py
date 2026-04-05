@@ -375,7 +375,7 @@ def _openrouter_client(api_key: str):
         base_url="https://openrouter.ai/api/v1",
         default_headers={
             "HTTP-Referer": "http://localhost:3000",
-            "X-Title": "GitHub RAG Copilot",
+            "X-Title": "Cartographer",
         },
     )
 

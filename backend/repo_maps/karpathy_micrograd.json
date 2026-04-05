@@ -1,0 +1,46 @@
+{
+  "repo": "karpathy/micrograd",
+  "updated_at": "2026-04-01T21:51:49.874105",
+  "total_chunks": 27,
+  "total_files": 5,
+  "entry_files": [],
+  "key_classes": [
+    "Layer",
+    "Neuron",
+    "Module",
+    "MLP",
+    "Value"
+  ],
+  "files": {
+    "micrograd/nn.py": {
+      "classes": [
+        "Layer",
+        "Neuron",
+        "Module",
+        "MLP"
+      ],
+      "functions": []
+    },
+    "micrograd/engine.py": {
+      "classes": [
+        "Value"
+      ],
+      "functions": []
+    },
+    "test/test_engine.py": {
+      "classes": [],
+      "functions": [
+        "test_more_ops",
+        "test_sanity_check"
+      ]
+    },
+    "README.md": {
+      "classes": [],
+      "functions": []
+    },
+    "setup.py": {
+      "classes": [],
+      "functions": []
+    }
+  }
+}

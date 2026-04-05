@@ -14,7 +14,7 @@
 
 services:
   - type: web
-    name: github-rag-copilot
+    name: cartographer
     runtime: python
     region: oregon
     plan: free

@@ -1,5 +1,5 @@
 """
-eval.py — Retrieval quality evaluation for the GitHub RAG Copilot.
+eval.py — Retrieval quality evaluation for the Cartographer.
 
 ═══════════════════════════════════════════════════════════════
 WHY AN EVAL HARNESS?

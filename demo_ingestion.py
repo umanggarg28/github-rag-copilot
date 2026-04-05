@@ -27,7 +27,7 @@ TEST_REPO = "https://github.com/karpathy/micrograd"
 
 def main():
     print("=" * 60)
-    print("GitHub RAG Copilot — Ingestion Demo")
+    print("Cartographer — Ingestion Demo")
     print("=" * 60)
 
     # ── Step 1: Fetch repo metadata ───────────────────────────────────────────

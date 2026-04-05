@@ -1,4 +1,4 @@
-# GitHub RAG Copilot — Build Plan
+# Cartographer — Build Plan
 
 A RAG system that indexes GitHub repositories and answers natural language
 questions about their code, architecture, and documentation.

@@ -129,7 +129,7 @@ def init_services(retrieval_service, qdrant_store):
 # So when mounted at "/mcp" in FastAPI, the full URL is: /mcp  (not /mcp/mcp)
 
 mcp = FastMCP(
-    name="github-rag-copilot",
+    name="cartographer",
     instructions=(
         "Code search server for indexed GitHub repositories. "
         "Use list_files to browse directory structure before diving in. "

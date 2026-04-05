@@ -1,4 +1,4 @@
-# GitHub RAG Copilot — Learning Guide
+# Cartographer — Learning Guide
 
 This document grows with the project. Each section is added when the
 corresponding feature is built. Read it alongside the code and `notes/` entries.
@@ -2715,7 +2715,7 @@ you push code to it and HF builds + runs the Docker container automatically.
 
 ```
 origin  → https://github.com/umanggarg28/github-rag-copilot.git  (GitHub)
-hf      → https://huggingface.co/spaces/umanggarg/github-agent   (HF Space)
+hf      → https://huggingface.co/spaces/umanggarg/cartographer   (HF Space)
 ```
 
 We have two remotes pointing to two different services:
@@ -2723,7 +2723,7 @@ We have two remotes pointing to two different services:
 - **HF Space** is the deployment target — pushing here triggers a Docker build
 
 ```bash
-git remote add hf https://huggingface.co/spaces/umanggarg/github-agent
+git remote add hf https://huggingface.co/spaces/umanggarg/cartographer
 git push origin main   # updates GitHub
 git push hf main       # triggers HF rebuild
 ```
@@ -2733,7 +2733,7 @@ git push hf main       # triggers HF rebuild
 1. HF receives the new commit
 2. HF rebuilds the Docker image from scratch using the `Dockerfile` in the repo root
 3. The new container starts, runs `uvicorn backend.main:app --host 0.0.0.0 --port 7860`
-4. HF proxies `https://umanggarg-github-agent.hf.space` → container port 7860
+4. HF proxies `https://umanggarg-cartographer.hf.space` → container port 7860
 5. The Space is live — cold start after a build takes ~3-5 minutes
 
 ### Why port 7860?
@@ -2810,14 +2810,14 @@ Step 1 — Set env vars in HF Space Settings → Variables:
   FRONTEND_URL=https://your-app.vercel.app  (set after step 3)
 
 Step 2 — Push backend to HF:
-  git remote add hf https://huggingface.co/spaces/umanggarg/github-agent
+  git remote add hf https://huggingface.co/spaces/umanggarg/cartographer
   git push hf main
-  → Watch the build logs at huggingface.co/spaces/umanggarg/github-agent (Logs tab)
+  → Watch the build logs at huggingface.co/spaces/umanggarg/cartographer (Logs tab)
   → Wait ~3-5 min for the Docker build
 
 Step 3 — Deploy frontend to Vercel:
   cd ui && npx vercel --prod
-  → Set VITE_API_URL=https://umanggarg-github-agent.hf.space in Vercel env vars
+  → Set VITE_API_URL=https://umanggarg-cartographer.hf.space in Vercel env vars
   → Redeploy after setting the env var so Vite bakes the URL into the bundle
 
 Step 4 — Update FRONTEND_URL:

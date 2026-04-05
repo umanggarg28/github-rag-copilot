@@ -1,4 +1,4 @@
-# GitHub RAG Copilot — Claude Code Instructions
+# Cartographer — Claude Code Instructions
 
 This file is read by Claude Code at the start of every session.
 It tells Claude how to work in this project.

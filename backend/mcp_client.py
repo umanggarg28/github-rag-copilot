@@ -76,7 +76,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 class MCPClient:
     """
-    Async client for the GitHub RAG Copilot MCP server.
+    Async client for the Cartographer MCP server.
 
     Used by AgentService to call tools via the MCP protocol instead of
     calling retrieval/GitHub APIs directly. The agent doesn't know HOW

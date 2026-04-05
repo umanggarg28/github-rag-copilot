@@ -31,7 +31,7 @@ QUESTIONS = [
 
 
 def main():
-    print("=== GitHub RAG Copilot — Query Demo ===\n")
+    print("=== Cartographer — Query Demo ===\n")
 
     retrieval = RetrievalService()
     generation = GenerationService()
