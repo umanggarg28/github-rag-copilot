@@ -269,18 +269,21 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
 
       {/* ── Brand ── */}
       <div className="sidebar-brand">
-        {/* Compass rose — 4-pointed cardinal directions, classic cartography mark */}
+        {/* Compass — hand-drawn marker style, like a child sketched it on a treasure map */}
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-          {/* North point — tall, full accent */}
-          <path d="M12 2 L14 11 L12 9.5 L10 11 Z" fill="var(--accent)"/>
-          {/* South point — shorter, dim */}
-          <path d="M12 22 L14 13 L12 14.5 L10 13 Z" fill="var(--accent)" opacity="0.35"/>
-          {/* East point — short, dim */}
-          <path d="M22 12 L13 10 L14.5 12 L13 14 Z" fill="var(--accent)" opacity="0.35"/>
-          {/* West point — short, dim */}
-          <path d="M2 12 L11 10 L9.5 12 L11 14 Z" fill="var(--accent)" opacity="0.35"/>
-          {/* Center dot */}
-          <circle cx="12" cy="12" r="1.8" fill="var(--accent)"/>
+          {/* The compass housing — thick circle drawn with a round marker */}
+          <circle cx="12" cy="12" r="9" stroke="var(--accent)" strokeWidth="1.8" strokeOpacity="0.35"/>
+          {/* N needle — two angled strokes meeting at the top, like a fat marker arrow */}
+          <path d="M9.5 13.5 L12 4 L14.5 13.5"
+                stroke="var(--accent)" strokeWidth="2.6"
+                strokeLinecap="round" strokeLinejoin="round"/>
+          {/* S tail — shorter, dimmer, same drawn feel */}
+          <path d="M10.5 13.5 L12 20 L13.5 13.5"
+                stroke="var(--accent)" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round"
+                strokeOpacity="0.3"/>
+          {/* Center pivot — chunky dot */}
+          <circle cx="12" cy="12" r="2.2" fill="var(--accent)"/>
         </svg>
         <div style={{ flex: 1 }}>
           <div className="sidebar-brand-name">Cartographer</div>

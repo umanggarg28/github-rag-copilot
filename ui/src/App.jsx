@@ -725,11 +725,19 @@ export default function App() {
                   <div className="onboarding-steps">
                     <div className="onboarding-header">
                       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" style={{ marginBottom: 16 }}>
-                        <path d="M12 2 L14 11 L12 9.5 L10 11 Z" fill="var(--accent)"/>
-                        <path d="M12 22 L14 13 L12 14.5 L10 13 Z" fill="var(--accent)" opacity="0.35"/>
-                        <path d="M22 12 L13 10 L14.5 12 L13 14 Z" fill="var(--accent)" opacity="0.35"/>
-                        <path d="M2 12 L11 10 L9.5 12 L11 14 Z" fill="var(--accent)" opacity="0.35"/>
-                        <circle cx="12" cy="12" r="1.8" fill="var(--accent)"/>
+                        {/* Compass housing */}
+                        <circle cx="12" cy="12" r="9" stroke="var(--accent)" strokeWidth="1.8" strokeOpacity="0.35"/>
+                        {/* N needle — fat marker arrow */}
+                        <path d="M9.5 13.5 L12 4 L14.5 13.5"
+                              stroke="var(--accent)" strokeWidth="2.6"
+                              strokeLinecap="round" strokeLinejoin="round"/>
+                        {/* S tail — dimmer */}
+                        <path d="M10.5 13.5 L12 20 L13.5 13.5"
+                              stroke="var(--accent)" strokeWidth="2"
+                              strokeLinecap="round" strokeLinejoin="round"
+                              strokeOpacity="0.3"/>
+                        {/* Center dot */}
+                        <circle cx="12" cy="12" r="2.2" fill="var(--accent)"/>
                       </svg>
                       <div className="onboarding-headline">Map any codebase</div>
                       <div className="onboarding-sub">Index any public repo and ask questions about the code — architecture, data flow, classes, functions, and more.</div>
