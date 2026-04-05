@@ -23,6 +23,20 @@
   font-display: swap;
 }
 @font-face {
+  font-family: "Anthropic Serif";
+  src: url(https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a1551eb6cda0d656e8a_AnthropicSerif-Roman-Web.woff2) format("woff2");
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Anthropic Serif";
+  src: url(https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a15a9fb8c1107a3570e_AnthropicSerif-Italic-Web.woff2) format("woff2");
+  font-weight: 300 800;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
   font-family: "Anthropic Mono";
   src: url(https://cdn.prod.website-files.com/67ce28cfec624e2b733f8a52/69971a2e55d24d61bc045b1a_AnthropicMono-Roman-Web.woff2) format("woff2");
   font-weight: 300 800;
@@ -1286,16 +1300,13 @@ textarea:focus-visible {
 }
 
 .onboarding-headline {
-  font-size: 38px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-size: 40px;
+  font-weight: 400;
+  font-family: "Anthropic Serif", Georgia, serif;
+  letter-spacing: -0.02em;
   line-height: 1.1;
   margin-bottom: 12px;
-  /* warm parchment → sienna — no cold grays */
-  background: linear-gradient(120deg, #EDE4CE 20%, var(--accent-soft) 80%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text);
 }
 
 .onboarding-sub {
@@ -1412,14 +1423,11 @@ textarea:focus-visible {
 .suggest-state { max-width: 540px; width: 100%; text-align: center; }
 .suggest-state h2 {
   font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  font-weight: 400;
+  font-family: "Anthropic Serif", Georgia, serif;
+  letter-spacing: -0.02em;
   margin-bottom: 8px;
-  /* Warm gradient — matches onboarding-headline for visual consistency */
-  background: linear-gradient(120deg, #EDE4CE 20%, var(--accent-soft) 80%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text);
 }
 .suggest-state > p {
   font-size: 13.5px;
