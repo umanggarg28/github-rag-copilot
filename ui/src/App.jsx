@@ -134,9 +134,10 @@ export default function App() {
     setMessages([]);
     setLastSources([]);
     setSessions(readSessions(activeRepo));
-    // Auto-navigate to Explore view when a repo is selected — the concept map
-    // gives a better first impression than a blank chat for a learning tool.
+    // Auto-navigate to Explore view when a specific repo is selected.
+    // Reset to chat for "All repos" or landing page — diagram needs a single repo.
     if (activeRepo && activeRepo !== "all") setView("graph");
+    else setView("chat");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRepo]);
 
@@ -663,8 +664,8 @@ export default function App() {
             )}
           </div>
           <div className="header-actions">
-            {/* View toggle: Chat ↔ Graph */}
-            {activeRepo && (
+            {/* View toggle: Chat ↔ Graph — only for specific repos, not "all" */}
+            {activeRepo && activeRepo !== "all" && (
               <div className="view-toggle">
                 <button
                   className={`view-btn ${view === "chat" ? "active" : ""}`}

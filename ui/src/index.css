@@ -300,9 +300,8 @@ textarea:focus-visible {
 .sidebar-section {
   display: flex;
   flex-direction: column;
-  padding-top: 18px;
-  padding-bottom: 8px;   /* buffer so content doesn't sit flush against the next divider */
-  /* Stronger divider — var(--border) at 8% was nearly invisible, sections blurred together */
+  padding-top: 12px;
+  padding-bottom: 4px;
   border-top: 1px solid var(--border-strong);
 }
 
@@ -313,7 +312,7 @@ textarea:focus-visible {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   /* Subtle sienna tint so it reads as a warm structural element, not dead gray */
   background: linear-gradient(90deg, var(--muted) 0%, rgba(212,132,90,0.70) 100%);
   -webkit-background-clip: text;
@@ -448,7 +447,7 @@ textarea:focus-visible {
 .repo-item {
   display: flex;
   align-items: center;
-  padding: 9px 10px;
+  padding: 7px 10px;
   border-radius: var(--radius);
   cursor: pointer;
   border: 1px solid transparent;
