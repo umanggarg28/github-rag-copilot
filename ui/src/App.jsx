@@ -728,15 +728,15 @@ export default function App() {
                       <div className="onboarding-headline">Understand any GitHub repository</div>
                       <div className="onboarding-sub">Index any public repo and ask questions about the code — architecture, data flow, classes, functions, and more.</div>
                     </div>
-                    <div className={`onboarding-step ${repos.length === 0 ? "active" : "done"}`}>
-                      <span className="step-num">{repos.length > 0 ? "✓" : "1"}</span>
+                    <div className="onboarding-step active">
+                      <span className="step-num">1</span>
                       <div>
                         <strong>Paste a GitHub URL in the sidebar</strong>
                         <p>e.g. <code>github.com/karpathy/nanoGPT</code> or <code>github.com/langchain-ai/langchain</code></p>
                         <p>The app downloads and indexes every function and class.</p>
                       </div>
                     </div>
-                    <div className={`onboarding-step ${repos.length > 0 ? "active" : ""}`}>
+                    <div className="onboarding-step">
                       <span className="step-num">2</span>
                       <div>
                         <strong>Ask anything about the repo</strong>
