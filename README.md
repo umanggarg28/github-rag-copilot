@@ -1,5 +1,5 @@
 ---
-title: GitHub Agent
+title: Cartographer
 emoji: 🤖
 colorFrom: blue
 colorTo: purple
@@ -30,7 +30,7 @@ This project takes the opposite approach. Every concept — chunking, embedding,
 ## Architecture Overview
 
 ```
-github-rag-copilot/
+cartographer/
 ├── ingestion/
 │   ├── repo_fetcher.py      # Download repo from GitHub API as zip
 │   ├── file_filter.py       # Filter indexable files by extension
@@ -474,8 +474,8 @@ TOP_K=8                 # Chunks returned to LLM after reranking
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/github-rag-copilot
-cd github-rag-copilot
+git clone https://github.com/your-username/cartographer
+cd cartographer
 
 # 2. Create and activate Python virtual environment
 python -m venv .venv
