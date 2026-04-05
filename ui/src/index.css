@@ -2459,6 +2459,36 @@ textarea:focus-visible {
   padding-top: 1px;
 }
 
+/* Past (completed) thoughts — collapsed to one line, click to expand */
+.agent-thought-past {
+  padding: 1px 0 1px 0;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition);
+}
+.agent-thought-past:hover {
+  background: rgba(237,228,206,0.04);
+}
+.agent-thought-past .agent-thought-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.45;
+}
+.agent-thought-past.agent-thought-open .agent-thought-text {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  opacity: 0.7;
+}
+.agent-thought-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  opacity: 0.5;
+  margin-left: 6px;
+  display: flex;
+  align-items: center;
+}
+
 .agent-thinking {
   display: flex;
   align-items: center;

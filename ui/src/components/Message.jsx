@@ -60,15 +60,42 @@ const mdComponents = {
 };
 
 // Thought bubble — shows the LLM's reasoning before a tool call.
-// Displayed inline in the trace timeline so users can see WHY the agent
-// chose each tool, not just WHAT it called.
-function AgentThought({ text }) {
+// isActive = this is the currently-streaming thought (last item while streaming).
+// Past thoughts (agent already moved on) collapse to a one-liner — click to expand.
+function AgentThought({ text, isActive }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // While the agent is still writing this thought, show it fully
+  if (isActive) {
+    return (
+      <div className="agent-thought">
+        <div className="agent-step-node">
+          <span className="agent-step-dot thought-dot" />
+        </div>
+        <div className="agent-thought-text">{text}</div>
+      </div>
+    );
+  }
+
+  // Past thought — collapsed to one line by default, expandable on click
+  const preview = text.length > 120 ? text.slice(0, 120) + "…" : text;
   return (
-    <div className="agent-thought">
+    <div
+      className={`agent-thought agent-thought-past${expanded ? " agent-thought-open" : ""}`}
+      onClick={() => setExpanded(v => !v)}
+      style={{ cursor: "pointer", alignItems: "center" }}
+    >
       <div className="agent-step-node">
         <span className="agent-step-dot thought-dot" />
       </div>
-      <div className="agent-thought-text">{text}</div>
+      <div className="agent-thought-text" style={{ flex: 1 }}>
+        {expanded ? text : preview}
+      </div>
+      <span className="agent-thought-chevron">
+        <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          {expanded ? <path d="m4 10 4-4 4 4"/> : <path d="m4 6 4 4 4-4"/>}
+        </svg>
+      </span>
     </div>
   );
 }
@@ -201,7 +228,11 @@ function ToolCallTrace({ steps, streaming, iterations, model }) {
       <div className="agent-trace-line" />
       {steps.map((step, i) => {
         if (step.type === "thought") {
-          return <AgentThought key={i} text={step.text} />;
+          // A thought is "active" (shown in full) only while it's the last item
+          // and the agent is still streaming — once the agent emits a tool call
+          // after it, the thought is "past" and collapses to a one-liner.
+          const isActiveThought = streaming && i === steps.length - 1;
+          return <AgentThought key={i} text={step.text} isActive={isActiveThought} />;
         }
         return (
           <AgentStep
