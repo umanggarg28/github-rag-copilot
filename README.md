@@ -1,8 +1,8 @@
 ---
 title: Cartographer
-emoji: 🤖
-colorFrom: blue
-colorTo: purple
+emoji: 🧭
+colorFrom: orange
+colorTo: red
 sdk: docker
 pinned: false
 ---
