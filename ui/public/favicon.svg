@@ -1,8 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <!-- Dark rounded background -->
-  <rect width="32" height="32" rx="8" fill="#1A1916"/>
-  <!-- Map pin — top circle + teardrop point, in terracotta accent -->
-  <circle cx="16" cy="13" r="5.5" fill="#D4845A"/>
-  <path d="M16 32 C16 32 8 20 8 13 A8 8 0 0 1 24 13 C24 20 16 32 16 32Z" fill="#D4845A" opacity="0.35"/>
-  <circle cx="16" cy="13" r="2.5" fill="#1A1916"/>
+  <!-- Warm dark background -->
+  <rect width="32" height="32" rx="7" fill="#1A1916"/>
+  <!-- Compass housing ring — dashed like old nautical charts -->
+  <circle cx="16" cy="16" r="11.5" stroke="#D4845A" stroke-width="0.6" stroke-dasharray="1.8 2.8" opacity="0.3"/>
+  <!-- Cardinal tick marks -->
+  <line x1="16" y1="4.5" x2="16" y2="7" stroke="#D4845A" stroke-width="1.2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="16" y1="25" x2="16" y2="27.5" stroke="#D4845A" stroke-width="1" stroke-linecap="round" opacity="0.25"/>
+  <line x1="4.5" y1="16" x2="7" y2="16" stroke="#D4845A" stroke-width="1" stroke-linecap="round" opacity="0.25"/>
+  <line x1="25" y1="16" x2="27.5" y2="16" stroke="#D4845A" stroke-width="1" stroke-linecap="round" opacity="0.25"/>
+  <!-- North needle — bright terracotta diamond -->
+  <path d="M16 6.5 L18.2 15.8 L16 14 L13.8 15.8 Z" fill="#D4845A"/>
+  <!-- South needle — dim, reversed diamond -->
+  <path d="M16 25.5 L18.2 16.2 L16 18 L13.8 16.2 Z" fill="#D4845A" opacity="0.22"/>
+  <!-- Center jewel -->
+  <circle cx="16" cy="16" r="2.6" fill="#1A1916"/>
+  <circle cx="16" cy="16" r="1.5" fill="#D4845A" opacity="0.7"/>
 </svg>

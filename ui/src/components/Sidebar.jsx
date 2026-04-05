@@ -269,9 +269,8 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
 
       {/* ── Brand ── */}
       <div className="sidebar-brand">
-        <div style={{ flex: 1, display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <div className="sidebar-brand-tag">Code</div>
-          <div className="sidebar-brand-name">Atlas</div>
+        <div style={{ flex: 1 }}>
+          <div className="sidebar-brand-name">Cartographer</div>
         </div>
         <button
           className="sidebar-collapse-btn"

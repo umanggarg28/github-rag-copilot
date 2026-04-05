@@ -286,9 +286,9 @@ textarea:focus-visible {
   display: block;
 }
 
-/* Large serif title — matches rag-research "Copilot" style */
+/* Brand name in Anthropic Serif */
 .sidebar-brand-name {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 400;
   font-family: "Anthropic Serif", Georgia, serif;
   color: var(--accent);
