@@ -724,7 +724,7 @@ export default function App() {
                   // No repo selected yet (landing), or All repos selected but nothing indexed
                   <div className="onboarding-steps">
                     <div className="onboarding-header">
-                      <div className="onboarding-headline">Understand any GitHub repository</div>
+                      <div className="onboarding-headline">Understand any codebase</div>
                       <div className="onboarding-sub">Index any public repo and ask questions about the code — architecture, data flow, classes, functions, and more.</div>
                     </div>
                     <div className="onboarding-step active">
