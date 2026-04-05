@@ -12,3 +12,5 @@ dist/
 build/
 *.egg-info/
 .DS_Store
+.vercel
+ui/public/fonts/
