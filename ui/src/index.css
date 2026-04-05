@@ -451,7 +451,8 @@ textarea:focus-visible {
   border-radius: var(--radius);
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background var(--transition), border-color var(--transition), transform var(--transition);
+  border-left: 2px solid transparent;
+  transition: background var(--transition), border-color var(--transition);
   gap: 7px;
 }
 
@@ -484,20 +485,15 @@ textarea:focus-visible {
 .repo-item:hover .repo-item-actions { opacity: 1; }
 
 .repo-item:hover {
-  /* Warm surface lift — reads as elevation, not just opacity */
   background: var(--surface-2);
   border-color: var(--border-strong);
-  box-shadow: inset 3px 0 0 rgba(212, 132, 90, 0.55);
+  border-left-color: rgba(212, 132, 90, 0.4);
 }
 
 .repo-item.active {
   background: var(--accent-dim);
   border-color: var(--accent-border);
-  /* Prominent 3px left accent bar + outer bloom */
-  box-shadow:
-    inset 3px 0 0 var(--accent),
-    0 0 16px var(--accent-dim),
-    0 2px 8px rgba(212,132,90,0.10);
+  border-left-color: var(--accent);
 }
 /* Active repo: text pops to accent brightness and weight */
 .repo-item.active .repo-slug { color: var(--accent-soft); font-weight: 600; }
