@@ -269,17 +269,9 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
 
       {/* ── Brand ── */}
       <div className="sidebar-brand">
-        <div className="sidebar-brand-icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            {/* Code brackets + sparkle — represents "AI code intelligence" */}
-            <path d="M5.5 5L2 9l3.5 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.95"/>
-            <path d="M12.5 5L16 9l-3.5 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.95"/>
-            <circle cx="9" cy="9" r="1.2" fill="white" fillOpacity="0.7"/>
-          </svg>
-        </div>
-        <div>
-          <div className="sidebar-brand-name">GitHub RAG</div>
-          <div className="sidebar-brand-tag">Explore any codebase</div>
+        <div style={{ flex: 1 }}>
+          <div className="sidebar-brand-tag">GitHub RAG</div>
+          <div className="sidebar-brand-name">Copilot</div>
         </div>
         <button
           className="sidebar-collapse-btn"

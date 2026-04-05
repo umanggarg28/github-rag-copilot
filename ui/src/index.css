@@ -249,24 +249,20 @@ textarea:focus-visible {
   margin-bottom: 0;
 }
 
+/* Keep icon styles for the collapsed rail (sidebar-collapsed-brand) */
 .sidebar-brand-icon {
   width: 34px;
   height: 34px;
-  /* Sienna gradient — warm ink, the brand identity */
   background: linear-gradient(135deg, #8B3A1E 0%, #C4603A 50%, #D4845A 100%);
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 16px;
-  /* Ambient glow — large + soft */
   box-shadow:
     0 0 0 1px rgba(212, 132, 90, 0.4),
-    0 4px 16px rgba(212, 132, 90, 0.45),
-    0 0 32px rgba(212, 132, 90, 0.20);
+    0 4px 16px rgba(212, 132, 90, 0.45);
   flex-shrink: 0;
-  /* Subtle inner highlight */
   position: relative;
   overflow: hidden;
 }
@@ -279,25 +275,25 @@ textarea:focus-visible {
   border-radius: inherit;
 }
 
-.sidebar-brand-name {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  /* Gradient text — parchment → sienna, on-theme sketchbook warmth */
-  background: linear-gradient(90deg, var(--text) 0%, var(--accent-soft) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
+/* Superscript label — "GITHUB RAG" small caps above the serif title */
 .sidebar-brand-tag {
   font-size: 11px;
+  font-weight: 500;
   color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.2;
   display: block;
+}
+
+/* Large serif title — matches rag-research "Copilot" style */
+.sidebar-brand-name {
+  font-size: 22px;
   font-weight: 400;
-  margin-top: -1px;
-  letter-spacing: -0.01em;
-  -webkit-text-fill-color: var(--muted);
+  font-family: "Anthropic Serif", Georgia, serif;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
 }
 
 /* ── Sidebar sections with dividers ──────────────────────── */
