@@ -88,7 +88,7 @@ After every significant feature (PR-worthy), add an entry to `notes/`:
 
 ```bash
 # Backend
-cd github-rag-copilot
+cd cartographer
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn backend.main:app --reload

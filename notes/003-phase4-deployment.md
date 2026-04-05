@@ -34,7 +34,7 @@ git push origin main
 
 ### 3. Deploy frontend to Vercel
 1. Go to vercel.com → New Project → Import Git repo
-2. Set Root Directory: `github-rag-copilot/ui`
+2. Set Root Directory: `cartographer/ui`
 3. Framework preset: Vite (auto-detected)
 4. Add environment variable:
    - `VITE_API_URL=https://your-app.onrender.com`

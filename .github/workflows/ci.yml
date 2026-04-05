@@ -84,14 +84,14 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: github-rag-copilot/ui/package-lock.json
+          cache-dependency-path: cartographer/ui/package-lock.json
 
       - name: Install dependencies
-        working-directory: github-rag-copilot/ui
+        working-directory: cartographer/ui
         run: npm ci
 
       - name: Build (catches broken JSX and missing imports)
-        working-directory: github-rag-copilot/ui
+        working-directory: cartographer/ui
         env:
           VITE_API_URL: https://dummy.onrender.com
         run: npm run build

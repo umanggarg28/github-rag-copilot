@@ -46,7 +46,7 @@
 #        FRONTEND_URL (your Vercel URL)
 #
 # 2. Create Vercel project at https://vercel.com/new
-#    - Root directory: github-rag-copilot/ui
+#    - Root directory: cartographer/ui
 #    - Build command: npm run build
 #    - Output dir: dist
 #    - Set env var: VITE_API_URL = https://<hf-username>-<hf-space-name>.hf.space
@@ -78,7 +78,7 @@ jobs:
   #   2. Builds a Docker image from it
   #   3. Runs the container (your FastAPI app) on port 7860
   #
-  # The challenge: our Dockerfile lives inside a subdirectory (github-rag-copilot/)
+  # The challenge: our Dockerfile lives inside a subdirectory (cartographer/)
   # of a larger monorepo. HF Spaces expects the Dockerfile at the repo root.
   #
   # Solution: `git subtree split`
@@ -112,8 +112,8 @@ jobs:
         # `git subtree split --prefix=<dir> -b <branch>`
         #
         # This rewrites history to produce a branch where:
-        #   github-rag-copilot/backend/main.py  →  backend/main.py
-        #   github-rag-copilot/Dockerfile       →  Dockerfile
+        #   cartographer/backend/main.py  →  backend/main.py
+        #   cartographer/Dockerfile       →  Dockerfile
         #   (etc.)
         #
         # HF Spaces will see Dockerfile at root and build correctly.
@@ -170,10 +170,10 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: github-rag-copilot/ui/package-lock.json
+          cache-dependency-path: cartographer/ui/package-lock.json
 
       - name: Install dependencies
-        working-directory: github-rag-copilot/ui
+        working-directory: cartographer/ui
         run: npm ci
         # `npm ci` (clean install) is preferred over `npm install` in CI:
         # - Installs exactly the versions in package-lock.json (reproducible)
@@ -184,7 +184,7 @@ jobs:
         # We pass VITE_API_URL so the React app knows where the backend lives.
         # This env var is baked into the JS bundle at build time by Vite —
         # it becomes a literal string in the compiled output (not a runtime env var).
-        working-directory: github-rag-copilot/ui
+        working-directory: cartographer/ui
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}

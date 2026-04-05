@@ -2582,7 +2582,7 @@ HuggingFace Spaces (free)          Vercel (free)
 Our project lives inside a subdirectory of a larger repo:
 ```
 deep-learning-from-scratch/
-└── github-rag-copilot/    ← our project
+└── cartographer/    ← our project
     ├── Dockerfile          ← HF Spaces needs this at ROOT
     ├── backend/
     └── ui/
@@ -2598,8 +2598,8 @@ git subtree split --prefix=github-rag-copilot -b hf-deploy
 ```
 
 This command rewrites git history to create a new branch where:
-- `github-rag-copilot/Dockerfile` becomes `./Dockerfile`
-- `github-rag-copilot/backend/main.py` becomes `./backend/main.py`
+- `cartographer/Dockerfile` becomes `./Dockerfile`
+- `cartographer/backend/main.py` becomes `./backend/main.py`
 - Every other directory is removed
 
 Then we push that branch as `main` to the HF Space's git endpoint:
@@ -2693,7 +2693,7 @@ Before the GitHub Actions workflow will succeed, you need:
 - [ ] Generate a token at `https://huggingface.co/settings/tokens` with Write permission
 
 **Vercel:**
-- [ ] Create project at `https://vercel.com/new`, root dir = `github-rag-copilot/ui`
+- [ ] Create project at `https://vercel.com/new`, root dir = `cartographer/ui`
 - [ ] Set `VITE_API_URL` = your HF Space URL in Vercel project env vars
 - [ ] Get `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` from `.vercel/project.json`
       after running `npx vercel link` locally once
