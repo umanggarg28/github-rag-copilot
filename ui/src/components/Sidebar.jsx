@@ -269,21 +269,20 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
 
       {/* ── Brand ── */}
       <div className="sidebar-brand">
-        {/* Compass — hand-drawn marker style, like a child sketched it on a treasure map */}
+        {/* Compass rose — 4 kite/diamond points, N dominant. Each point is widest
+            at its midpoint and narrows at both tip AND base — that's what makes
+            it a compass diamond, not a triangle or cone. */}
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-          {/* The compass housing — thick circle drawn with a round marker */}
-          <circle cx="12" cy="12" r="9" stroke="var(--accent)" strokeWidth="1.8" strokeOpacity="0.35"/>
-          {/* N needle — two angled strokes meeting at the top, like a fat marker arrow */}
-          <path d="M9.5 13.5 L12 4 L14.5 13.5"
-                stroke="var(--accent)" strokeWidth="2.6"
-                strokeLinecap="round" strokeLinejoin="round"/>
-          {/* S tail — shorter, dimmer, same drawn feel */}
-          <path d="M10.5 13.5 L12 20 L13.5 13.5"
-                stroke="var(--accent)" strokeWidth="2"
-                strokeLinecap="round" strokeLinejoin="round"
-                strokeOpacity="0.3"/>
-          {/* Center pivot — chunky dot */}
-          <circle cx="12" cy="12" r="2.2" fill="var(--accent)"/>
+          {/* N — tall kite: tip (12,2), widest at y=7 (±2.5), base at center */}
+          <path d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
+          {/* S — shorter kite, dim */}
+          <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="var(--accent)" opacity="0.28"/>
+          {/* E — horizontal kite, dim */}
+          <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="var(--accent)" opacity="0.28"/>
+          {/* W — horizontal kite, dim */}
+          <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="var(--accent)" opacity="0.28"/>
+          {/* Center pivot */}
+          <circle cx="12" cy="12" r="1.4" fill="var(--accent)"/>
         </svg>
         <div style={{ flex: 1 }}>
           <div className="sidebar-brand-name">Cartographer</div>

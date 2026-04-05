@@ -725,19 +725,16 @@ export default function App() {
                   <div className="onboarding-steps">
                     <div className="onboarding-header">
                       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" style={{ marginBottom: 16 }}>
-                        {/* Compass housing */}
-                        <circle cx="12" cy="12" r="9" stroke="var(--accent)" strokeWidth="1.8" strokeOpacity="0.35"/>
-                        {/* N needle — fat marker arrow */}
-                        <path d="M9.5 13.5 L12 4 L14.5 13.5"
-                              stroke="var(--accent)" strokeWidth="2.6"
-                              strokeLinecap="round" strokeLinejoin="round"/>
-                        {/* S tail — dimmer */}
-                        <path d="M10.5 13.5 L12 20 L13.5 13.5"
-                              stroke="var(--accent)" strokeWidth="2"
-                              strokeLinecap="round" strokeLinejoin="round"
-                              strokeOpacity="0.3"/>
-                        {/* Center dot */}
-                        <circle cx="12" cy="12" r="2.2" fill="var(--accent)"/>
+                        {/* N — tall kite diamond */}
+                        <path d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
+                        {/* S — shorter, dim */}
+                        <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="var(--accent)" opacity="0.28"/>
+                        {/* E */}
+                        <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="var(--accent)" opacity="0.28"/>
+                        {/* W */}
+                        <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="var(--accent)" opacity="0.28"/>
+                        {/* Center */}
+                        <circle cx="12" cy="12" r="1.4" fill="var(--accent)"/>
                       </svg>
                       <div className="onboarding-headline">Map any codebase</div>
                       <div className="onboarding-sub">Index any public repo and ask questions about the code — architecture, data flow, classes, functions, and more.</div>
