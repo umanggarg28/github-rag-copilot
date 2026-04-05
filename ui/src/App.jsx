@@ -55,8 +55,9 @@ export default function App() {
   // question truncated to 55 chars), messages array, and ISO timestamp.
   // Sessions are stored as `ghrc_sessions_{repo}` → JSON array, newest first.
 
-  // "All repos" (repo=null) uses the key "all" so its sessions persist like any repo
-  function sessionsKey(repo) { return `ghrc_sessions_${repo ?? "all"}`; }
+  // null = landing page (no repo chosen yet), "all" = All repos explicitly selected
+  // Both map to the same storage key; only "all" ever writes sessions.
+  function sessionsKey(repo) { return `ghrc_sessions_${repo || "all"}`; }
 
   function readSessions(repo) {
     try { return JSON.parse(localStorage.getItem(sessionsKey(repo)) || "[]"); } catch { return []; }
@@ -135,7 +136,7 @@ export default function App() {
     setSessions(readSessions(activeRepo));
     // Auto-navigate to Explore view when a repo is selected — the concept map
     // gives a better first impression than a blank chat for a learning tool.
-    if (activeRepo) setView("graph");
+    if (activeRepo && activeRepo !== "all") setView("graph");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRepo]);
 
@@ -432,7 +433,7 @@ export default function App() {
       // ── Agent mode: ReAct loop with live tool-call trace ──────────────────
       stop = streamAgentQuery({
         question,
-        repo: activeRepo,
+        repo: activeRepo === "all" ? null : activeRepo,
         model_id: selectedModelId || undefined,
         history,
         onThought: (text) => {
@@ -506,7 +507,7 @@ export default function App() {
       // ── Plain RAG mode: single retrieval → stream tokens ──────────────────
       stop = streamQuery({
         question,
-        repo: activeRepo,
+        repo: activeRepo === "all" ? null : activeRepo,
         mode,
         history,
         onToken,
@@ -700,8 +701,8 @@ export default function App() {
           <>
             {messages.length === 0 ? (
               <div className="empty-state">
-                {!activeRepo && repos.length > 0 ? (
-                  // "All repos" selected with repos indexed — cross-repo query mode
+                {activeRepo === "all" && repos.length > 0 ? (
+                  // "All repos" explicitly selected with repos indexed — cross-repo query mode
                   <div className="suggest-state">
                     <h2>Ask across all repos</h2>
                     <p>Searching <strong>{repos.length} indexed repos</strong> at once — {repos.map(r => r.slug.split("/")[1]).join(", ")}. Results show which repo each source comes from.</p>
@@ -720,8 +721,8 @@ export default function App() {
                       ))}
                     </div>
                   </div>
-                ) : !activeRepo ? (
-                  // No repos at all — show onboarding steps
+                ) : !activeRepo || activeRepo === "all" ? (
+                  // No repo selected yet (landing), or All repos selected but nothing indexed
                   <div className="onboarding-steps">
                     <div className="onboarding-header">
                       <div className="onboarding-headline">Understand any GitHub repository</div>

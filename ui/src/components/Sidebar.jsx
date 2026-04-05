@@ -180,7 +180,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     e.stopPropagation();
     try {
       await deleteRepo(slug);
-      if (activeRepo === slug) onSelectRepo(null);
+      if (activeRepo === slug) onSelectRepo("all");
       onReposChange();
     } catch (err) {
       setStatus({ type: "error", text: err.message });
@@ -436,8 +436,8 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
         ) : (
           <div className="repo-list">
             <div
-              className={`repo-item ${activeRepo === null ? "active" : ""}`}
-              onClick={() => onSelectRepo(null)}
+              className={`repo-item ${activeRepo === "all" ? "active" : ""}`}
+              onClick={() => onSelectRepo("all")}
             >
               <span className="repo-slug">All repos</span>
             </div>
@@ -449,7 +449,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
                 <div
                   key={r.slug}
                   className={`repo-item ${activeRepo === r.slug ? "active" : ""}`}
-                  onClick={() => onSelectRepo(activeRepo === r.slug ? null : r.slug)}
+                  onClick={() => onSelectRepo(activeRepo === r.slug ? "all" : r.slug)}
                 >
                   <div className="repo-item-main">
                     <span className="repo-slug">{r.slug}</span>
