@@ -407,7 +407,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
       )}
 
       {/* ── Repos ── */}
-      <div className="sidebar-section" style={{ flex: 1 }}>
+      <div className="sidebar-section">
         <div className="section-label">Indexed Repos ({reposLoading ? "…" : repos.length})</div>
         {reposLoading ? (
           // Skeleton while the first fetch is in flight — backend can take a moment on cold start
@@ -498,10 +498,8 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
             })}
           </div>
         )}
+        {repos.length > 0 && <ContextualTip />}
       </div>
-
-      {/* ── Quality tip ── */}
-      {repos.length > 0 && <ContextualTip />}
 
       {/* ── Recent chats ── */}
       {sessions && sessions.length > 0 && (

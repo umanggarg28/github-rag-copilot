@@ -1531,9 +1531,9 @@ textarea:focus-visible {
   color: var(--text);
 }
 
-/* ── Contextual retrieval tip — collapsible, low-key ── */
+/* ── Contextual retrieval tip — sits inside the repos section ── */
 .ctip {
-  padding: 0 16px 14px;
+  padding: 6px 0 2px;
 }
 .ctip-trigger {
   display: flex;
