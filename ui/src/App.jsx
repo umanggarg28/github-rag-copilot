@@ -55,18 +55,15 @@ export default function App() {
   // question truncated to 55 chars), messages array, and ISO timestamp.
   // Sessions are stored as `ghrc_sessions_{repo}` → JSON array, newest first.
 
-  function sessionsKey(repo) { return repo ? `ghrc_sessions_${repo}` : null; }
+  // "All repos" (repo=null) uses the key "all" so its sessions persist like any repo
+  function sessionsKey(repo) { return `ghrc_sessions_${repo ?? "all"}`; }
 
   function readSessions(repo) {
-    const key = sessionsKey(repo);
-    if (!key) return [];
-    try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch { return []; }
+    try { return JSON.parse(localStorage.getItem(sessionsKey(repo)) || "[]"); } catch { return []; }
   }
 
   function writeSessions(repo, list) {
-    const key = sessionsKey(repo);
-    if (!key) return;
-    try { localStorage.setItem(key, JSON.stringify(list)); } catch {}
+    try { localStorage.setItem(sessionsKey(repo), JSON.stringify(list)); } catch {}
   }
 
   // Strip transient streaming fields before saving so reloaded messages are clean

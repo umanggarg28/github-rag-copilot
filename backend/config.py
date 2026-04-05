@@ -54,7 +54,7 @@ class Settings:
     chunk_overlap: int      = int(os.getenv("CHUNK_OVERLAP", "200"))
 
     # ── Retrieval ─────────────────────────────────────────────────────────────
-    top_k: int              = int(os.getenv("TOP_K", "8"))
+    top_k: int              = int(os.getenv("TOP_K", "12"))
 
     # ── Quality: Reranking ────────────────────────────────────────────────────
     # Cohere Rerank API — cross-attention reranker, significantly better than
