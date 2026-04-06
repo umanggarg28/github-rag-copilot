@@ -73,33 +73,39 @@ function AgentThought({ text, isActive }) {
     </div>
   );
 
-  // While the agent is still writing this thought, show it fully
+  // While streaming, show the full thought text (no collapse, no chevron)
   if (isActive) {
     return (
       <div className="agent-thought">
         {node}
-        <div className="agent-thought-text">{text}</div>
+        {/* agent-thought-body mirrors agent-step-body margin so text aligns with tool step content */}
+        <div className="agent-thought-body">
+          <div className="agent-thought-text">{text}</div>
+        </div>
       </div>
     );
   }
 
-  // Past thought — collapsed to one line by default, expandable on click
+  // Past thought — one-line collapsed by default, click to expand
   const preview = text.length > 120 ? text.slice(0, 120) + "…" : text;
   return (
     <div
       className={`agent-thought agent-thought-past${expanded ? " agent-thought-open" : ""}`}
       onClick={() => setExpanded(v => !v)}
-      style={{ cursor: "pointer", alignItems: "center" }}
     >
       {node}
-      <div className="agent-thought-text" style={{ flex: 1 }}>
-        {expanded ? text : preview}
+      <div className="agent-thought-body">
+        <div className="agent-thought-header">
+          <div className="agent-thought-text">
+            {expanded ? text : preview}
+          </div>
+          <span className="agent-thought-chevron">
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              {expanded ? <path d="m4 6 4 4 4-4"/> : <path d="m6 4 4 4-4 4"/>}
+            </svg>
+          </span>
+        </div>
       </div>
-      <span className="agent-thought-chevron">
-        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          {expanded ? <path d="m4 6 4 4 4-4"/> : <path d="m6 4 4 4-4 4"/>}
-        </svg>
-      </span>
     </div>
   );
 }

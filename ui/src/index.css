@@ -2436,12 +2436,28 @@ textarea:focus-visible {
 }
 
 /* Agent thought bubble — reasoning text emitted before a tool call.
-   Styled more muted than tool steps: italic, fainter dot, no border. */
+   gap: 0 matches agent-step so the body margin-left places content at the same x. */
 .agent-thought {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 0;
   padding: 2px 0 6px 0;
+}
+
+/* Body wrapper — mirrors agent-step-body positioning (margin-left: 4px) so
+   thought text starts at the exact same column as tool step card content. */
+.agent-thought-body {
+  flex: 1;
+  min-width: 0;
+  margin-left: 4px;
+}
+
+/* Header row inside body: text + chevron side by side */
+.agent-thought-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
 }
 
 .thought-dot {
@@ -2451,6 +2467,8 @@ textarea:focus-visible {
 }
 
 .agent-thought-text {
+  flex: 1;
+  min-width: 0;
   font-size: 11.5px;
   font-style: italic;
   color: var(--text-2);
@@ -2464,9 +2482,10 @@ textarea:focus-visible {
   padding: 1px 0 1px 0;
   border-radius: var(--radius-sm);
   transition: background var(--transition);
+  cursor: pointer;
 }
-.agent-thought-past:hover {
-  background: rgba(237,228,206,0.04);
+.agent-thought-past:hover .agent-thought-body {
+  opacity: 0.8;
 }
 .agent-thought-past .agent-thought-text {
   white-space: nowrap;
