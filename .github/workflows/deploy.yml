@@ -164,7 +164,8 @@ jobs:
         # We pass VITE_API_URL so the React app knows where the backend lives.
         # This env var is baked into the JS bundle at build time by Vite —
         # it becomes a literal string in the compiled output (not a runtime env var).
-        working-directory: ui
+        # Run from repo root — Vercel project already has root dir set to "ui",
+        # so running from ui/ would make Vercel look for "ui/ui" (double-nested).
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
