@@ -108,24 +108,11 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
-      - name: Split subdirectory into deploy branch
-        # `git subtree split --prefix=<dir> -b <branch>`
-        #
-        # This rewrites history to produce a branch where:
-        #   cartographer/backend/main.py  →  backend/main.py
-        #   cartographer/Dockerfile       →  Dockerfile
-        #   (etc.)
-        #
-        # HF Spaces will see Dockerfile at root and build correctly.
-        # The -b flag names the local branch we're creating.
-        run: git subtree split --prefix=github-rag-copilot -b hf-deploy
-
       - name: Push to HuggingFace Space
-        # We push the hf-deploy branch to the HF Space git repo as `main`.
-        # --force is required because we're rewriting history (subtree split
-        # produces different commit SHAs each time). This is safe here because
-        # the HF Space repo is purely a deployment target — no one is committing
-        # directly to it.
+        # The GitHub repo root IS the project root (Dockerfile is at root),
+        # so we push main directly to HF Spaces — no subtree split needed.
+        # --force is safe here: the HF Space is a deployment target only,
+        # nobody commits to it directly.
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_USERNAME: ${{ vars.HF_USERNAME }}
@@ -133,15 +120,8 @@ jobs:
         run: |
           git push \
             "https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME" \
-            hf-deploy:main \
+            main:main \
             --force
-
-      - name: Clean up temporary branch
-        # Delete the local branch we created — it only lived to hold the
-        # subtree split result. Without cleanup, repeated runs would fail with
-        # "branch already exists".
-        if: always()
-        run: git branch -D hf-deploy || true
 
   # ── Frontend → Vercel ──────────────────────────────────────────────────────
   #
@@ -170,10 +150,10 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: cartographer/ui/package-lock.json
+          cache-dependency-path: ui/package-lock.json
 
       - name: Install dependencies
-        working-directory: cartographer/ui
+        working-directory: ui
         run: npm ci
         # `npm ci` (clean install) is preferred over `npm install` in CI:
         # - Installs exactly the versions in package-lock.json (reproducible)
@@ -184,7 +164,7 @@ jobs:
         # We pass VITE_API_URL so the React app knows where the backend lives.
         # This env var is baked into the JS bundle at build time by Vite —
         # it becomes a literal string in the compiled output (not a runtime env var).
-        working-directory: cartographer/ui
+        working-directory: ui
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
