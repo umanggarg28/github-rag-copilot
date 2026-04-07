@@ -37,11 +37,9 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        working-directory: github-rag-copilot
         run: pip install -r requirements.txt
 
       - name: Check syntax (py_compile)
-        working-directory: github-rag-copilot
         run: |
           python -m py_compile backend/config.py
           python -m py_compile backend/models/schemas.py
@@ -59,7 +57,6 @@ jobs:
           python -m py_compile retrieval/retrieval.py
 
       - name: Validate imports (no runtime errors on import)
-        working-directory: github-rag-copilot
         env:
           # Provide dummy env vars so config.py doesn't raise on missing keys
           QDRANT_URL: https://dummy.qdrant.io
@@ -84,14 +81,14 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: cartographer/ui/package-lock.json
+          cache-dependency-path: ui/package-lock.json
 
       - name: Install dependencies
-        working-directory: cartographer/ui
+        working-directory: ui
         run: npm ci
 
       - name: Build (catches broken JSX and missing imports)
-        working-directory: cartographer/ui
+        working-directory: ui
         env:
           VITE_API_URL: https://dummy.onrender.com
         run: npm run build
