@@ -219,13 +219,13 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     return (
       <div className="sidebar sidebar-collapsed">
         {/* Brand icon */}
-        <div className="sidebar-brand-icon sidebar-collapsed-brand" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path d="M5.5 5L2 9l3.5 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.95"/>
-            <path d="M12.5 5L16 9l-3.5 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.95"/>
-            <circle cx="9" cy="9" r="1.2" fill="white" fillOpacity="0.7"/>
-          </svg>
-        </div>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style={{ margin: '12px 0 4px' }}>
+          <path d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
+          <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="var(--accent)" opacity="0.28"/>
+          <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="var(--accent)" opacity="0.28"/>
+          <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="var(--accent)" opacity="0.28"/>
+          <circle cx="12" cy="12" r="1.4" fill="var(--accent)"/>
+        </svg>
 
         {/* Repo count */}
         {repos.length > 0 && (

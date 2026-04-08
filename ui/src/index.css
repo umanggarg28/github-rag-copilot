@@ -3788,20 +3788,21 @@ textarea:focus-visible {
 /* Width is controlled by the grid column (.layout.layout-collapsed), not here */
 .sidebar-collapsed {
   width: 100%;
-  padding: 0;
+  padding: 12px 0;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   overflow: hidden;
 }
 
 .sidebar-collapsed-brand {
-  margin: 12px 0 8px;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Suppress the large glow from .sidebar-brand-icon in collapsed state */
+  box-shadow: 0 0 0 1px rgba(212, 132, 90, 0.3);
 }
 
 .sidebar-collapsed-item {
