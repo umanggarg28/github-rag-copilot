@@ -724,15 +724,15 @@ export default function App() {
                   // No repo selected yet (landing), or All repos selected but nothing indexed
                   <div className="onboarding-steps">
                     <div className="onboarding-header">
-                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" style={{ marginBottom: 16 }}>
-                        {/* N — tall kite diamond */}
-                        <path d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
-                        {/* S — shorter, dim */}
-                        <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="var(--accent)" opacity="0.28"/>
-                        {/* E */}
-                        <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="var(--accent)" opacity="0.28"/>
-                        {/* W */}
-                        <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="var(--accent)" opacity="0.28"/>
+                      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" style={{ marginBottom: 16 }}>
+                        {/* N — pulses bright */}
+                        <path className="compass-north" d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
+                        {/* S — delayed fade */}
+                        <path className="compass-south" d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="var(--accent)"/>
+                        {/* E — delayed fade */}
+                        <path className="compass-east" d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="var(--accent)"/>
+                        {/* W — delayed fade */}
+                        <path className="compass-west" d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="var(--accent)"/>
                         {/* Center */}
                         <circle cx="12" cy="12" r="1.4" fill="var(--accent)"/>
                       </svg>

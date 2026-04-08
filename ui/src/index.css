@@ -1288,8 +1288,31 @@ textarea:focus-visible {
   margin-bottom: 16px;
 }
 
+/* North point pulses — the other three points fade in sequence */
+.compass-north {
+  animation: compass-pulse-n 3s ease-in-out infinite;
+}
+.compass-south {
+  animation: compass-pulse-dim 3s ease-in-out infinite 0.75s;
+}
+.compass-east {
+  animation: compass-pulse-dim 3s ease-in-out infinite 1.5s;
+}
+.compass-west {
+  animation: compass-pulse-dim 3s ease-in-out infinite 2.25s;
+}
+
+@keyframes compass-pulse-n {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+@keyframes compass-pulse-dim {
+  0%, 100% { opacity: 0.15; }
+  50%       { opacity: 0.5; }
+}
+
 .onboarding-headline {
-  font-size: 40px;
+  font-size: 34px;
   font-weight: 400;
   font-family: "Anthropic Serif", Georgia, serif;
   letter-spacing: -0.02em;
