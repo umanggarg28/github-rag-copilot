@@ -42,6 +42,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Annotated
 
+import posthog as _posthog
+
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -92,6 +94,13 @@ async def lifespan(app: FastAPI):
     """
     global _ingestion_service, _retrieval_service, _generation_service
     global _agent_service, _diagram_service, _repo_map_service, _mcp_client
+
+    # ── PostHog analytics ──────────────────────────────────────────────────────
+    # Configure the module-level posthog client once at startup.
+    # All capture() calls anywhere in this process share this config.
+    if settings.posthog_api_key:
+        _posthog.api_key = settings.posthog_api_key
+        _posthog.host    = settings.posthog_host
 
     print("Starting up — loading models and connecting to Qdrant...")
 
@@ -145,6 +154,10 @@ async def lifespan(app: FastAPI):
     # (which happens in the app.mount() call below the lifespan definition).
     async with mcp.session_manager.run():
         yield
+
+    # Flush any buffered PostHog events before the process exits.
+    if settings.posthog_api_key:
+        _posthog.flush()
 
     print("Shutting down.")
 
@@ -268,6 +281,22 @@ def get_agent_service() -> AgentService:
     return _agent_service
 
 
+def _get_distinct_id(request: Request) -> str:
+    """
+    Extract the PostHog distinct ID sent by the frontend.
+
+    The React app (posthog-js) sets X-POSTHOG-DISTINCT-ID on every request
+    so server-side events can be linked to the same person as client-side events.
+    Falls back to 'anonymous' when the header is absent (e.g. API-only callers).
+    """
+    return request.headers.get("X-POSTHOG-DISTINCT-ID", "anonymous")
+
+
+def _ph_capture(distinct_id: str, event: str, properties: dict | None = None) -> None:
+    """Fire a PostHog event only when analytics are configured."""
+    if settings.posthog_api_key:
+        _posthog.capture(distinct_id, event, properties or {})
+
 
 # ── Routes: MCP status ─────────────────────────────────────────────────────────
 
@@ -324,6 +353,7 @@ async def mcp_status():
 @app.post("/ingest", response_model=IngestResponse, tags=["ingestion"])
 async def ingest_repo(
     request: IngestRequest,
+    http_request: Request,
     svc: Annotated[IngestionService, Depends(get_ingestion_service)],
     _: None = Depends(_check_rate_limit),
 ):
@@ -334,6 +364,7 @@ async def ingest_repo(
     embeds each chunk, and upserts to Qdrant. Safe to re-run (idempotent).
     Set force=true to delete and re-index from scratch.
     """
+    distinct_id = _get_distinct_id(http_request)
     try:
         # Ingestion is CPU+IO bound: downloads zip, runs AST parsing, embeds 600MB model.
         # Running it in the main event loop would block ALL other requests for minutes.
@@ -351,10 +382,23 @@ async def ingest_repo(
             _repo_indexed_at[result["repo"]] = now
             if request.force:
                 _repo_contextual_at[result["repo"]] = now
+        _ph_capture(distinct_id, "repo_ingested", {
+            "repo": result.get("repo", ""),
+            "chunks_indexed": result.get("chunks", 0),
+            "force_reindex": request.force,
+        })
         return IngestResponse(**result)
     except ValueError as e:
+        _ph_capture(distinct_id, "repo_ingestion_failed", {
+            "repo_url": request.repo_url,
+            "error_type": "validation",
+        })
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        _ph_capture(distinct_id, "repo_ingestion_failed", {
+            "repo_url": request.repo_url,
+            "error_type": "server",
+        })
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}")
 
 
@@ -466,11 +510,16 @@ async def list_repos(
 async def delete_repo(
     owner: str,
     name: str,
+    http_request: Request,
     svc: Annotated[IngestionService, Depends(get_ingestion_service)],
 ):
     """Delete all chunks for a repository from the index."""
     slug = f"{owner}/{name}"
     deleted = svc.delete_repo(slug)
+    _ph_capture(_get_distinct_id(http_request), "repo_deleted", {
+        "repo": slug,
+        "chunks_deleted": deleted,
+    })
     return {"repo": slug, "chunks_deleted": deleted}
 
 
@@ -499,10 +548,11 @@ async def get_tour(
 
 @app.get("/repos/{owner}/{name}/tour/stream", tags=["diagram"])
 async def stream_tour(
-    owner:       str,
-    name:        str,
-    diagram_svc: Annotated[DiagramService, Depends(get_diagram_service)],
-    force:       bool = Query(False, description="If true, bypass cache and regenerate"),
+    owner:        str,
+    name:         str,
+    http_request: Request,
+    diagram_svc:  Annotated[DiagramService, Depends(get_diagram_service)],
+    force:        bool = Query(False, description="If true, bypass cache and regenerate"),
 ):
     """
     Stream codebase tour generation as Server-Sent Events.
@@ -515,7 +565,8 @@ async def stream_tour(
 
     Same data as GET /tour but streamed — no extra LLM calls, same token cost.
     """
-    repo = f"{owner}/{name}"
+    repo        = f"{owner}/{name}"
+    distinct_id = _get_distinct_id(http_request)
 
     async def _event_stream():
         queue: asyncio.Queue = asyncio.Queue()
@@ -539,6 +590,11 @@ async def stream_tour(
             event = await queue.get()
             if event is None:
                 break
+            if event.get("stage") == "done":
+                _ph_capture(distinct_id, "tour_generated", {
+                    "repo": repo,
+                    "from_cache": not force,
+                })
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
@@ -552,6 +608,7 @@ async def stream_tour(
 async def stream_diagram(
     owner:        str,
     name:         str,
+    http_request: Request,
     diagram_svc:  Annotated[DiagramService, Depends(get_diagram_service)],
     type:         str  = Query("architecture", description="architecture | class"),
     force:        bool = Query(False, description="If true, bypass cache and regenerate"),
@@ -564,7 +621,8 @@ async def stream_diagram(
 
     Final event: { "stage": "done", "diagram": {...}, "type": "architecture" }
     """
-    repo = f"{owner}/{name}"
+    repo        = f"{owner}/{name}"
+    distinct_id = _get_distinct_id(http_request)
 
     async def _event_stream():
         queue: asyncio.Queue = asyncio.Queue()
@@ -588,6 +646,12 @@ async def stream_diagram(
             event = await queue.get()
             if event is None:
                 break
+            if event.get("stage") == "done":
+                _ph_capture(distinct_id, "diagram_generated", {
+                    "repo": repo,
+                    "diagram_type": type,
+                    "from_cache": not force,
+                })
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
@@ -629,6 +693,7 @@ async def get_diagram(
 @app.post("/search", response_model=SearchResponse, tags=["search"])
 async def search(
     request: SearchRequest,
+    http_request: Request,
     svc: Annotated[RetrievalService, Depends(get_retrieval_service)],
 ):
     """Retrieve relevant code chunks without generating an answer."""
@@ -639,6 +704,11 @@ async def search(
         language_filter=request.language,
         mode=request.mode,
     )
+    _ph_capture(_get_distinct_id(http_request), "code_search_performed", {
+        "repo": request.repo or "",
+        "mode": request.mode,
+        "result_count": len(results),
+    })
     return SearchResponse(
         query=request.query,
         results=[CodeChunk(**r) for r in results],
@@ -697,6 +767,7 @@ class QueryStreamRequest(BaseModel):
 @app.post("/query/stream", tags=["query"])
 async def query_stream(
     request: QueryStreamRequest,
+    http_request: Request,
     retrieval_svc: Annotated[RetrievalService, Depends(get_retrieval_service)],
     generation_svc: Annotated[GenerationService, Depends(get_generation_service)],
 ):
@@ -710,6 +781,7 @@ async def query_stream(
     question = request.question
     history  = request.history[-10:]  # cap at 5 exchanges
     query_type = classify_query(question)
+    distinct_id = _get_distinct_id(http_request)
 
     async def token_stream():
         import json
@@ -800,6 +872,13 @@ async def query_stream(
             elif kind == "grade":
                 yield f"event: grade\ndata: {json.dumps(value)}\n\n"
             elif kind == "done":
+                _ph_capture(distinct_id, "rag_query_completed", {
+                    "repo": request.repo or "",
+                    "mode": request.mode,
+                    "query_type": query_type,
+                    "source_count": len(results) if results else 0,
+                    "has_history": len(history) > 0,
+                })
                 yield "data: [DONE]\n\n"
                 break
             elif kind == "error":
@@ -884,7 +963,7 @@ async def agent_models():
 
 
 @app.post("/agent/stream", tags=["agent"])
-async def agent_stream(request: AgentStreamRequest):
+async def agent_stream(request: AgentStreamRequest, http_request: Request):
     """
     Run the agentic RAG loop with real-time SSE streaming.
 
@@ -900,11 +979,12 @@ async def agent_stream(request: AgentStreamRequest):
     """
     import json
 
-    svc      = _agent_service  # may be None if no API key configured
-    question = request.question
-    repo     = request.repo
-    model_id = request.model_id
-    history  = request.history[-10:]  # cap at 5 exchanges
+    svc         = _agent_service  # may be None if no API key configured
+    question    = request.question
+    repo        = request.repo
+    model_id    = request.model_id
+    history     = request.history[-10:]  # cap at 5 exchanges
+    distinct_id = _get_distinct_id(http_request)
 
     async def event_stream():
         if svc is None:
@@ -974,6 +1054,12 @@ async def agent_stream(request: AgentStreamRequest):
                     yield f"event: sources\ndata: {payload}\n\n"
 
                 elif etype == "done":
+                    _ph_capture(distinct_id, "agent_query_completed", {
+                        "repo": repo or "",
+                        "iterations": event["iterations"],
+                        "model": event.get("model", ""),
+                        "has_history": len(history) > 0,
+                    })
                     payload = json.dumps({"iterations": event["iterations"], "model": event.get("model", "")})
                     yield f"event: done\ndata: {payload}\n\n"
                     yield "data: [DONE]\n\n"

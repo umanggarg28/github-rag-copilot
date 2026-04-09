@@ -30,6 +30,7 @@ openai          # OpenAI-compatible API calls (Gemini + OpenRouter both use this
 python-dotenv
 pydantic
 mcp
+posthog
 
 # Semantic Map — 2D projection of code embeddings
 scikit-learn  # PCA fallback + K-means clustering

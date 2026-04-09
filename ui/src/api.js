@@ -2,6 +2,22 @@
 // In production:  set VITE_API_URL in Vercel environment variables
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+/**
+ * Returns the PostHog distinct ID header if posthog-js is loaded.
+ *
+ * Sending this with API requests lets the backend attach server-side events
+ * (ingest, query, etc.) to the same person as client-side events, so both
+ * show up under one identity in PostHog funnels and session recordings.
+ */
+function phHeaders() {
+  try {
+    // posthog is loaded globally by the PostHogProvider in main.jsx
+    const id = window.posthog?.get_distinct_id?.();
+    if (id) return { "X-POSTHOG-DISTINCT-ID": id };
+  } catch (_) { /* posthog not yet loaded — degrade silently */ }
+  return {};
+}
+
 export async function fetchAgentModels() {
   const res = await fetch(`${BASE}/agent/models`);
   if (!res.ok) return [];
@@ -18,7 +34,7 @@ export async function fetchRepos() {
 export async function ingestRepo(repoUrl, force = false) {
   const res = await fetch(`${BASE}/ingest`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...phHeaders() },
     body: JSON.stringify({ repo_url: repoUrl, force }),
   });
   const data = await res.json();
@@ -59,7 +75,7 @@ export function streamTour(slug, { onProgress, onDone, onError, force = false })
     ? `${BASE}/repos/${owner}/${name}/tour/stream?force=true`
     : `${BASE}/repos/${owner}/${name}/tour/stream`;
 
-  fetch(url, { signal: controller.signal })
+  fetch(url, { signal: controller.signal, headers: phHeaders() })
     .then(async (res) => {
       if (!res.ok) { onError?.(`Server error ${res.status}`); return; }
 
@@ -115,7 +131,7 @@ export function streamDiagram(slug, type = "architecture", { onProgress, onDone,
   const controller = new AbortController();
   const url = `${BASE}/repos/${owner}/${name}/diagram/stream?type=${type}${force ? "&force=true" : ""}`;
 
-  fetch(url, { signal: controller.signal })
+  fetch(url, { signal: controller.signal, headers: phHeaders() })
     .then(async (res) => {
       if (!res.ok) { onError?.(`Server error ${res.status}`); return; }
 
@@ -170,7 +186,7 @@ export async function fetchMcpStatus() {
 
 export async function deleteRepo(slug) {
   const [owner, name] = slug.split("/");
-  const res = await fetch(`${BASE}/repos/${owner}/${name}`, { method: "DELETE" });
+  const res = await fetch(`${BASE}/repos/${owner}/${name}`, { method: "DELETE", headers: phHeaders() });
   if (!res.ok) throw new Error("Failed to delete repo");
   return res.json();
 }
@@ -247,7 +263,7 @@ export function streamQuery({ question, repo, mode, history, onToken, onSources,
 
   fetch(`${BASE}/query/stream`, {
     method:  "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...phHeaders() },
     body:    JSON.stringify({
       question,
       mode:    mode || "hybrid",
@@ -324,7 +340,7 @@ export function streamAgentQuery({ question, repo, model_id, history, onThought,
 
   fetch(`${BASE}/agent/stream`, {
     method:  "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...phHeaders() },
     body:    JSON.stringify({ question, repo: repo || null, model_id: model_id || null, history: history || [] }),
     signal:  controller.signal,
   }).then(async (res) => {

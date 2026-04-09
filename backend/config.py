@@ -95,5 +95,9 @@ class Settings:
     # Set to 0 to disable rate limiting (e.g. in local dev).
     ingest_rate_limit: int  = int(os.getenv("INGEST_RATE_LIMIT", "5"))
 
+    # ── Analytics ─────────────────────────────────────────────────────────────
+    posthog_api_key: str    = os.getenv("POSTHOG_API_KEY", "")
+    posthog_host: str       = os.getenv("POSTHOG_HOST", "https://us.i.posthog.com")
+
 
 settings = Settings()
