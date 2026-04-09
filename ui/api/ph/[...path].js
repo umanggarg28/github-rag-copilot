@@ -1,39 +1,56 @@
 /**
- * Vercel Edge Function — PostHog reverse proxy.
+ * Vercel Serverless Function — PostHog reverse proxy.
  *
- * Why this exists: ad blockers match on the hostname "us.i.posthog.com" and
- * block analytics requests with ERR_BLOCKED_BY_CLIENT. By routing through our
- * own domain (/api/ph/*) the requests look first-party and slip past blockers.
+ * Why: ad blockers match on "us.i.posthog.com" and block analytics with
+ * ERR_BLOCKED_BY_CLIENT. Routing through our own domain (/api/ph/*) makes
+ * requests look first-party, bypassing the block.
  *
- * Vercel `rewrites` in vercel.json only handle GET routing; POST bodies are
- * not forwarded to external hosts. An Edge Function gives us full control to
- * proxy every method (GET, POST) with the correct headers and body.
+ * Using Node.js runtime (not Edge) because Edge runtime requires Next.js
+ * for Vercel's file-based routing to work correctly. Node.js runtime
+ * supports all HTTP methods and body types natively.
  */
-export const config = { runtime: 'edge' };
-
 const POSTHOG_HOST = 'https://us.i.posthog.com';
 
-export default async function handler(req) {
-  const url = new URL(req.url);
+export default async function handler(req, res) {
+  // Reconstruct the PostHog path from the wildcard [...path] segment
+  const segments = req.query.path || [];
+  const pathStr  = Array.isArray(segments) ? segments.join('/') : segments;
+  const query    = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  const targetUrl = `${POSTHOG_HOST}/${pathStr}${query}`;
 
-  // Strip the /api/ph prefix — keep path + query string for PostHog
-  const targetPath = url.pathname.replace(/^\/api\/ph/, '') || '/';
-  const targetUrl  = `${POSTHOG_HOST}${targetPath}${url.search}`;
+  // Read the incoming body as a raw buffer (preserves gzip/base64 compression
+  // that PostHog JS applies — do NOT parse or re-encode it)
+  const bodyChunks = [];
+  for await (const chunk of req) {
+    bodyChunks.push(chunk);
+  }
+  const rawBody = bodyChunks.length > 0 ? Buffer.concat(bodyChunks) : undefined;
 
-  // Build forwarded headers, replacing host so PostHog accepts the request
-  const headers = new Headers(req.headers);
-  headers.set('host', 'us.i.posthog.com');
+  // Forward only the headers PostHog needs; strip Vercel-specific ones
+  const forwardedHeaders = {
+    host:             'us.i.posthog.com',
+    'content-type':   req.headers['content-type']   || 'text/plain',
+    'user-agent':     req.headers['user-agent']      || 'posthog-proxy',
+  };
+  if (req.headers['content-encoding']) {
+    forwardedHeaders['content-encoding'] = req.headers['content-encoding'];
+  }
 
   const proxyResp = await fetch(targetUrl, {
     method:  req.method,
-    headers,
-    body:    ['GET', 'HEAD'].includes(req.method) ? undefined : req.body,
-    redirect: 'follow',
+    headers: forwardedHeaders,
+    body:    ['GET', 'HEAD'].includes(req.method) ? undefined : rawBody,
   });
 
-  return new Response(proxyResp.body, {
-    status:     proxyResp.status,
-    statusText: proxyResp.statusText,
-    headers:    proxyResp.headers,
+  // Forward response status + headers back to the browser
+  res.status(proxyResp.status);
+  proxyResp.headers.forEach((value, key) => {
+    // Skip headers that Node's http module manages itself
+    if (!['transfer-encoding', 'connection'].includes(key)) {
+      res.setHeader(key, value);
+    }
   });
+
+  const responseBody = await proxyResp.arrayBuffer();
+  res.send(Buffer.from(responseBody));
 }
