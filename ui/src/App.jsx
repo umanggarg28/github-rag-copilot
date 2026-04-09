@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import posthog from "posthog-js";
 import Sidebar from "./components/Sidebar";
 import Message from "./components/Message";
 import DiagramView from "./components/DiagramView";
@@ -325,6 +326,9 @@ export default function App() {
       .slice(-10)
       .map(m => ({ role: m.role, content: m.content }));
 
+    // Track query event
+    posthog.capture("query_submitted", { repo: activeRepo, mode: agentMode ? "agent" : "rag" });
+
     // Add user message + placeholder assistant message.
     // On auto-retry (retryQuestion set), skip the user message — it's already in the chat
     // from the first attempt. Adding it again causes duplicate question bubbles.
@@ -610,7 +614,7 @@ export default function App() {
         repos={repos}
         reposLoading={reposLoading}
         activeRepo={activeRepo}
-        onSelectRepo={setActiveRepo}
+        onSelectRepo={(repo) => { setActiveRepo(repo); posthog.capture("repo_selected", { repo }); }}
         onReposChange={loadRepos}
         mode={mode}
         onModeChange={setMode}
@@ -671,7 +675,7 @@ export default function App() {
                 >Chat</button>
                 <button
                   className={`view-btn ${view === "graph" ? "active" : ""}`}
-                  onClick={() => setView("graph")}
+                  onClick={() => { setView("graph"); posthog.capture("diagram_view_opened", { repo: activeRepo }); }}
                 >Diagram <span style={{ fontSize: 8, verticalAlign: "middle", color: "var(--accent-soft)", marginLeft: 2 }}>●</span></button>
               </div>
             )}
