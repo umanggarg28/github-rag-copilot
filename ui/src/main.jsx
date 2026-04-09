@@ -6,9 +6,8 @@ import './index.css'
 import App from './App.jsx'
 
 posthog.init('phc_B4VarKaWfNc3u7vMcsUPRDbNgSyVxaBqtYT3ZwP6FshM', {
-  // Route through Vercel proxy (/ph/*) so ad blockers don't block requests
-  // to us.i.posthog.com directly. The proxy is configured in vercel.json.
-  // Route through Vercel Edge Function (/api/ph/*) — bypasses ad blockers
+  // Route through /api/ph (Vercel serverless proxy) so ad blockers
+  // don't block requests going directly to us.i.posthog.com.
   api_host: '/api/ph',
   ui_host: 'https://us.posthog.com',
   capture_pageview: true,
