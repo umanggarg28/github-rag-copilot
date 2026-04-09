@@ -10,6 +10,16 @@
  */
 import https from 'https';
 
+// Disable Vercel's automatic body parsing so we can pipe the raw stream
+// directly to PostHog. Without this, Vercel consumes req before our code
+// runs, making req.pipe() send an empty body → PostHog rejects with 405.
+export const config = {
+  api: {
+    bodyParser: false,
+    responseLimit: false,
+  },
+};
+
 export default function handler(req, res) {
   const segments = Array.isArray(req.query.path)
     ? req.query.path.join('/')
