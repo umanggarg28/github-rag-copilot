@@ -1,6 +1,6 @@
 {
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  "rewrites": [
+    { "source": "/api/ph/:path*", "destination": "/api/posthog?path=:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
