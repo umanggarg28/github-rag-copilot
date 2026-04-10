@@ -22,7 +22,7 @@ import NodeDetailPanel from "./NodeDetailPanel";
 
 // ── Diagram tab definitions ───────────────────────────────────────────────────
 const EXPLORE_TAB = {
-  id: "explore", label: "Explore", desc: "Guided concept tour", icon: "◈",
+  id: "explore", label: "Explore", desc: "Guided concept tour",
 };
 
 // Only AST-verified diagrams — Sequence and Data Flow were removed because
@@ -33,15 +33,53 @@ const DIAGRAM_TABS = [
     id:    "architecture",
     label: "Architecture",
     desc:  "Components & connections",
-    icon:  "⬡",
   },
   {
     id:    "class",
     label: "Class Hierarchy",
     desc:  "Classes & relationships",
-    icon:  "◫",
   },
 ];
+
+// ── Tab icons (SVG) ───────────────────────────────────────────────────────────
+// Inline SVGs render crisp at every DPI — unicode glyphs (◈ ⬡ ◫) are
+// rasterised at screen resolution and look blurry on high-DPI displays.
+function TabIcon({ id }) {
+  if (id === "explore") return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      {/* Compass rose — N point pulses in the landing animation */}
+      <path d="M12 2L14.5 7.5L12 12L9.5 7.5Z" fill="currentColor"/>
+      <path d="M12 22L13.5 16.5L12 12L10.5 16.5Z" fill="currentColor" opacity="0.45"/>
+      <path d="M22 12L16.5 10.5L12 12L16.5 13.5Z" fill="currentColor" opacity="0.45"/>
+      <path d="M2 12L7.5 10.5L12 12L7.5 13.5Z" fill="currentColor" opacity="0.45"/>
+      <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+    </svg>
+  );
+  if (id === "architecture") return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden="true">
+      {/* Three nodes connected by edges — represents a dependency/import graph */}
+      <circle cx="5" cy="12" r="2.5"/>
+      <circle cx="19" cy="6.5" r="2.5"/>
+      <circle cx="19" cy="17.5" r="2.5"/>
+      <line x1="7.4" y1="11" x2="16.6" y2="7.5"/>
+      <line x1="7.4" y1="13" x2="16.6" y2="16.5"/>
+    </svg>
+  );
+  if (id === "class") return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {/* Parent node + two children — represents inheritance / class tree */}
+      <rect x="8.5" y="2" width="7" height="5" rx="1.5"/>
+      <rect x="1" y="17" width="7" height="5" rx="1.5"/>
+      <rect x="16" y="17" width="7" height="5" rx="1.5"/>
+      <line x1="12" y1="7" x2="12" y2="12"/>
+      <line x1="12" y1="12" x2="4.5" y2="17"/>
+      <line x1="12" y1="12" x2="19.5" y2="17"/>
+    </svg>
+  );
+  return null;
+}
 
 const ALL_TABS = [EXPLORE_TAB, ...DIAGRAM_TABS];
 
@@ -246,7 +284,7 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
                 : "rgba(212,132,90,0.25)",
             }}
           >
-            <span className="diagram-type-icon" style={{ color: "var(--accent-soft)" }}>◈</span>
+            <span className="diagram-type-icon" style={{ color: "var(--accent-soft)" }}><TabIcon id="explore" /></span>
             <span className="diagram-type-label" style={{ color: diagramType === "explore" ? "var(--accent)" : "var(--accent-soft)" }}>Explore</span>
             <span className="diagram-type-desc">Guided concept tour</span>
           </button>
@@ -265,7 +303,7 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
               className={`diagram-type-btn${diagramType === t.id ? " active" : ""}`}
               onClick={() => setType(t.id)}
             >
-              <span className="diagram-type-icon">{t.icon}</span>
+              <span className="diagram-type-icon"><TabIcon id={t.id} /></span>
               <span className="diagram-type-label">{t.label}</span>
               <span className="diagram-type-desc">{t.desc}</span>
             </button>

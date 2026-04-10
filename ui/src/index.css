@@ -1319,13 +1319,24 @@ textarea:focus-visible {
 }
 
 .onboarding-headline {
-  font-size: 34px;
+  /* 48px makes this a moment, not a label — the first thing that lands */
+  font-size: 48px;
   font-weight: 400;
   font-family: "Anthropic Serif", Georgia, serif;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  margin-bottom: 12px;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin-bottom: 14px;
   color: var(--text);
+}
+
+/* "any" in "Map any codebase" — gradient accent highlights the key idea:
+   that Cartographer works on every repo, not just pre-selected ones */
+.onboarding-headline em {
+  font-style: normal;
+  background: linear-gradient(110deg, var(--accent-soft) 0%, var(--accent) 65%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .onboarding-sub {
@@ -1422,7 +1433,8 @@ textarea:focus-visible {
 }
 .onboarding-step p {
   font-size: 13px;
-  color: var(--muted);
+  /* text-2 not muted — this is the body of a learning step, not decoration */
+  color: var(--text-2);
   margin: 3px 0;
   line-height: 1.55;
 }
@@ -1441,7 +1453,8 @@ textarea:focus-visible {
 /* Suggest state */
 .suggest-state { max-width: 540px; width: 100%; text-align: center; }
 .suggest-state h2 {
-  font-size: 22px;
+  /* 28px gives this moment presence — you've chosen a repo, this is the invitation */
+  font-size: 28px;
   font-weight: 400;
   font-family: "Anthropic Serif", Georgia, serif;
   letter-spacing: -0.02em;
@@ -2121,50 +2134,80 @@ textarea:focus-visible {
 .diagram-type-bar {
   display: flex;
   gap: 8px;
-  padding: 12px 24px;
+  padding: 14px 24px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  background: rgba(20, 18, 14, 0.55);
+  background: rgba(20, 18, 14, 0.70);
 }
 
 .diagram-type-btn {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
-  padding: 8px 14px;
-  border-radius: 8px;
+  gap: 3px;
+  /* More generous padding — these are feature entry points, not list items */
+  padding: 11px 18px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: transparent;
   cursor: pointer;
-  transition: background var(--transition), border-color var(--transition);
-  min-width: 130px;
+  /* position: relative anchors the ::before gradient top-edge line */
+  position: relative;
+  overflow: hidden;
+  transition: background var(--transition), border-color var(--transition), box-shadow var(--transition);
+  min-width: 150px;
 }
+
+/* "Lit edge" technique — a gradient line materialises at the top of the
+   active card, mimicking light catching a raised edge. Seen on Linear,
+   Vercel, Raycast. Invisible by default; only the active card shows it. */
+.diagram-type-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 12px; right: 12px;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-soft), transparent);
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
 .diagram-type-btn:hover {
   background: rgba(237,228,206,0.04);
   border-color: var(--accent-border);
 }
 .diagram-type-btn.active {
-  background: rgba(212,132,90,0.15);
-  border-color: rgba(212,132,90,0.5);
+  background: rgba(212,132,90,0.12);
+  border-color: rgba(212,132,90,0.45);
+  box-shadow: 0 4px 20px rgba(212,132,90,0.08), inset 0 0 0 0 transparent;
 }
+.diagram-type-btn.active::before { opacity: 1; }
 
 .diagram-type-icon {
-  font-size: 16px;
-  line-height: 1;
-  margin-bottom: 2px;
+  /* Block display so the SVG sits on its own line above the label */
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+  color: var(--muted);
+  transition: color var(--transition);
 }
+.diagram-type-btn.active .diagram-type-icon,
+.diagram-type-btn:hover .diagram-type-icon { color: var(--accent-soft); }
+
 .diagram-type-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text);
   font-family: var(--mono);
+  letter-spacing: -0.01em;
 }
 .diagram-type-btn.active .diagram-type-label { color: var(--accent); }
 
+/* text-2 not muted — the description is the context, not decoration */
 .diagram-type-desc {
-  font-size: 10px;
-  color: var(--muted);
+  font-size: 11px;
+  color: var(--text-2);
+  letter-spacing: -0.01em;
 }
 
 /* ── Canvas ── */
