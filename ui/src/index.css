@@ -300,8 +300,9 @@ textarea:focus-visible {
 .sidebar-section {
   display: flex;
   flex-direction: column;
-  padding-top: 16px;
-  padding-bottom: 10px;
+  /* 20px top breathing room — keeps sections clearly separate at a glance */
+  padding-top: 20px;
+  padding-bottom: 14px;
   border-top: 1px solid var(--border-strong);
 }
 
@@ -450,8 +451,9 @@ textarea:focus-visible {
   padding: 7px 10px;
   border-radius: var(--radius);
   cursor: pointer;
-  border-left: 2px solid transparent;
-  transition: background var(--transition), border-left-color var(--transition);
+  /* 3px leaves room for the active accent stripe without layout shift */
+  border-left: 3px solid transparent;
+  transition: background var(--transition), border-left-color var(--transition), box-shadow var(--transition);
   gap: 7px;
 }
 
@@ -491,9 +493,11 @@ textarea:focus-visible {
 .repo-item.active {
   background: var(--accent-dim);
   border-left-color: var(--accent);
+  /* Inset ambient glow reinforces the selected state without being loud */
+  box-shadow: inset 2px 0 14px rgba(212, 132, 90, 0.07);
 }
-/* Active repo: text pops to accent brightness and weight */
-.repo-item.active .repo-slug { color: var(--accent-soft); font-weight: 600; }
+/* Active repo: text pops to full brightness */
+.repo-item.active .repo-slug { color: var(--text); font-weight: 600; }
 
 .repo-slug {
   font-size: 13px;
@@ -1210,9 +1214,12 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  /* Symmetric padding — logo has room above, last card has room before chat bar */
-  padding: 60px 24px 60px;
+  /* Upper-positioned content — input is pinned at the bottom, so content
+     in the vertical center creates dead space in the lower half.
+     Sitting content in the upper ~40% feels more intentional and mirrors
+     how Linear / Raycast handle their empty states. */
+  justify-content: flex-start;
+  padding: max(8vh, 56px) 24px 40px;
   overflow-y: auto;
   position: relative;
 }
@@ -1513,10 +1520,11 @@ textarea:focus-visible {
 
 /* ── Mode description — one-line explanation below each pill group ── */
 .mode-description {
-  font-size: 11.5px;
-  color: var(--muted);
+  /* text-2 instead of muted — this is active context, not decorative */
+  font-size: 12px;
+  color: var(--text-2);
   line-height: 1.5;
-  margin-top: 7px;
+  margin-top: 8px;
   padding: 0 2px;
 }
 
@@ -1878,9 +1886,14 @@ textarea:focus-visible {
   display: flex;
   background: rgba(237,228,206,0.04);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  /* Centered absolutely so it sits at the visual midpoint of the header
+     regardless of what's on the left (repo badge) or right (clear btn) */
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: var(--radius-md);
   overflow: hidden;
-  padding: 2px;
+  padding: 3px;
   gap: 2px;
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.25);
 }
@@ -1888,16 +1901,17 @@ textarea:focus-visible {
 .view-btn {
   background: none;
   border: none;
-  /* text-2 instead of muted — inactive option should still be clearly legible */
   color: var(--text-2);
   cursor: pointer;
   font-family: var(--sans);
-  font-size: 12px;
+  /* Slightly larger than before — this is the primary view switcher */
+  font-size: 13px;
   font-weight: 500;
-  padding: 4px 12px;
-  border-radius: calc(var(--radius) - 2px);
+  padding: 5px 18px;
+  border-radius: calc(var(--radius-md) - 3px);
   transition: background var(--transition), color var(--transition);
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 .view-btn:hover  { background: rgba(237,228,206,0.08); color: var(--text); }
 .view-btn.active {

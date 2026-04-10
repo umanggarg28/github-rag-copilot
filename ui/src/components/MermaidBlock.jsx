@@ -19,11 +19,18 @@ mermaid.initialize({
   themeVariables: {
     background:         "#1a1714",
     primaryColor:       "#2a2420",
-    primaryBorderColor: "rgba(237,228,206,0.15)",
-    primaryTextColor:   "#ede8ce",
-    lineColor:          "rgba(237,228,206,0.4)",
+    /* Stronger border and text contrast — the previous violet theme had
+       readability issues here; warm cream at higher opacity fixes it */
+    primaryBorderColor: "rgba(237,228,206,0.28)",
+    primaryTextColor:   "#f0ead8",    /* brighter than #ede8ce for legibility */
+    lineColor:          "rgba(237,228,206,0.55)",  /* edges clearly visible */
     secondaryColor:     "#221e1a",
     tertiaryColor:      "#1e1b17",
+    edgeLabelBackground: "#1a1714",   /* prevents label bleed-through on edges */
+    clusterBkg:         "#211e1a",
+    clusterBorder:      "rgba(237,228,206,0.18)",
+    titleColor:         "#ede8ce",
+    nodeTextColor:      "#f0ead8",
   },
   flowchart: { curve: "basis", padding: 20 },
   sequence:  { useMaxWidth: false },
