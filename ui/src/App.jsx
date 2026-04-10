@@ -633,20 +633,21 @@ export default function App() {
 
       <div className="main">
         {/* Header */}
+        {/* 3-column grid: left (repo badge) | center (toggle) | right (actions)
+            Equal 1fr flanks guarantee the center column is always truly centred,
+            regardless of asymmetric content on either side — the Linear/Vercel pattern. */}
         <div className="chat-header">
-          {/* Hamburger button — only visible on mobile */}
-          <button
-            className="mobile-menu-btn"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open navigation"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-              <path d="M1 2.75A.75.75 0 011.75 2h12.5a.75.75 0 010 1.5H1.75A.75.75 0 011 2.75zm0 5A.75.75 0 011.75 7h12.5a.75.75 0 010 1.5H1.75A.75.75 0 011 7.75zM1.75 12a.75.75 0 000 1.5h12.5a.75.75 0 000-1.5H1.75z"/>
-            </svg>
-          </button>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {/* Backend health dot */}
+          {/* LEFT — hamburger (mobile) + repo context */}
+          <div className="header-left">
+            <button
+              className="mobile-menu-btn"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open navigation"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M1 2.75A.75.75 0 011.75 2h12.5a.75.75 0 010 1.5H1.75A.75.75 0 011 2.75zm0 5A.75.75 0 011.75 7h12.5a.75.75 0 010 1.5H1.75A.75.75 0 011 7.75zM1.75 12a.75.75 0 000 1.5h12.5a.75.75 0 000-1.5H1.75z"/>
+              </svg>
+            </button>
             {backendOk !== null && (
               <span
                 className="backend-dot"
@@ -665,8 +666,9 @@ export default function App() {
               <span className="no-repo">All indexed repos</span>
             )}
           </div>
-          <div className="header-actions">
-            {/* View toggle: Chat ↔ Graph — only for specific repos, not "all" */}
+
+          {/* CENTER — view toggle, only when a specific repo is selected */}
+          <div className="header-center">
             {activeRepo && activeRepo !== "all" && (
               <div className="view-toggle">
                 <button
@@ -679,6 +681,10 @@ export default function App() {
                 >Diagram <span style={{ fontSize: 8, verticalAlign: "middle", color: "var(--accent-soft)", marginLeft: 2 }}>●</span></button>
               </div>
             )}
+          </div>
+
+          {/* RIGHT — contextual actions */}
+          <div className="header-actions">
             {view === "chat" && messages.length > 0 && (
               <button className="clear-btn" onClick={handleClear}>New Chat</button>
             )}

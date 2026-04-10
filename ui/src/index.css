@@ -68,16 +68,17 @@ html { height: 100dvh; background: #0E0F14; overflow: hidden; }
   --muted:     #8A7A64;   /* warm gray — file paths, secondary */
   --faint:     #5E5044;   /* dark sepia — timestamps, placeholders */
 
-  /* Accent — burnt sienna, the classic illustration pigment.
-     Every sketchbook artist has it. Warm, earthy, not digital-neon.
-     More character than amber, less aggressive than orange. */
-  --accent:          #D4845A;   /* burnt sienna — the ink */
-  --accent-light:    #E09A72;   /* lighter on hover */
-  --accent-soft:     #EDBA9A;   /* pale sienna text */
-  --accent-lavender: #F2D0BC;   /* high-luminance warm labels */
-  --accent-dim:      rgba(212, 132, 90, 0.14);
-  --accent-glow:     rgba(212, 132, 90, 0.26);
-  --accent-border:   rgba(212, 132, 90, 0.40);
+  /* Accent — terracotta, brand identity color.
+     Slightly cooled/desaturated from pure sienna so it reads refined rather
+     than "orange" on the cool-dark base. Used sparingly: only active states
+     and primary CTAs. Background tints kept very low-opacity. */
+  --accent:          #C47B5A;   /* terracotta — slightly more red, less orange */
+  --accent-light:    #D48F6E;   /* lighter on hover */
+  --accent-soft:     #DBA882;   /* pale terracotta for secondary text */
+  --accent-lavender: #EDCAB0;   /* high-luminance warm labels */
+  --accent-dim:      rgba(196, 123, 90, 0.09);   /* very subtle — backgrounds only */
+  --accent-glow:     rgba(196, 123, 90, 0.18);
+  --accent-border:   rgba(196, 123, 90, 0.32);
 
   /* Secondary accent — warm teal, like watercolor over charcoal */
   --accent-2:      #3A9E8C;
@@ -118,7 +119,7 @@ html { height: 100dvh; background: #0E0F14; overflow: hidden; }
   --shadow-sm: 0 1px 3px rgba(0,0,8,0.65), 0 1px 2px rgba(0,0,8,0.45);
   --shadow:    0 4px 16px rgba(0,0,8,0.75), 0 2px 8px rgba(0,0,8,0.55);
   --shadow-lg: 0 12px 40px rgba(0,0,8,0.85), 0 4px 16px rgba(0,0,8,0.65);
-  --shadow-accent: 0 0 20px rgba(212, 132, 90, 0.25);
+  --shadow-accent: 0 0 20px rgba(196, 123, 90, 0.20);
 
   /* Glass */
   --glass-bg:     rgba(14, 15, 20, 0.82);
@@ -140,12 +141,13 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Atmospheric bloom — warm sienna punches harder against cool base.
-     Increased opacity vs warm-bg version because cool contrast amplifies it. */
+  /* Atmospheric bloom — subtle warmth at corners, barely perceptible.
+     Linear/Raycast principle: background texture is felt, not seen.
+     Heavy bloom was making the cool base look warm-muddy again. */
   background-image:
-    radial-gradient(ellipse 70% 55% at -5% 0%,   rgba(180, 80, 40, 0.40) 0%, transparent 65%),
-    radial-gradient(ellipse 50% 40% at 105% 100%, rgba(160, 100, 60, 0.22) 0%, transparent 60%),
-    radial-gradient(ellipse 80% 30% at 50% 50%,   rgba(212, 132, 90, 0.06) 0%, transparent 70%);
+    radial-gradient(ellipse 70% 55% at -5% 0%,   rgba(180, 80, 40, 0.18) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 40% at 105% 100%, rgba(160, 100, 60, 0.10) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 30% at 50% 50%,   rgba(212, 132, 90, 0.03) 0%, transparent 70%);
   animation: page-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -158,7 +160,7 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background-image: radial-gradient(circle, rgba(212, 132, 90, 0.10) 1px, transparent 1px);
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
   background-size: 24px 24px;
   /* Vignette mask — grid strongest at center, invisible at edges */
   mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, rgba(0,0,0,0.45) 0%, transparent 100%);
@@ -260,8 +262,8 @@ textarea:focus-visible {
   justify-content: center;
   color: #fff;
   box-shadow:
-    0 0 0 1px rgba(212, 132, 90, 0.4),
-    0 4px 16px rgba(212, 132, 90, 0.45);
+    0 0 0 1px rgba(196, 123, 90, 0.28),
+    0 4px 16px rgba(196, 123, 90, 0.22);
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
@@ -314,8 +316,8 @@ textarea:focus-visible {
   letter-spacing: 0.08em;
   color: var(--muted);
   margin-bottom: 6px;
-  /* Subtle sienna tint so it reads as a warm structural element, not dead gray */
-  background: linear-gradient(90deg, var(--muted) 0%, rgba(212,132,90,0.70) 100%);
+  /* Subtle warm tint — makes section headers feel structural, not dead */
+  background: linear-gradient(90deg, var(--muted) 0%, rgba(196,123,90,0.50) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -330,10 +332,10 @@ textarea:focus-visible {
   padding: 12px;
   position: relative;
   overflow: hidden;
-  /* Sienna outer bloom + warm top-edge inner highlight */
+  /* Subtle depth: very faint warm bloom + top-edge inner highlight */
   box-shadow:
-    rgba(212, 132, 90, 0.14) 0px 8px 36px 0px,
-    rgba(237, 228, 206, 0.08) 0px 1px 0px 0px inset;
+    rgba(196, 123, 90, 0.08) 0px 8px 36px 0px,
+    rgba(255, 255, 255, 0.06) 0px 1px 0px 0px inset;
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 /* Sienna top-accent stripe — visual anchor for the primary action area */
@@ -344,7 +346,7 @@ textarea:focus-visible {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(212, 132, 90, 0.70) 40%, rgba(212, 132, 90, 0.70) 60%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(196, 123, 90, 0.45) 40%, rgba(196, 123, 90, 0.45) 60%, transparent 100%);
   border-radius: 16px 16px 0 0;
 }
 .ingest-card:focus-within {
@@ -591,12 +593,17 @@ textarea:focus-visible {
 
 /* ── Chat header ──────────────────────────────────────────── */
 .chat-header {
-  padding: 12px 24px;
-  border-bottom: 1px solid rgba(237, 228, 206, 0.07);
-  display: flex;
+  padding: 0 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  /* 3-column grid: equal 1fr flanks + auto centre.
+     The centre column only takes as much width as its content, and the two
+     equal 1fr sides consume the rest — so the toggle is always pixel-perfect
+     centred regardless of what's on either flank. */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 12px;
-  /* Frosted glass header — cool near-black with warm text overlay */
+  gap: 0;
+  /* Frosted glass header */
   background: rgba(10, 11, 16, 0.82);
   backdrop-filter: blur(16px) saturate(160%);
   -webkit-backdrop-filter: blur(16px) saturate(160%);
@@ -604,11 +611,22 @@ textarea:focus-visible {
   position: sticky;
   top: 0;
   z-index: 40;
-  /* Inset top highlight creates glass-surface-catching-light effect */
   box-shadow:
-    inset 0 1px 0 rgba(237, 228, 206, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 1px 0 rgba(0, 0, 0, 0.4),
     0 4px 24px rgba(0, 0, 0, 0.30);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 /* Bottom glow line on header */
@@ -619,12 +637,12 @@ textarea:focus-visible {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(212,132,90,0.4), transparent);
+  background: linear-gradient(90deg, transparent, rgba(196,123,90,0.20), transparent);
 }
 
 .chat-header .repo-badge {
-  background: rgba(212,132,90,0.12);
-  border: 1px solid var(--accent-border);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   color: var(--accent-soft);
   font-size: 12px;
@@ -1895,22 +1913,18 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
+  justify-content: flex-end;
 }
 
 .view-toggle {
   display: flex;
-  background: rgba(237,228,206,0.04);
+  background: rgba(255,255,255,0.04);
   border: 1px solid var(--border-strong);
-  /* Centered absolutely so it sits at the visual midpoint of the header
-     regardless of what's on the left (repo badge) or right (clear btn) */
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   border-radius: var(--radius-md);
   overflow: hidden;
   padding: 3px;
   gap: 2px;
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.25);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.30);
 }
 
 .view-btn {
@@ -1928,11 +1942,11 @@ textarea:focus-visible {
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
-.view-btn:hover  { background: rgba(237,228,206,0.08); color: var(--text); }
+.view-btn:hover  { background: rgba(255,255,255,0.06); color: var(--text); }
 .view-btn.active {
-  background: var(--accent);
-  color: #fff;
-  box-shadow: 0 2px 10px rgba(212,132,90,0.45);
+  background: rgba(255,255,255,0.10);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
   font-weight: 600;
 }
 
