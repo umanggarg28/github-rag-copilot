@@ -1,12 +1,11 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   SKETCHBOOK DARK
-   Palette: dark charcoal paper + burnt sienna ink.
-   The classic artist's sketchbook opened in dim light.
-   Background: warm graphite (#1A1916) — Moleskine at night, not cold tech.
-   Text: warm parchment (#EDE4CE) — aged paper, not sterile white.
-   Accent: burnt sienna (#D4845A) — THE classic illustration pigment.
-           Warmer and earthier than amber, more "drawn" than digital.
-   Every surface is slightly warm — no cold values anywhere.
+   COOL DARK  (Linear / Raycast base + warm Anthropic foreground)
+   Palette: cool near-black base + burnt sienna ink + warm cream text.
+   Background: cool graphite (#0E0F14) — temperature contrast base.
+   Text: warm parchment (#EDE4CE) — glows MORE against cool, not warm.
+   Accent: burnt sienna (#D4845A) — the classic illustration pigment.
+   Principle: cool foil for warm jewels — same cream/sienna palette
+   appears MORE luminous on a cool base (like candlelight in a dark room).
    ════════════════════════════════════════════════════════════════════════ */
 @font-face {
   font-family: "Anthropic Sans";
@@ -45,22 +44,22 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { height: 100dvh; background: #1A1916; overflow: hidden; }
+html { height: 100dvh; background: #0E0F14; overflow: hidden; }
 
 :root {
-  /* ── Dark charcoal backgrounds — artist's sketchbook at night ──
-     Every bg value is warm brown-charcoal, never cold.
-     Like graphite pencil on dark paper — the warmth is in the grain. */
-  --bg:         #1A1916;   /* canvas — dark charcoal sketchbook */
-  --surface:    #211E1A;   /* sidebar, panels — first elevation */
-  --surface-2:  #2A2620;   /* cards, source items — second elevation */
-  --surface-3:  #332E27;   /* modals, active items — third elevation */
-  --surface-4:  #3D3830;   /* hover states, tooltips — highest elevation */
+  /* ── Cool near-black backgrounds — temperature-contrast base ──
+     Cool base makes the warm foreground (cream text, sienna accent) pop.
+     Same principle as Linear/Raycast: neutral stage, warm performers. */
+  --bg:         #0E0F14;   /* canvas — cool near-black */
+  --surface:    #13141C;   /* sidebar, panels — first elevation */
+  --surface-2:  #1A1B24;   /* cards, source items — second elevation */
+  --surface-3:  #21222E;   /* modals, active items — third elevation */
+  --surface-4:  #292A38;   /* hover states, tooltips — highest elevation */
 
-  /* Borders — warm cream rgba, not cold white */
-  --border:        rgba(237, 228, 206, 0.08);
-  --border-subtle: rgba(237, 228, 206, 0.04);
-  --border-strong: rgba(237, 228, 206, 0.14);
+  /* Borders — pure white rgba (not warm) for crisper edges on cool base */
+  --border:        rgba(255, 255, 255, 0.07);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-strong: rgba(255, 255, 255, 0.10);
 
   /* Text — warm parchment, not cold white.
      Like ink on aged paper — every tier is warm brown-cream. */
@@ -115,15 +114,15 @@ html { height: 100dvh; background: #1A1916; overflow: hidden; }
   --transition:      200ms ease;
   --transition-slow: 300ms ease;
 
-  /* Shadows — slightly warm tint in deep shadows */
-  --shadow-sm: 0 1px 3px rgba(10,6,4,0.60), 0 1px 2px rgba(10,6,4,0.40);
-  --shadow:    0 4px 16px rgba(10,6,4,0.70), 0 2px 8px rgba(10,6,4,0.50);
-  --shadow-lg: 0 12px 40px rgba(10,6,4,0.80), 0 4px 16px rgba(10,6,4,0.60);
-  --shadow-accent: 0 0 20px rgba(212, 132, 90, 0.22);
+  /* Shadows — cool-tinted deep shadows (no warm brown) */
+  --shadow-sm: 0 1px 3px rgba(0,0,8,0.65), 0 1px 2px rgba(0,0,8,0.45);
+  --shadow:    0 4px 16px rgba(0,0,8,0.75), 0 2px 8px rgba(0,0,8,0.55);
+  --shadow-lg: 0 12px 40px rgba(0,0,8,0.85), 0 4px 16px rgba(0,0,8,0.65);
+  --shadow-accent: 0 0 20px rgba(212, 132, 90, 0.25);
 
   /* Glass */
-  --glass-bg:     rgba(26, 25, 22, 0.82);
-  --glass-border: rgba(237, 228, 206, 0.07);
+  --glass-bg:     rgba(14, 15, 20, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.06);
   --blur:         16px;
 }
 
@@ -135,17 +134,18 @@ body {
   font-family: var(--sans);
   font-size: 15px;
   line-height: 1.65;
-  background: #1A1916;
+  background: #0E0F14;
   color: var(--text);
   height: 100%;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Deep atmospheric bloom — LiteLLM style: bold primary bloom, counter-bloom, center warmth */
+  /* Atmospheric bloom — warm sienna punches harder against cool base.
+     Increased opacity vs warm-bg version because cool contrast amplifies it. */
   background-image:
-    radial-gradient(ellipse 70% 55% at -5% 0%,   rgba(180, 80, 40, 0.32) 0%, transparent 65%),
-    radial-gradient(ellipse 50% 40% at 105% 100%, rgba(160, 100, 60, 0.18)  0%, transparent 60%),
-    radial-gradient(ellipse 80% 30% at 50% 50%,   rgba(212, 132, 90, 0.05) 0%, transparent 70%);
+    radial-gradient(ellipse 70% 55% at -5% 0%,   rgba(180, 80, 40, 0.40) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 40% at 105% 100%, rgba(160, 100, 60, 0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 80% 30% at 50% 50%,   rgba(212, 132, 90, 0.06) 0%, transparent 70%);
   animation: page-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -215,8 +215,8 @@ textarea:focus-visible {
   background:
     /* Top-left violet bloom — the brand "light source" */
     radial-gradient(ellipse 180% 40% at 0% 0%, rgba(212, 132, 90, 0.10) 0%, transparent 55%),
-    /* Sidebar: warm charcoal, one step darker than canvas */
-    #141210;
+    /* Sidebar: cool charcoal, one step darker than canvas */
+    #0A0B10;
   border-right: 1px solid rgba(237, 228, 206, 0.06);
   display: flex;
   flex-direction: column;
@@ -323,7 +323,7 @@ textarea:focus-visible {
 
 /* ── Ingest card — wraps the form + try-these to give primary action visual weight ── */
 .ingest-card {
-  /* surface-3 on #141210 sidebar = 18% vs 7% lightness — clearly elevated */
+  /* surface-3 on #0A0B10 sidebar = clearly elevated */
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
   border-radius: 16px;
@@ -596,8 +596,8 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 12px;
-  /* Frosted glass header — warm charcoal, not cold black */
-  background: rgba(20, 18, 14, 0.82);
+  /* Frosted glass header — cool near-black with warm text overlay */
+  background: rgba(10, 11, 16, 0.82);
   backdrop-filter: blur(16px) saturate(160%);
   -webkit-backdrop-filter: blur(16px) saturate(160%);
   min-height: 52px;
@@ -840,7 +840,7 @@ textarea:focus-visible {
 
 .bubble pre {
   /* Better code block — darker, more contrast */
-  background: #141210 !important;
+  background: #090A0F !important;
   border: 1px solid var(--border) !important;
   border-radius: var(--radius) !important;
   margin: 12px 0 !important;
@@ -1125,7 +1125,7 @@ textarea:focus-visible {
   padding: 10px 20px 14px;
   border-top: none;
   /* Very faint bg gradient to separate input zone from messages */
-  background: linear-gradient(to top, rgba(20,18,16,0.85) 0%, transparent 100%);
+  background: linear-gradient(to top, rgba(10,11,16,0.85) 0%, transparent 100%);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -1219,7 +1219,9 @@ textarea:focus-visible {
      Sitting content in the upper ~40% feels more intentional and mirrors
      how Linear / Raycast handle their empty states. */
   justify-content: flex-start;
-  padding: max(8vh, 56px) 24px 40px;
+  /* Bottom padding scales with viewport height — ensures step 3 never
+     crowds the chat bar on compact viewports */
+  padding: max(6vh, 48px) 24px max(80px, 10vh);
   overflow-y: auto;
   position: relative;
 }
@@ -1789,7 +1791,7 @@ textarea:focus-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow:
-    0 -4px 24px rgba(10,6,4,0.55),
+    0 -4px 24px rgba(0,0,8,0.55),
     0 0 0 1px rgba(237,228,206,0.06);
   z-index: 200;
   overflow: hidden;
@@ -1952,7 +1954,7 @@ textarea:focus-visible {
   padding: 11px 24px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  background: rgba(20, 18, 14, 0.85);
+  background: rgba(10, 11, 16, 0.85);
   backdrop-filter: blur(8px);
 }
 
@@ -1977,7 +1979,7 @@ textarea:focus-visible {
   padding: 8px 24px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  background: rgba(20, 18, 14, 0.55);
+  background: rgba(10, 11, 16, 0.55);
 }
 
 .legend-item {
@@ -2137,7 +2139,7 @@ textarea:focus-visible {
   padding: 14px 24px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  background: rgba(20, 18, 14, 0.70);
+  background: rgba(10, 11, 16, 0.70);
 }
 
 .diagram-type-btn {
@@ -2420,7 +2422,7 @@ textarea:focus-visible {
 .agent-step-body {
   flex: 1;
   min-width: 0;
-  background: rgba(20,18,16,0.75);
+  background: rgba(10,11,16,0.75);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 7px 11px;

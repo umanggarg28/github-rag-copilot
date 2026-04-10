@@ -134,8 +134,8 @@ export default function SourceCard({ source, index, showRepo = false }) {
           <SyntaxHighlighter
             language={lang}
             style={oneDark}
-            customStyle={{ fontSize: 12, margin: 0, background: '#141210', borderRadius: 0 }}
-            lineNumberStyle={{ color: 'rgba(237,228,206,0.22)', fontSize: 11, minWidth: 36, paddingRight: 12 }}
+            customStyle={{ fontSize: 12, margin: 0, background: '#090A0F', borderRadius: 0 }}
+            lineNumberStyle={{ color: 'rgba(255,255,255,0.18)', fontSize: 11, minWidth: 36, paddingRight: 12 }}
             showLineNumbers
             startingLineNumber={source.start_line}  /* start_line = class range when expanded */
           >

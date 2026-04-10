@@ -17,18 +17,17 @@ mermaid.initialize({
   startOnLoad: false,
   theme: "dark",
   themeVariables: {
-    background:         "#1a1714",
-    primaryColor:       "#2a2420",
-    /* Stronger border and text contrast — the previous violet theme had
-       readability issues here; warm cream at higher opacity fixes it */
+    background:         "#0e0f14",   /* matches cool --bg */
+    primaryColor:       "#1a1b24",   /* matches cool --surface-2 */
+    /* Warm cream borders/text pop more against the cool base */
     primaryBorderColor: "rgba(237,228,206,0.28)",
-    primaryTextColor:   "#f0ead8",    /* brighter than #ede8ce for legibility */
+    primaryTextColor:   "#f0ead8",   /* brighter than #ede8ce for legibility */
     lineColor:          "rgba(237,228,206,0.55)",  /* edges clearly visible */
-    secondaryColor:     "#221e1a",
-    tertiaryColor:      "#1e1b17",
-    edgeLabelBackground: "#1a1714",   /* prevents label bleed-through on edges */
-    clusterBkg:         "#211e1a",
-    clusterBorder:      "rgba(237,228,206,0.18)",
+    secondaryColor:     "#13141c",   /* matches cool --surface */
+    tertiaryColor:      "#21222e",   /* matches cool --surface-3 */
+    edgeLabelBackground: "#0e0f14",  /* prevents label bleed-through on edges */
+    clusterBkg:         "#21222e",   /* matches cool --surface-3 */
+    clusterBorder:      "rgba(255,255,255,0.10)",
     titleColor:         "#ede8ce",
     nodeTextColor:      "#f0ead8",
   },
@@ -95,8 +94,8 @@ function Diagram({ mermaid: rawText }) {
       </div>
       <pre style={{
         fontSize: 12, opacity: 0.5, margin: 0, padding: "8px 10px",
-        background: "#141210", borderRadius: 6,
-        border: "1px solid rgba(237,228,206,0.06)", overflow: "auto",
+        background: "#090A0F", borderRadius: 6,
+        border: "1px solid rgba(255,255,255,0.06)", overflow: "auto",
       }}>
         {text}
       </pre>
@@ -171,7 +170,7 @@ function DiagramModal({ text, onClose }) {
         ref={containerRef}
         style={{
           width: "92vw", height: "88vh",
-          background: "#1a1714",
+          background: "#0e0f14",
           border: "1px solid var(--border)",
           borderRadius: "var(--radius-lg)",
           overflow: "hidden",
@@ -222,7 +221,7 @@ function DiagramModal({ text, onClose }) {
 }
 
 const btnStyle = {
-  background: "rgba(20,18,16,0.9)",
+  background: "rgba(10,11,16,0.9)",
   border: "1px solid var(--border)",
   borderRadius: "var(--radius-sm)",
   color: "var(--text-2)",
@@ -243,7 +242,7 @@ export default function MermaidBlock({ mermaid: text }) {
         <div style={{
           border: "1px solid var(--border)",
           borderRadius: "var(--radius)",
-          background: "#1a1714",
+          background: "#0e0f14",
           overflow: "auto",
           minHeight: 120,
           maxHeight: 480,
