@@ -271,12 +271,12 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
       <div className="sidebar-brand">
         {/* Icon container — Raycast-style rounded square with gradient + compass inside */}
         <div className="sidebar-brand-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
             <path d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="white"/>
-            <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="white" opacity="0.40"/>
-            <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="white" opacity="0.40"/>
-            <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="white" opacity="0.40"/>
-            <circle cx="12" cy="12" r="1.4" fill="white"/>
+            <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="white" opacity="0.50"/>
+            <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="white" opacity="0.50"/>
+            <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="white" opacity="0.50"/>
+            <circle cx="12" cy="12" r="1.6" fill="white"/>
           </svg>
         </div>
         <div style={{ flex: 1 }}>

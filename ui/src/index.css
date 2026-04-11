@@ -256,17 +256,18 @@ textarea:focus-visible {
 
 /* Keep icon styles for the collapsed rail (sidebar-collapsed-brand) */
 .sidebar-brand-icon {
-  width: 34px;
-  height: 34px;
-  background: linear-gradient(135deg, #3D6EE8 0%, #5B8FF9 50%, #7DABFF 100%);
-  border-radius: var(--radius-md);
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(145deg, #2A5ED8 0%, #4A7FE8 45%, #6B9FFF 100%);
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   box-shadow:
-    0 0 0 1px rgba(91, 143, 249, 0.28),
-    0 4px 16px rgba(91, 143, 249, 0.22);
+    0 0 0 1px rgba(91, 143, 249, 0.35),
+    0 4px 20px rgba(91, 143, 249, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
