@@ -286,7 +286,11 @@ export default function GraphDiagram({ data, onNodeSelect, onEdgeSelect, onAskAb
     if (!el) return;
     function onWheel(e) {
       e.preventDefault();
-      const f = e.deltaY > 0 ? 0.9 : 1.11;
+      // Proportional zoom: scale factor grows with deltaY magnitude so a light
+      // trackpad flick (~3px) changes scale by ~0.3% while one mouse-wheel click
+      // (~100px) changes it by ~9%. Binary factors (0.9 / 1.11) fire the same
+      // large jump even for the tiniest scroll event, which feels too sensitive.
+      const f = Math.exp(-e.deltaY * 0.001);
       setXform(t => ({ ...t, scale: Math.min(Math.max(t.scale * f, 0.2), 2.5) }));
     }
     el.addEventListener("wheel", onWheel, { passive: false });

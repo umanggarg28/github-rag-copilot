@@ -293,7 +293,8 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     if (!el) return;
     function onWheel(e) {
       e.preventDefault();
-      const f = e.deltaY > 0 ? 0.9 : 1.11;
+      // Same proportional zoom as GraphDiagram — see comment there.
+      const f = Math.exp(-e.deltaY * 0.001);
       setXform(t => ({ ...t, scale: Math.min(Math.max(t.scale * f, 0.3), 3) }));
     }
     el.addEventListener("wheel", onWheel, { passive: false });
