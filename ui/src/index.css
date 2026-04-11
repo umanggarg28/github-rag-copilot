@@ -3709,8 +3709,8 @@ textarea:focus-visible {
 }
 
 .ec-entry-hint code {
-  background: rgba(237,186,154,0.12);
-  border: 1px solid rgba(237,186,154,0.25);
+  background: rgba(91,143,249,0.12);
+  border: 1px solid rgba(91,143,249,0.28);
   color: var(--accent-soft);
   padding: 1px 6px;
   border-radius: 4px;
