@@ -52,16 +52,14 @@ const tourCache = {};
 function tourLsKey(repo) { return `ghrc_tour_${repo.replace(/\//g, "_")}`; }
 
 // ── Type → visual token ───────────────────────────────────────────────────────
-// Each concept type gets a distinct accent color so students can visually
-// group "data structures" vs "algorithms" vs "entry points" at a glance.
-// All colors are warm-toned to stay within the sketchbook palette —
-// no cold violet/indigo; teal and amber are the warm analogues.
-// Blueprint palette — each type gets a distinct hue in the blue/teal family
+// Each concept type maps to a hue from a different part of the spectrum so
+// they're immediately legible even at small sizes. Four clearly-distinct hues:
+// blue (class), amber (function), violet (module), emerald (algorithm).
 const TYPE_STYLE = {
-  class:     { border: "#5B8FF9", glow: "rgba(91,143,249,0.35)",  dot: "#7DABFF", tag: "class"  }, // blueprint blue
-  function:  { border: "#2DD4BF", glow: "rgba(45,212,191,0.32)",  dot: "#5EEAD4", tag: "fn"     }, // teal
-  module:    { border: "#818CF8", glow: "rgba(129,140,248,0.32)", dot: "#A5B4FC", tag: "module" }, // indigo
-  algorithm: { border: "#38BDF8", glow: "rgba(56,189,248,0.32)",  dot: "#7DD3FC", tag: "algo"   }, // sky
+  class:     { border: "#5B8FF9", glow: "rgba(91,143,249,0.38)",  dot: "#7DABFF", tag: "class"  }, // blue   240°
+  function:  { border: "#FBBF24", glow: "rgba(251,191,36,0.32)",  dot: "#FCD34D", tag: "fn"     }, // amber   45°
+  module:    { border: "#A78BFA", glow: "rgba(167,139,250,0.32)", dot: "#C4B5FD", tag: "module" }, // violet 270°
+  algorithm: { border: "#34D399", glow: "rgba(52,211,153,0.32)",  dot: "#6EE7B7", tag: "algo"   }, // emerald 160°
 };
 const FALLBACK_STYLE = { border: "#4E5E80", glow: "rgba(78,94,128,0.30)", dot: "#8896B8", tag: "?" };
 
@@ -144,11 +142,8 @@ function bezierPath(fromPos, toPos) {
 }
 
 // ── ConceptCard ────────────────────────────────────────────────────────────────
-function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, chainStyle, pos, onSelect, onHover, onAsk }) {
+function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, onSelect, onHover, onAsk }) {
   const s = styleFor(concept.type);
-  // When this card is part of a hover chain, use the source node's color so the
-  // entire connected subgraph glows as one unified circuit, not a collision of hues.
-  const hs = (isHovered && chainStyle) ? chainStyle : s;
 
   return (
     <div
@@ -159,15 +154,11 @@ function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, chainS
         left: pos.x,
         top: pos.y,
         width: CARD_W,
-        borderColor: isSelected
-          ? s.border
-          : isHovered
-          ? hs.border
-          : undefined,
+        borderColor: isSelected ? s.border : isHovered ? s.border : undefined,
         boxShadow: isSelected
           ? `0 0 0 2px ${s.border}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : isHovered
-          ? `0 0 0 2px ${hs.border}, 0 0 20px ${hs.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${hs.glow.replace(/[\d.]+\)$/, '0.45)')}`
+          ? `0 0 0 2px ${s.border}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : undefined,
       }}
       onMouseDown={(e) => e.stopPropagation()}
@@ -504,37 +495,29 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
           </svg>
 
           {/* ── Concept cards ── */}
-          {(() => {
-            // Compute the hovered node's style once so all connected nodes share it,
-            // making the entire chain glow as a single unified color.
-            const chainStyle = hoveredId
-              ? styleFor(concepts.find(c => c.id === hoveredId)?.type)
-              : null;
-            return concepts.map(c => {
-              const pos = positions[c.id];
-              if (!pos) return null;
-              // Only the lowest reading-order concept from the entry file gets "Start here".
-              // Without this, every chunk from engine.py shows the badge.
-              const entryMatches = concepts.filter(x => entryFile && x.file?.endsWith(entryFile));
-              const minEntryOrder = entryMatches.length ? Math.min(...entryMatches.map(x => x.reading_order)) : null;
-              const isEntry = !!(entryFile && c.file?.endsWith(entryFile) && c.reading_order === minEntryOrder);
-              return (
-                <ConceptCard
-                  key={c.id}
-                  concept={c}
-                  isEntry={isEntry}
-                  isSelected={selectedId === c.id}
-                  isHovered={hoveredId === c.id || (!!connectedIds && connectedIds.has(c.id))}
-                  isDimmed={!!connectedIds && !connectedIds.has(c.id)}
-                  chainStyle={chainStyle}
-                  pos={pos}
-                  onSelect={id => setSelected(v => v === id ? null : id)}
-                  onHover={setHovered}
-                  onAsk={handleAsk}
-                />
-              );
-            });
-          })()}
+          {concepts.map(c => {
+            const pos = positions[c.id];
+            if (!pos) return null;
+            // Only the lowest reading-order concept from the entry file gets "Start here".
+            // Without this, every chunk from engine.py shows the badge.
+            const entryMatches = concepts.filter(x => entryFile && x.file?.endsWith(entryFile));
+            const minEntryOrder = entryMatches.length ? Math.min(...entryMatches.map(x => x.reading_order)) : null;
+            const isEntry = !!(entryFile && c.file?.endsWith(entryFile) && c.reading_order === minEntryOrder);
+            return (
+              <ConceptCard
+                key={c.id}
+                concept={c}
+                isEntry={isEntry}
+                isSelected={selectedId === c.id}
+                isHovered={hoveredId === c.id || (!!connectedIds && connectedIds.has(c.id))}
+                isDimmed={!!connectedIds && !connectedIds.has(c.id)}
+                pos={pos}
+                onSelect={id => setSelected(v => v === id ? null : id)}
+                onHover={setHovered}
+                onAsk={handleAsk}
+              />
+            );
+          })}
         </div>
       </div>
 

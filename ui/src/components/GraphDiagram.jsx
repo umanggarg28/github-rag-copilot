@@ -16,16 +16,21 @@ import { useEffect, useMemo, useCallback, useState, useRef } from "react";
 
 // ── Type colours — blueprint palette, consistent with ExploreView ────────────
 const TYPE_STYLE = {
-  module:    { border: "#818CF8", glow: "rgba(129,140,248,0.32)", dot: "#A5B4FC" }, // indigo
-  class:     { border: "#5B8FF9", glow: "rgba(91,143,249,0.35)",  dot: "#7DABFF" }, // blueprint blue
-  abstract:  { border: "#7DABFF", glow: "rgba(125,171,255,0.30)", dot: "#A8C5FF" }, // lighter blue
-  mixin:     { border: "#60A5FA", glow: "rgba(96,165,250,0.30)",  dot: "#93C5FD" }, // sky-blue
-  service:   { border: "#2DD4BF", glow: "rgba(45,212,191,0.32)",  dot: "#5EEAD4" }, // teal
-  database:  { border: "#38BDF8", glow: "rgba(56,189,248,0.32)",  dot: "#7DD3FC" }, // sky
+  // OOP hierarchy — blue family (semantically related, slight variation is intentional)
+  class:     { border: "#5B8FF9", glow: "rgba(91,143,249,0.38)",  dot: "#7DABFF" }, // blue
+  abstract:  { border: "#818CF8", glow: "rgba(129,140,248,0.32)", dot: "#A5B4FC" }, // violet-blue
+  mixin:     { border: "#A78BFA", glow: "rgba(167,139,250,0.32)", dot: "#C4B5FD" }, // violet
+  // Modules / packages — amber (clearly warm vs cool)
+  module:    { border: "#FBBF24", glow: "rgba(251,191,36,0.32)",  dot: "#FCD34D" }, // amber
+  // Services / transforms — emerald
+  service:   { border: "#34D399", glow: "rgba(52,211,153,0.32)",  dot: "#6EE7B7" }, // emerald
+  transform: { border: "#2DD4BF", glow: "rgba(45,212,191,0.32)",  dot: "#5EEAD4" }, // teal
+  // Data / I/O — rose/orange
+  database:  { border: "#FB923C", glow: "rgba(251,146,60,0.32)",  dot: "#FDBA74" }, // orange
+  input:     { border: "#F472B6", glow: "rgba(244,114,182,0.32)", dot: "#F9A8D4" }, // rose
+  output:    { border: "#34D399", glow: "rgba(52,211,153,0.32)",  dot: "#6EE7B7" }, // emerald
+  // External deps — neutral steel
   external:  { border: "#4E5E80", glow: "rgba(78,94,128,0.28)",   dot: "#8896B8" }, // steel
-  input:     { border: "#2DD4BF", glow: "rgba(45,212,191,0.32)",  dot: "#5EEAD4" }, // teal
-  transform: { border: "#818CF8", glow: "rgba(129,140,248,0.30)", dot: "#A5B4FC" }, // indigo
-  output:    { border: "#5B8FF9", glow: "rgba(91,143,249,0.32)",  dot: "#7DABFF" }, // blue
 };
 const FALLBACK_STYLE = { border: "#4E5E80", glow: "rgba(78,94,128,0.28)", dot: "#8896B8" };
 function styleFor(type) { return TYPE_STYLE[type] || FALLBACK_STYLE; }
@@ -156,13 +161,10 @@ function FileIcon() {
 }
 
 // ── DiagramCard — ec-card positioned absolutely on the SVG canvas ─────────────
-function DiagramCard({ node, pos, hoveredId, connectedIds, chainStyle, onSelect, onHover, onAsk, onDragStart, wasDragged }) {
+function DiagramCard({ node, pos, hoveredId, connectedIds, onSelect, onHover, onAsk, onDragStart, wasDragged }) {
   const dim       = hoveredId && hoveredId !== node.id && !connectedIds.has(node.id);
   const highlight = hoveredId === node.id || (hoveredId && connectedIds.has(node.id));
-  const s  = styleFor(node.data.type);
-  // When highlighted as part of a chain, use the source node's color so the
-  // entire connected subgraph glows as one unified circuit, not a collision of hues.
-  const hs = (highlight && chainStyle) ? chainStyle : s;
+  const s = styleFor(node.data.type);
 
   return (
     <div
@@ -173,9 +175,9 @@ function DiagramCard({ node, pos, hoveredId, connectedIds, chainStyle, onSelect,
         top:   pos.y,
         width: CARD_W,
         cursor: "grab",
-        borderColor: highlight ? hs.dot : undefined,
+        borderColor: highlight ? s.dot : undefined,
         boxShadow: highlight
-          ? `0 0 0 2px ${hs.dot}, 0 0 20px ${hs.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${hs.glow.replace(/[\d.]+\)$/, '0.45)')}`
+          ? `0 0 0 2px ${s.dot}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : undefined,
       }}
       onMouseDown={(e) => onDragStart?.(e, node)}
@@ -511,28 +513,20 @@ export default function GraphDiagram({ data, onNodeSelect, onEdgeSelect, onAskAb
           </svg>
 
           {/* ── Diagram node cards ── */}
-          {(() => {
-            // Hovered node's style propagates to the whole chain so all
-            // connected nodes share one glow color, not each their own.
-            const chainStyle = hoveredId
-              ? styleFor(layoutNodes.find(n => n.id === hoveredId)?.data?.type)
-              : null;
-            return layoutNodes.map(node => (
-              <DiagramCard
-                key={node.id}
-                node={node}
-                pos={getPosFor(node.id) ?? { x: node.x, y: node.y }}
-                hoveredId={hoveredId}
-                connectedIds={connectedIds}
-                chainStyle={chainStyle}
-                onSelect={handleNodeSelect}
-                onHover={setHoveredId}
-                onAsk={onAskAbout ? handleNodeAsk : null}
-                onDragStart={onNodeDragStart}
-                wasDragged={wasDragged}
-              />
-            ));
-          })()}
+          {layoutNodes.map(node => (
+            <DiagramCard
+              key={node.id}
+              node={node}
+              pos={getPosFor(node.id) ?? { x: node.x, y: node.y }}
+              hoveredId={hoveredId}
+              connectedIds={connectedIds}
+              onSelect={handleNodeSelect}
+              onHover={setHoveredId}
+              onAsk={onAskAbout ? handleNodeAsk : null}
+              onDragStart={onNodeDragStart}
+              wasDragged={wasDragged}
+            />
+          ))}
         </div>
       </div>
 
