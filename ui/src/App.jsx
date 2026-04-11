@@ -735,7 +735,7 @@ export default function App() {
                   <div className="onboarding-steps">
                     <div className="onboarding-header">
                       <svg width="72" height="72" viewBox="0 0 24 24" fill="none"
-                        style={{ marginBottom: 24, filter: "drop-shadow(0 0 18px rgba(91,143,249,0.65)) drop-shadow(0 0 6px rgba(91,143,249,0.90))" }}>
+                        style={{ marginBottom: 14, filter: "drop-shadow(0 0 18px rgba(91,143,249,0.65)) drop-shadow(0 0 6px rgba(91,143,249,0.90))" }}>
                         {/* N — pulses bright */}
                         <path className="compass-north" d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
                         {/* S — delayed fade */}

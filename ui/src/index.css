@@ -1323,7 +1323,7 @@ textarea:focus-visible {
 /* Header for onboarding section */
 .onboarding-header {
   text-align: center;
-  margin-bottom: 28px;
+  margin-bottom: 14px;
 }
 
 /* North point pulses — the other three points fade in sequence */
@@ -1378,6 +1378,7 @@ textarea:focus-visible {
   letter-spacing: -0.015em;
   max-width: 460px;
   margin: 0 auto;
+  margin-top: 6px;
 }
 
 .onboarding-step {
