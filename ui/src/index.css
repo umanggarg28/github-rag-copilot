@@ -1340,12 +1340,12 @@ textarea:focus-visible {
   to   { opacity: 1; transform: translateY(0); }
 }
 .onboarding-header {
-  animation: onboardIn 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: onboardIn 580ms cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: 0ms;
 }
-.onboarding-steps .onboarding-step:nth-child(2) { animation: onboardIn 380ms cubic-bezier(0.16, 1, 0.3, 1) 80ms both; }
-.onboarding-steps .onboarding-step:nth-child(3) { animation: onboardIn 380ms cubic-bezier(0.16, 1, 0.3, 1) 150ms both; }
-.onboarding-steps .onboarding-step:nth-child(4) { animation: onboardIn 380ms cubic-bezier(0.16, 1, 0.3, 1) 220ms both; }
+.onboarding-steps .onboarding-step:nth-child(2) { animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both; }
+.onboarding-steps .onboarding-step:nth-child(3) { animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 210ms both; }
+.onboarding-steps .onboarding-step:nth-child(4) { animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both; }
 
 /* Header for onboarding section */
 .onboarding-header {
@@ -1518,7 +1518,7 @@ textarea:focus-visible {
 /* Suggest state */
 .suggest-state { max-width: 620px; width: 100%; text-align: center; padding-top: 16px; padding-bottom: 24px; }
 .suggest-state h2 {
-  animation: onboardIn 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: onboardIn 580ms cubic-bezier(0.16, 1, 0.3, 1) both;
   font-size: 48px;
   font-weight: 300;
   font-family: "Anthropic Serif", Georgia, serif;
@@ -1529,7 +1529,7 @@ textarea:focus-visible {
   text-shadow: 0 0 80px rgba(91,143,249,0.20);
 }
 .suggest-state > p {
-  animation: onboardIn 380ms cubic-bezier(0.16, 1, 0.3, 1) 60ms both;
+  animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 80ms both;
   font-size: 13.5px;
   color: var(--text-2);
   margin-bottom: 20px;
@@ -1548,11 +1548,11 @@ textarea:focus-visible {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.suggestions .suggestion-btn:nth-child(1) { animation-delay: 40ms; }
-.suggestions .suggestion-btn:nth-child(2) { animation-delay: 90ms; }
-.suggestions .suggestion-btn:nth-child(3) { animation-delay: 140ms; }
-.suggestions .suggestion-btn:nth-child(4) { animation-delay: 190ms; }
-.suggestions .suggestion-btn:nth-child(5) { animation-delay: 240ms; }
+.suggestions .suggestion-btn:nth-child(1) { animation-delay: 80ms; }
+.suggestions .suggestion-btn:nth-child(2) { animation-delay: 160ms; }
+.suggestions .suggestion-btn:nth-child(3) { animation-delay: 400ms; }
+.suggestions .suggestion-btn:nth-child(4) { animation-delay: 320ms; }
+.suggestions .suggestion-btn:nth-child(5) { animation-delay: 400ms; }
 
 .suggestion-btn {
   display: flex;
@@ -1568,7 +1568,7 @@ textarea:focus-visible {
   padding: 13px 14px 13px 14px;
   text-align: left;
   transition: border-color var(--transition), background var(--transition), transform var(--transition), box-shadow var(--transition);
-  animation: suggestionIn 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: suggestionIn 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
   box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.15);
 }
 
