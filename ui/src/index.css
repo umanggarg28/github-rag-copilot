@@ -1250,11 +1250,13 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* No justify-content — margin: auto on children centres them when there's space,
-     and collapses to 0 when content overflows so you can still scroll from the top. */
+  /* justify-content: center — vertically centres the onboarding/suggest content.
+     overflow: hidden — blobs (::before/::after) are position:absolute and their
+     geometry would trigger a spurious scrollbar with overflow:auto. hidden clips
+     them cleanly without any scroll. Content fits the viewport; clipping is safe. */
+  justify-content: center;
   padding: 0 24px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   position: relative;
 }
 
@@ -1313,11 +1315,9 @@ textarea:focus-visible {
   gap: 12px;
   max-width: 580px;
   width: 100%;
-  /* margin: auto → flexbox vertical centering; padding gives breathing room */
-  margin-top: auto;
-  margin-bottom: auto;
-  padding-top: 48px;
-  padding-bottom: 80px;
+  /* Some vertical padding keeps it from sitting right at the flex center line */
+  padding-top: 16px;
+  padding-bottom: 24px;
 }
 
 /* Header for onboarding section */
@@ -1485,7 +1485,7 @@ textarea:focus-visible {
 }
 
 /* Suggest state */
-.suggest-state { max-width: 620px; width: 100%; text-align: center; margin-top: auto; margin-bottom: auto; padding-top: 48px; padding-bottom: 80px; }
+.suggest-state { max-width: 620px; width: 100%; text-align: center; padding-top: 16px; padding-bottom: 24px; }
 .suggest-state h2 {
   font-size: 48px;
   font-weight: 300;
