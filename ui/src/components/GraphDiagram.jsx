@@ -173,8 +173,8 @@ function DiagramCard({ node, pos, hoveredId, connectedIds, onSelect, onHover, on
         // Colour-keyed top accent bar using an inset box-shadow on the card —
         // avoids a separate child div while still giving each type its own colour.
         borderColor: highlight ? s.dot : undefined,
-        boxShadow:   highlight
-          ? `0 0 0 1.5px ${s.dot}, 0 8px 32px ${s.glow}`
+        boxShadow: highlight
+          ? `0 0 0 2px ${s.dot}, 0 0 18px ${s.dot}99, 0 16px 56px ${s.glow.replace(/[\d.]+\)$/, '0.65)')}`
           : undefined,
       }}
       onMouseDown={(e) => onDragStart?.(e, node)}

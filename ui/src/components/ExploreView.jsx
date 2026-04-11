@@ -159,12 +159,12 @@ function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, o
         borderColor: isSelected
           ? s.border
           : isHovered
-          ? "rgba(91,143,249,0.45)"
+          ? s.border
           : undefined,
         boxShadow: isSelected
-          ? `0 0 0 1.5px ${s.border}, 0 8px 40px ${s.glow}`
+          ? `0 0 0 2px ${s.border}, 0 0 18px ${s.border}99, 0 16px 56px ${s.glow.replace(/[\d.]+\)$/, '0.65)')}`
           : isHovered
-          ? "0 4px 24px rgba(0,0,0,0.5)"
+          ? `0 0 0 2px ${s.border}, 0 0 18px ${s.border}99, 0 16px 56px ${s.glow.replace(/[\d.]+\)$/, '0.65)')}`
           : undefined,
       }}
       onMouseDown={(e) => e.stopPropagation()}
