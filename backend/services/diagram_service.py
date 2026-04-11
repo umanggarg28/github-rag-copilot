@@ -1053,13 +1053,22 @@ class DiagramService:
         )
 
         try:
-            raw  = self._gen.generate(_ENRICH_SYSTEM, prompt, temperature=0.0, json_mode=True)
+            # Don't use json_mode=True here — gemma-4-31b-it via the Gemini OpenAI-compat
+            # endpoint may not support response_format=json_object and will throw silently.
+            # The prompt already says "Return ONLY this JSON" and _parse_json handles fences.
+            raw  = self._gen.generate(_ENRICH_SYSTEM, prompt, temperature=0.0)
             data = _parse_json(raw)
             descriptions = data.get("descriptions", {})
-            # Apply descriptions to nodes
+            # Build a lowercase lookup so LLM key capitalisation differences don't break matching
+            # (e.g. LLM returns "value" but node id is "Value")
+            desc_lower = {k.lower(): v for k, v in descriptions.items()}
+            # Apply descriptions to nodes — exact match first, then case-insensitive fallback
             for n in nodes:
-                if n["id"] in descriptions:
-                    n["description"] = descriptions[n["id"]]
+                desc = descriptions.get(n["id"]) or desc_lower.get(n["id"].lower())
+                if desc:
+                    n["description"] = desc
+            matched = sum(1 for n in nodes if n.get("description"))
+            print(f"DiagramService: enriched {matched}/{len(nodes)} nodes with descriptions")
         except Exception as e:
             print(f"DiagramService: enrichment failed (non-fatal): {e}")
             # Descriptions stay empty — diagram still shows accurate structure
