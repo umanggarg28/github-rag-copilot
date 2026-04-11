@@ -1227,16 +1227,11 @@ textarea:focus-visible {
   /* Upper-third positioning — mirrors Linear / Raycast empty states */
   justify-content: flex-start;
   padding: max(6vh, 48px) 24px max(80px, 10vh);
+  /* overflow-y: auto lets content scroll if taller than available area (e.g. step 3 visible).
+     overflow-x: hidden clips ambient blobs that extend sideways without blocking vertical scroll. */
   overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
-}
-
-/* Animated ambient blobs — YouTube-style drifting color atmosphere.
-   Two blobs (::before violet, ::after indigo) drift in opposite directions
-   using transform animations (GPU-accelerated) + filter: blur() for the soft glow.
-   They move very slowly so the effect is felt, not watched. */
-.empty-state {
-  overflow: hidden; /* clip blobs to the chat area */
 }
 
 .empty-state::before {
