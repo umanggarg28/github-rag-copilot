@@ -144,8 +144,11 @@ function bezierPath(fromPos, toPos) {
 }
 
 // ── ConceptCard ────────────────────────────────────────────────────────────────
-function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, onSelect, onHover, onAsk }) {
+function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, chainStyle, pos, onSelect, onHover, onAsk }) {
   const s = styleFor(concept.type);
+  // When this card is part of a hover chain, use the source node's color so the
+  // entire connected subgraph glows as one unified circuit, not a collision of hues.
+  const hs = (isHovered && chainStyle) ? chainStyle : s;
 
   return (
     <div
@@ -159,12 +162,12 @@ function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, o
         borderColor: isSelected
           ? s.border
           : isHovered
-          ? s.border
+          ? hs.border
           : undefined,
         boxShadow: isSelected
           ? `0 0 0 2px ${s.border}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : isHovered
-          ? `0 0 0 2px ${s.border}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
+          ? `0 0 0 2px ${hs.border}, 0 0 20px ${hs.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${hs.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : undefined,
       }}
       onMouseDown={(e) => e.stopPropagation()}
@@ -501,29 +504,37 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
           </svg>
 
           {/* ── Concept cards ── */}
-          {concepts.map(c => {
-            const pos = positions[c.id];
-            if (!pos) return null;
-            // Only the lowest reading-order concept from the entry file gets "Start here".
-            // Without this, every chunk from engine.py shows the badge.
-            const entryMatches = concepts.filter(x => entryFile && x.file?.endsWith(entryFile));
-            const minEntryOrder = entryMatches.length ? Math.min(...entryMatches.map(x => x.reading_order)) : null;
-            const isEntry = !!(entryFile && c.file?.endsWith(entryFile) && c.reading_order === minEntryOrder);
-            return (
-              <ConceptCard
-                key={c.id}
-                concept={c}
-                isEntry={isEntry}
-                isSelected={selectedId === c.id}
-                isHovered={hoveredId === c.id || (!!connectedIds && connectedIds.has(c.id))}
-                isDimmed={!!connectedIds && !connectedIds.has(c.id)}
-                pos={pos}
-                onSelect={id => setSelected(v => v === id ? null : id)}
-                onHover={setHovered}
-                onAsk={handleAsk}
-              />
-            );
-          })}
+          {(() => {
+            // Compute the hovered node's style once so all connected nodes share it,
+            // making the entire chain glow as a single unified color.
+            const chainStyle = hoveredId
+              ? styleFor(concepts.find(c => c.id === hoveredId)?.type)
+              : null;
+            return concepts.map(c => {
+              const pos = positions[c.id];
+              if (!pos) return null;
+              // Only the lowest reading-order concept from the entry file gets "Start here".
+              // Without this, every chunk from engine.py shows the badge.
+              const entryMatches = concepts.filter(x => entryFile && x.file?.endsWith(entryFile));
+              const minEntryOrder = entryMatches.length ? Math.min(...entryMatches.map(x => x.reading_order)) : null;
+              const isEntry = !!(entryFile && c.file?.endsWith(entryFile) && c.reading_order === minEntryOrder);
+              return (
+                <ConceptCard
+                  key={c.id}
+                  concept={c}
+                  isEntry={isEntry}
+                  isSelected={selectedId === c.id}
+                  isHovered={hoveredId === c.id || (!!connectedIds && connectedIds.has(c.id))}
+                  isDimmed={!!connectedIds && !connectedIds.has(c.id)}
+                  chainStyle={chainStyle}
+                  pos={pos}
+                  onSelect={id => setSelected(v => v === id ? null : id)}
+                  onHover={setHovered}
+                  onAsk={handleAsk}
+                />
+              );
+            });
+          })()}
         </div>
       </div>
 

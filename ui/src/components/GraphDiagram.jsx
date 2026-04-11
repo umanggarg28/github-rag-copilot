@@ -156,10 +156,13 @@ function FileIcon() {
 }
 
 // ── DiagramCard — ec-card positioned absolutely on the SVG canvas ─────────────
-function DiagramCard({ node, pos, hoveredId, connectedIds, onSelect, onHover, onAsk, onDragStart, wasDragged }) {
+function DiagramCard({ node, pos, hoveredId, connectedIds, chainStyle, onSelect, onHover, onAsk, onDragStart, wasDragged }) {
   const dim       = hoveredId && hoveredId !== node.id && !connectedIds.has(node.id);
   const highlight = hoveredId === node.id || (hoveredId && connectedIds.has(node.id));
-  const s = styleFor(node.data.type);
+  const s  = styleFor(node.data.type);
+  // When highlighted as part of a chain, use the source node's color so the
+  // entire connected subgraph glows as one unified circuit, not a collision of hues.
+  const hs = (highlight && chainStyle) ? chainStyle : s;
 
   return (
     <div
@@ -170,11 +173,9 @@ function DiagramCard({ node, pos, hoveredId, connectedIds, onSelect, onHover, on
         top:   pos.y,
         width: CARD_W,
         cursor: "grab",
-        // Colour-keyed top accent bar using an inset box-shadow on the card —
-        // avoids a separate child div while still giving each type its own colour.
-        borderColor: highlight ? s.dot : undefined,
+        borderColor: highlight ? hs.dot : undefined,
         boxShadow: highlight
-          ? `0 0 0 2px ${s.dot}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
+          ? `0 0 0 2px ${hs.dot}, 0 0 20px ${hs.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${hs.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : undefined,
       }}
       onMouseDown={(e) => onDragStart?.(e, node)}
@@ -510,20 +511,28 @@ export default function GraphDiagram({ data, onNodeSelect, onEdgeSelect, onAskAb
           </svg>
 
           {/* ── Diagram node cards ── */}
-          {layoutNodes.map(node => (
-            <DiagramCard
-              key={node.id}
-              node={node}
-              pos={getPosFor(node.id) ?? { x: node.x, y: node.y }}
-              hoveredId={hoveredId}
-              connectedIds={connectedIds}
-              onSelect={handleNodeSelect}
-              onHover={setHoveredId}
-              onAsk={onAskAbout ? handleNodeAsk : null}
-              onDragStart={onNodeDragStart}
-              wasDragged={wasDragged}
-            />
-          ))}
+          {(() => {
+            // Hovered node's style propagates to the whole chain so all
+            // connected nodes share one glow color, not each their own.
+            const chainStyle = hoveredId
+              ? styleFor(layoutNodes.find(n => n.id === hoveredId)?.data?.type)
+              : null;
+            return layoutNodes.map(node => (
+              <DiagramCard
+                key={node.id}
+                node={node}
+                pos={getPosFor(node.id) ?? { x: node.x, y: node.y }}
+                hoveredId={hoveredId}
+                connectedIds={connectedIds}
+                chainStyle={chainStyle}
+                onSelect={handleNodeSelect}
+                onHover={setHoveredId}
+                onAsk={onAskAbout ? handleNodeAsk : null}
+                onDragStart={onNodeDragStart}
+                wasDragged={wasDragged}
+              />
+            ));
+          })()}
         </div>
       </div>
 
