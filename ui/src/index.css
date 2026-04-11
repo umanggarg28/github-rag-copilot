@@ -1322,6 +1322,9 @@ textarea:focus-visible {
 
 /* Header for onboarding section */
 .onboarding-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;  /* centres SVG + headline + subtitle along the cross-axis */
   text-align: center;
   margin-bottom: 14px;
 }
