@@ -293,9 +293,15 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     if (!el) return;
     function onWheel(e) {
       e.preventDefault();
-      // Same proportional zoom as GraphDiagram — see comment there.
       const f = Math.exp(-e.deltaY * 0.001);
-      setXform(t => ({ ...t, scale: Math.min(Math.max(t.scale * f, 0.3), 3) }));
+      const rect = el.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      setXform(t => {
+        const newScale = Math.min(Math.max(t.scale * f, 0.3), 3);
+        const ratio = newScale / t.scale;
+        return { x: mx - (mx - t.x) * ratio, y: my - (my - t.y) * ratio, scale: newScale };
+      });
     }
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
