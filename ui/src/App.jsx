@@ -158,6 +158,7 @@ export default function App() {
     setCurrentSessionId(null);
     setMessages([]);
     setLastSources([]);
+    setFocusFiles(null);
     setSessions(readSessions(activeRepo));
     // Auto-navigate to Explore view when a specific repo is selected.
     // Reset to chat for "All repos" or landing page — diagram needs a single repo.
@@ -203,6 +204,7 @@ export default function App() {
       sessionIdRef.current = null;
       setCurrentSessionId(null);
       setMessages([]);
+      setFocusFiles(null);
     }
   }
 
@@ -618,6 +620,7 @@ export default function App() {
     sessionIdRef.current = null;
     setCurrentSessionId(null);
     setMessages([]);
+    setFocusFiles(null);
     setStreaming(false);
   }
 
@@ -767,7 +770,7 @@ export default function App() {
                   // No repo selected yet (landing), or All repos selected but nothing indexed
                   <div className="onboarding-steps">
                     <div className="onboarding-header">
-                      <svg width="60" height="60" viewBox="0 0 24 24" fill="none"
+                      <svg width="72" height="72" viewBox="0 0 24 24" fill="none"
                         style={{ marginBottom: 12, filter: "drop-shadow(0 0 8px rgba(91,143,249,0.70))" }}>
                         {/* N — pulses bright */}
                         <path className="compass-north" d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
@@ -783,19 +786,20 @@ export default function App() {
                       <div className="onboarding-headline">Map <em>any</em> codebase</div>
                       <div className="onboarding-sub">Index any public repo and ask questions about the code — architecture, data flow, classes, functions, and more.</div>
                     </div>
-                    <div className="onboarding-grid">
+                    <div className="suggestions" style={{ marginBottom: 0 }}>
                       {[
-                        { icon: "github",  num: 1, title: "Paste a GitHub URL", body: "Index any public repo — every function and class." },
-                        { icon: "chat",    num: 2, title: "Ask about the code",  body: "\"How does the main loop work?\" — cited answers." },
-                        { icon: "explore", num: 3, title: "Explore the structure", body: "Concept map of key components and how they connect." },
-                      ].map(({ icon, num, title, body }, i) => (
-                        <div key={num} className="onboarding-step active"
-                          style={{ animationDelay: `${80 + i * 90}ms` }}>
-                          <span className="suggestion-icon" style={{ marginBottom: 4 }}>{ICONS[icon]}</span>
-                          <div>
-                            <strong>{title}</strong>
-                            <p>{body}</p>
-                          </div>
+                        { icon: "github",  title: "Paste a GitHub URL",    body: "Index any public repo — every function and class." },
+                        { icon: "chat",    title: "Ask about the code",    body: "\"How does the main loop work?\" — finds and explains it." },
+                        { icon: "explore", title: "Explore the structure", body: "Concept map of key components and how they connect." },
+                      ].map(({ icon, title, body }, i) => (
+                        <div key={title} className="suggestion-btn"
+                          style={{ animationDelay: `${80 + i * 90}ms`, cursor: "default" }}>
+                          <span className="suggestion-icon">{ICONS[icon]}</span>
+                          <span className="suggestion-content">
+                            <span className="suggestion-title">{title}</span>
+                            <span className="suggestion-body">{body}</span>
+                          </span>
+                          <svg className="suggestion-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.2 }}><path d="M3 8h10M9 4l4 4-4 4"/></svg>
                         </div>
                       ))}
                     </div>
@@ -813,13 +817,12 @@ export default function App() {
                         </div>
                         <div className="suggestions">
                           {[
-                            { icon: "architecture", title: "Map the architecture",    body: `Walk ${activeRepo.split("/")[1]} from entry point to output` },
-                            { icon: "functions",    title: "Key functions",           body: "Most important functions and how they connect" },
-                            { icon: "diagram",      title: "Generate a diagram",      body: "Visual map of the main components" },
-                            { icon: "shield",       title: "Error handling",          body: "How edge cases are managed across the codebase" },
-                            { icon: "flow",         title: "Data flow",               body: "How data moves from input to final result" },
-                          ].map(({ icon, title, body }, i) => {
-                            const q = `${title}: ${body}`;
+                            { icon: "architecture", title: "Map the architecture",    body: `Walk ${activeRepo.split("/")[1]} from entry point to output`,  q: `How is ${activeRepo.split("/")[1]} structured? Trace the main execution path from the entry point all the way to the output.` },
+                            { icon: "functions",    title: "Key functions",           body: "Most important functions and how they connect",                  q: `What are the most important functions in ${activeRepo.split("/")[1]} and how do they call each other?` },
+                            { icon: "diagram",      title: "Generate a diagram",      body: "Visual map of the main components",                             q: `Generate a diagram of the main components in ${activeRepo.split("/")[1]} and how they relate to each other.` },
+                            { icon: "shield",       title: "Error handling",          body: "How edge cases are managed across the codebase",                q: `How does ${activeRepo.split("/")[1]} handle errors and edge cases?` },
+                            { icon: "flow",         title: "Data flow",               body: "How data moves from input to final result",                     q: `How does data flow through ${activeRepo.split("/")[1]} from input to final result?` },
+                          ].map(({ icon, title, body, q }, i) => {
                             return (
                               <button key={title} className="suggestion-btn"
                                 style={{ animationDelay: `${80 + i * 80}ms` }}
@@ -842,13 +845,12 @@ export default function App() {
                       <>
                         <div className="suggestions">
                           {[
-                            { icon: "architecture", title: "Overall architecture",  body: `How is ${activeRepo.split("/")[1]} structured?` },
-                            { icon: "entry",        title: "Entry points",          body: "Main entry points and how the code flows" },
-                            { icon: "classes",      title: "Key classes",           body: "What each major class does" },
-                            { icon: "flow",         title: "Data processing",       body: "How data is transformed through the system" },
-                            { icon: "package",      title: "Dependencies",          body: "External libraries and how they're used" },
-                          ].map(({ icon, title, body }, i) => {
-                            const q = `${title}: ${body}`;
+                            { icon: "architecture", title: "Overall architecture",  body: `How is ${activeRepo.split("/")[1]} structured?`,    q: `How is ${activeRepo.split("/")[1]} structured overall? What are the main components and how do they fit together?` },
+                            { icon: "entry",        title: "Entry points",          body: "Main entry points and how the code flows",           q: `What are the main entry points of ${activeRepo.split("/")[1]} and how does execution flow through them?` },
+                            { icon: "classes",      title: "Key classes",           body: "What each major class does",                         q: `What are the key classes in ${activeRepo.split("/")[1]} and what is each one responsible for?` },
+                            { icon: "flow",         title: "Data processing",       body: "How data is transformed through the system",         q: `How is data transformed and processed as it flows through ${activeRepo.split("/")[1]}?` },
+                            { icon: "package",      title: "Dependencies",          body: "External libraries and how they're used",            q: `What external libraries does ${activeRepo.split("/")[1]} depend on and how does it use them?` },
+                          ].map(({ icon, title, body, q }, i) => {
                             return (
                               <button key={title} className="suggestion-btn"
                                 style={{ animationDelay: `${80 + i * 80}ms` }}

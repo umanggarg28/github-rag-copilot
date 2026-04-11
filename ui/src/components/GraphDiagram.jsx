@@ -263,11 +263,22 @@ export default function GraphDiagram({ data, onNodeSelect, onEdgeSelect, onAskAb
 
   const wrapRef  = useRef(null);
 
-  // Reset view and any manual node positions when the diagram data changes
+  // Center the diagram in the viewport whenever layout changes.
+  // We read the wrapper's actual rendered dimensions (not CSS values) via
+  // getBoundingClientRect so the offset is always pixel-perfect.
   useEffect(() => {
-    setXform({ x: 0, y: 0, scale: 0.85 });
     setNodePos({});
-  }, [data]);
+    if (!wrapRef.current || !layoutNodes.length) {
+      setXform({ x: 0, y: 0, scale: 0.85 });
+      return;
+    }
+    const { width, height } = wrapRef.current.getBoundingClientRect();
+    const scale = 0.85;
+    // Offset so the scaled canvas sits in the centre of the wrapper
+    const cx = (width  - canvasW * scale) / 2;
+    const cy = (height - canvasH * scale) / 2;
+    setXform({ x: cx, y: Math.max(cy, 24), scale });
+  }, [layoutNodes]); // layoutNodes recomputes whenever data changes
 
   // Non-passive wheel zoom — passive: false required to call preventDefault()
   useEffect(() => {
@@ -439,6 +450,23 @@ export default function GraphDiagram({ data, onNodeSelect, onEdgeSelect, onAskAb
               <marker id="gd-arrow-hi" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
                 <polygon points="0 0, 7 2.5, 0 5" fill="#7DABFF" />
               </marker>
+              {/* Per-edge directional gradients — bright at source, fades toward target.
+                  gradientUnits="userSpaceOnUse" maps x1/y1/x2/y2 to canvas coordinates
+                  so the gradient always aligns with the actual arrow path. */}
+              {layoutEdges.map((edge, i) => {
+                const from = getPosFor(edge.source);
+                const to   = getPosFor(edge.target);
+                if (!from || !to) return null;
+                return (
+                  <linearGradient key={`grad-${i}`} id={`edge-grad-${i}`}
+                    gradientUnits="userSpaceOnUse"
+                    x1={from.x + CARD_W} y1={from.y + CARD_H / 2}
+                    x2={to.x}            y2={to.y   + CARD_H / 2}>
+                    <stop offset="0%"   stopColor="#7DABFF" stopOpacity="0.55" />
+                    <stop offset="100%" stopColor="#5B8FF9" stopOpacity="0.08" />
+                  </linearGradient>
+                );
+              })}
             </defs>
 
             {layoutEdges.map((edge, i) => {
@@ -477,7 +505,7 @@ export default function GraphDiagram({ data, onNodeSelect, onEdgeSelect, onAskAb
                   <path
                     d={d}
                     fill="none"
-                    stroke={isHi ? "#7DABFF" : "rgba(91,143,249,0.22)"}
+                    stroke={isHi ? "#7DABFF" : `url(#edge-grad-${i})`}
                     strokeWidth={isHi ? 2 : 1.5}
                     strokeDasharray={edge.label === "uses" ? "5 3" : undefined}
                     markerEnd={isHi ? "url(#gd-arrow-hi)" : "url(#gd-arrow)"}

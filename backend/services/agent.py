@@ -734,10 +734,16 @@ class AgentService:
 
                 # Execute all new calls concurrently — MCP calls are async HTTP round trips
                 async def _run_tool(tc: dict) -> str:
-                    try:
-                        return await self.mcp.call_tool(tc["name"], tc["input"])
-                    except Exception as e:
-                        return f"Tool error: {e}"
+                    # Retry once on transient MCP connection failures (TaskGroup /
+                    # HTTP errors from the SDK's internal connection management).
+                    for attempt in range(2):
+                        try:
+                            return await self.mcp.call_tool(tc["name"], tc["input"])
+                        except Exception as e:
+                            if attempt == 0 and "TaskGroup" in str(e):
+                                await asyncio.sleep(0.3)
+                                continue
+                            return f"Tool error: {e}"
 
                 parallel_results = await asyncio.gather(*[_run_tool(tc) for tc in new_calls])
 
@@ -768,7 +774,7 @@ class AgentService:
                                 "repo": repo, "filepath": filepath, "language": lang,
                                 "chunk_type": "file", "name": filepath.rsplit("/", 1)[-1],
                                 "start_line": 1, "end_line": result.count("\n"),
-                                "score": 1.0, "text": "",
+                                "score": 1.0, "text": result,
                             }
 
                     display = result[:500] + "…" if len(result) > 500 else result

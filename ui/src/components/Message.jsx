@@ -11,6 +11,7 @@ import SourceCard from "./SourceCard";
 // Lazy-load MermaidBlock — deferred so mermaid.js doesn't bloat the initial bundle.
 const MermaidBlock = lazy(() => import("./MermaidBlock"));
 
+
 // ReactMarkdown renders fenced code blocks as <pre><code>...</code></pre>.
 // If we override only `code`, ReactMarkdown wraps the whole thing in a <p>,
 // giving <p><pre>...</pre></p> — invalid HTML (pre can't be inside p).
@@ -386,12 +387,16 @@ const Message = forwardRef(function Message({ msg, onDiagramThis, onRetry, showR
               This matches the ✦ badge on agent sessions in the sidebar,
               making the visual language consistent: ✦ = agent mode. */}
           <div className="message-avatar assistant" aria-hidden="true">
-            {msg.iterations
-              ? <span style={{ fontSize: 13, lineHeight: 1, color: "white", opacity: 0.9 }}>✦</span>
-              : <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
-                  <path d="M5.5 5L2 9l3.5 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.95"/>
-                  <path d="M12.5 5L16 9l-3.5 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.95"/>
-                  <circle cx="9" cy="9" r="1.2" fill="white" fillOpacity="0.7"/>
+            {msg.mode === "agent"
+              ? /* Agent mode — ✦ sparkle signals autonomous reasoning / ReAct loop */
+                <span style={{ fontSize: 14, lineHeight: 1, color: "white", opacity: 0.9 }}>✦</span>
+              : /* RAG mode — compass brand mark, signals "Cartographer navigating the code" */
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="white" opacity="0.95"/>
+                  <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="white" opacity="0.45"/>
+                  <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="white" opacity="0.45"/>
+                  <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="white" opacity="0.45"/>
+                  <circle cx="12" cy="12" r="1.5" fill="white"/>
                 </svg>
             }
           </div>

@@ -131,16 +131,27 @@ export default function SourceCard({ source, index, showRepo = false }) {
 
       {open && (
         <div className="source-code">
-          <SyntaxHighlighter
-            language={lang}
-            style={oneDark}
-            customStyle={{ fontSize: 12, margin: 0, background: '#06060F', borderRadius: 0 }}
-            lineNumberStyle={{ color: 'rgba(255,255,255,0.18)', fontSize: 11, minWidth: 36, paddingRight: 12 }}
-            showLineNumbers
-            startingLineNumber={source.start_line}  /* start_line = class range when expanded */
-          >
-            {source.text}
-          </SyntaxHighlighter>
+          {source.text ? (
+            <SyntaxHighlighter
+              language={lang}
+              style={oneDark}
+              customStyle={{ fontSize: 12, margin: 0, background: '#06060F', borderRadius: 0 }}
+              lineNumberStyle={{ color: 'rgba(255,255,255,0.18)', fontSize: 11, minWidth: 36, paddingRight: 12 }}
+              showLineNumbers
+              startingLineNumber={source.start_line}
+            >
+              {source.text}
+            </SyntaxHighlighter>
+          ) : (
+            <div style={{ padding: "10px 14px", fontSize: 12, color: "var(--muted)", fontFamily: "var(--mono)" }}>
+              Code preview not stored —{" "}
+              <a href={githubUrl} target="_blank" rel="noopener noreferrer"
+                style={{ color: "var(--accent-soft)", textDecoration: "none" }}
+                onClick={e => e.stopPropagation()}>
+                open on GitHub ↗
+              </a>
+            </div>
+          )}
         </div>
       )}
     </div>

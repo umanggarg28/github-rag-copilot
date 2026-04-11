@@ -265,21 +265,14 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   box-shadow:
-    0 0 0 1px rgba(91, 143, 249, 0.30),
-    0 4px 16px rgba(91, 143, 249, 0.18),
-    inset 0 1px 0 rgba(91, 143, 249, 0.12);
+    0 0 0 1px rgba(91, 143, 249, 0.22),
+    0 2px 8px rgba(91, 143, 249, 0.10);
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
 }
 
-.sidebar-brand-icon::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, transparent 60%);
-  border-radius: inherit;
-}
+/* sidebar-brand-icon::after removed — was causing white glare on compass edges */
 
 /* Superscript label — "GITHUB RAG" small caps above the serif title */
 .sidebar-brand-tag {
@@ -477,7 +470,7 @@ textarea:focus-visible {
 .repo-item {
   display: flex;
   align-items: center;
-  padding: 7px 10px;
+  padding: 6px 10px;
   border-radius: var(--radius);
   cursor: pointer;
   /* 2px left accent — cleaner, less dominant */
@@ -546,6 +539,12 @@ textarea:focus-visible {
   letter-spacing: -0.01em;
 }
 
+/* owner/ prefix — dimmed so the eye jumps straight to the repo name */
+.repo-owner {
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .repo-count {
   font-size: 10px;
   color: rgba(200, 210, 240, 0.55);
@@ -579,18 +578,19 @@ textarea:focus-visible {
 .mode-pills {
   display: inline-flex;
   gap: 2px;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 9px;
-  padding: 2px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius-md);
+  padding: 3px;
   width: fit-content;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.30);
 }
 
 .pill {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: rgba(200, 210, 240, 0.50);
+  background: none;
+  border: none;
+  border-radius: calc(var(--radius-md) - 3px);
+  color: var(--text-2);
   cursor: pointer;
   font-family: var(--sans);
   font-size: 11.5px;
@@ -607,13 +607,11 @@ textarea:focus-visible {
 }
 
 .pill.active {
-  background: linear-gradient(160deg, #4A7FE8 0%, #5B8FF9 60%, #7DABFF 100%);
-  border-color: rgba(200, 220, 255, 0.18);
-  color: #fff;
+  background: rgba(255,255,255,0.10);
+  border: none;
+  color: var(--text);
   font-weight: 600;
-  box-shadow:
-    0 2px 10px rgba(91, 143, 249, 0.40),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -975,7 +973,7 @@ textarea:focus-visible {
 
 .source-item:hover {
   border-color: var(--accent-border);
-  background: rgba(40, 35, 29, 0.98);
+  background: rgba(15, 18, 35, 0.98);
   box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(91, 143, 249,0.08);
 }
 
@@ -1394,7 +1392,7 @@ textarea:focus-visible {
 }
 
 .onboarding-headline {
-  font-size: 50px;
+  font-size: 70px;
   font-weight: 300;
   font-family: "Anthropic Serif", Georgia, serif;
   letter-spacing: -0.040em;
@@ -1415,7 +1413,7 @@ textarea:focus-visible {
 }
 
 .onboarding-sub {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text-2);
   line-height: 1.55;
   letter-spacing: -0.012em;
@@ -3736,9 +3734,13 @@ textarea:focus-visible {
   overflow: hidden;
   cursor: grab;
   position: relative;
+  /* Atmospheric glow — spotlight from top-center bleeds behind the graph,
+     making nodes pop against the dark canvas. Inspired by Raycast/Arc splash screens.
+     Two layers: a warm blue core + a cooler wide bloom that fills the canvas. */
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(91, 143, 249, 0.05) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 30%, rgba(91, 143, 249, 0.02) 0%, transparent 50%);
+    radial-gradient(ellipse 70% 55% at 50% 50%,  rgba(91, 143, 249, 0.13) 0%, transparent 70%),
+    radial-gradient(ellipse 110% 90% at 50% 50%, rgba(91, 143, 249, 0.05) 0%, transparent 80%),
+    var(--bg);
 }
 
 .ec-canvas-wrapper:active {
@@ -3913,9 +3915,9 @@ textarea:focus-visible {
 .ec-legend {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 7px 16px;
-  border-top: 1px solid rgba(255, 255, 255,0.05);
+  gap: 16px;
+  padding: 9px 16px;
+  border-top: 1px solid rgba(255, 255, 255,0.06);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
@@ -3923,21 +3925,21 @@ textarea:focus-visible {
 .ec-legend-item {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--muted);
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-2);
 }
 
 .ec-legend-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .ec-legend-hint {
   font-size: 11px;
-  color: var(--faint);
+  color: var(--muted);
   margin-left: auto;
 }
 
