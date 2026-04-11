@@ -60,21 +60,36 @@ def _parse_json(raw: str) -> dict:
     """
     Parse JSON from an LLM response, handling both clean and fence-wrapped output.
 
-    With json_mode=True on OpenAI-compatible providers, `raw` is already clean JSON.
-    For Anthropic (which has no equivalent flag), we strip any accidental fences.
-    Raises ValueError if no valid JSON can be extracted.
+    LLMs sometimes emit trailing text after the closing brace (explanatory commentary,
+    extra whitespace, a second JSON block). json.loads() rejects this as "Extra data".
+    raw_decode() stops at the first complete JSON value and ignores everything after it,
+    which is exactly what we want.
     """
     import json as _json, re as _re
-    cleaned = raw.strip().strip("`")
-    if cleaned.startswith("json"):
-        cleaned = cleaned[4:].strip()
+    cleaned = raw.strip()
+    # Strip markdown fences — ```json ... ``` or ``` ... ```
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:].strip()
+
+    # Try raw_decode first — tolerates trailing commentary after the JSON object
     try:
-        return _json.loads(cleaned)
+        obj, _ = _json.JSONDecoder().raw_decode(cleaned)
+        return obj
     except _json.JSONDecodeError:
-        match = _re.search(r'\{.*\}', cleaned, _re.DOTALL)
-        if match:
-            return _json.loads(match.group(0))
-        raise ValueError(f"No JSON found in LLM response: {raw[:200]}")
+        pass
+
+    # Fallback: extract the first {...} block via regex (handles deeply nested fences)
+    match = _re.search(r'\{.*\}', cleaned, _re.DOTALL)
+    if match:
+        try:
+            obj, _ = _json.JSONDecoder().raw_decode(match.group(0))
+            return obj
+        except _json.JSONDecodeError:
+            pass
+
+    raise ValueError(f"No JSON found in LLM response: {raw[:200]}")
 
 
 _DIAGRAM_SYSTEM = (
