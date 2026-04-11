@@ -142,8 +142,9 @@ body {
   /* Atmospheric bloom — blueprint blue at top-left, barely perceptible.
      Linear/Vercel principle: depth is felt, not seen. */
   background-image:
-    radial-gradient(ellipse 60% 50% at -5% 0%,   rgba(20, 60, 160, 0.22) 0%, transparent 65%),
-    radial-gradient(ellipse 40% 35% at 105% 100%, rgba(10, 30, 90,  0.12) 0%, transparent 60%);
+    radial-gradient(ellipse 65% 55% at -5% 0%,   rgba(20, 60, 160, 0.30) 0%, transparent 65%),
+    radial-gradient(ellipse 45% 40% at 105% 100%, rgba(10, 30, 90,  0.18) 0%, transparent 60%),
+    radial-gradient(ellipse 30% 25% at 50% 0%,   rgba(91, 143, 249, 0.05) 0%, transparent 50%);
   animation: page-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -156,7 +157,7 @@ body::before {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background-image: radial-gradient(circle, rgba(91, 143, 249, 0.08) 1px, transparent 1px);
+  background-image: radial-gradient(circle, rgba(91, 143, 249, 0.10) 1px, transparent 1px);
   background-size: 24px 24px;
   /* Vignette mask — grid strongest at center, invisible at edges */
   mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, rgba(0,0,0,0.50) 0%, transparent 100%);
@@ -286,10 +287,10 @@ textarea:focus-visible {
 
 /* Brand name in Anthropic Serif */
 .sidebar-brand-name {
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 400;
   font-family: "Anthropic Serif", Georgia, serif;
-  color: var(--accent);
+  color: #FFFFFF;
   letter-spacing: -0.02em;
   line-height: 1.1;
 }
@@ -331,7 +332,7 @@ textarea:focus-visible {
     rgba(255, 255, 255, 0.06) 0px 1px 0px 0px inset;
   transition: border-color var(--transition), box-shadow var(--transition);
 }
-/* Sienna top-accent stripe — visual anchor for the primary action area */
+/* Blue top-accent stripe — visual anchor for the primary action area */
 .ingest-card::before {
   content: '';
   position: absolute;
@@ -346,7 +347,7 @@ textarea:focus-visible {
   border-color: var(--accent-border);
   box-shadow:
     rgba(91, 143, 249, 0.28) 0px 8px 36px 0px,
-    rgba(237, 186, 154, 0.12) 0px 1px 0px 0px inset;
+    rgba(91, 143, 249, 0.12) 0px 1px 0px 0px inset;
 }
 .ingest-card:focus-within::before {
   background: linear-gradient(90deg, transparent 0%, var(--accent) 35%, var(--accent) 65%, transparent 100%);
@@ -558,7 +559,7 @@ textarea:focus-visible {
 }
 
 .pill.active {
-  /* Solid sienna fill — unambiguously selected, not just glowing */
+  /* Solid fill — unambiguously selected */
   background: var(--accent);
   border-color: rgba(200, 220, 255, 0.30);
   color: #fff;
@@ -771,7 +772,7 @@ textarea:focus-visible {
 }
 
 .message-avatar.assistant {
-  /* Sienna gradient avatar — matches brand icon */
+  /* Blueprint gradient avatar — matches brand icon */
   background: linear-gradient(135deg, #3D6EE8, #5B8FF9);
   color: #fff;
   font-size: 13px;
@@ -804,34 +805,33 @@ textarea:focus-visible {
 
 /* ── Message bubbles ──────────────────────────────────────── */
 .bubble {
-  padding: 14px 18px;
+  padding: 15px 19px;
   border-radius: var(--radius-md);
-  font-size: 14px;
-  line-height: 1.70;
+  font-size: 14.5px;
+  line-height: 1.72;
   word-break: break-word;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.012em;
 }
 
 .message.user .bubble {
-  /* User bubble — warm sienna gradient, earthy and distinct */
-  background: linear-gradient(145deg, #6B2910 0%, #9E3D22 40%, #5B8FF9 100%);
-  color: rgba(255, 240, 225, 0.95);
+  /* User bubble — blueprint blue gradient, confident and distinct */
+  background: linear-gradient(145deg, #1E3A7A 0%, #2B52B0 40%, #3D6EE8 100%);
+  color: rgba(235, 243, 255, 0.97);
   border-bottom-right-radius: 4px;
-  border: 1px solid rgba(91, 143, 249, 0.35);
+  border: 1px solid rgba(91, 143, 249, 0.40);
   box-shadow:
-    0 4px 20px rgba(91, 143, 249, 0.25),
-    inset 0 1px 0 rgba(200, 220, 255, 0.18);
+    0 4px 24px rgba(91, 143, 249, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20);
   font-weight: 450;
 }
 
 .message.assistant .bubble {
-  /* Glass assistant bubble — slightly warmer than the bg so it reads as elevated */
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
+  /* Glass assistant bubble — elevated dark surface */
+  background: rgba(15, 15, 24, 0.95);
+  border: 1px solid rgba(255,255,255,0.09);
   border-bottom-left-radius: 4px;
-  box-shadow: 0 2px 16px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255, 255, 255,0.04);
-  /* Left accent bar — more visible at 0.45 */
-  border-left: 2px solid rgba(91, 143, 249,0.45);
+  box-shadow: 0 2px 20px rgba(0,0,16,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+  border-left: 2px solid rgba(91, 143, 249, 0.60);
 }
 
 /* Markdown inside assistant bubble */
@@ -864,7 +864,7 @@ textarea:focus-visible {
   font-size: 13px;
 }
 
-/* Inline code — warm sienna tint on dark well */
+/* Inline code — blueprint tint on dark well */
 .bubble :not(pre) > code {
   background: rgba(91, 143, 249,0.12);
   border: 1px solid var(--accent-border);
@@ -1147,20 +1147,20 @@ textarea:focus-visible {
   position: relative;
   display: flex;
   align-items: flex-end;
-  background: #14141F;    /* dark blue-gray input tray — matches blueprint palette */
-  border-radius: 14px;
+  background: #13131E;
+  border-radius: 16px;
   padding: 4px;
   box-shadow:
-    rgba(91, 143, 249, 0.04)  0px 0px 40px 0px inset,
+    rgba(91, 143, 249, 0.06)  0px 0px 40px 0px inset,
     rgba(0, 0, 16, 0.60)      0px 8px 32px 0px,
-    rgba(255, 255, 255, 0.14) 0px 0px 0px 1px;
+    rgba(255, 255, 255, 0.18) 0px 0px 0px 1px;
   transition: box-shadow 220ms ease;
 }
 .input-row:focus-within {
   box-shadow:
-    rgba(91, 143, 249, 0.14) 0px 0px 40px 0px inset,
-    rgba(91, 143, 249, 0.22) 0px 8px 32px 0px,
-    rgba(91, 143, 249, 0.55) 0px 0px 0px 1.5px;
+    rgba(91, 143, 249, 0.18) 0px 0px 50px 0px inset,
+    rgba(91, 143, 249, 0.28) 0px 8px 40px 0px,
+    rgba(91, 143, 249, 0.65) 0px 0px 0px 1.5px;
 }
 
 /* Top glow line on input bar */
@@ -1247,8 +1247,8 @@ textarea:focus-visible {
   width: 520px;
   height: 420px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(91, 143, 249, 0.22) 0%, rgba(91, 143, 249, 0.08) 50%, transparent 70%);
-  filter: blur(60px);
+  background: radial-gradient(ellipse, rgba(91, 143, 249, 0.30) 0%, rgba(91, 143, 249, 0.10) 50%, transparent 70%);
+  filter: blur(55px);
   pointer-events: none;
   z-index: 0;
   animation: blob-drift-1 18s ease-in-out infinite alternate;
@@ -1262,8 +1262,8 @@ textarea:focus-visible {
   width: 460px;
   height: 380px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(129, 140, 248, 0.16) 0%, rgba(91, 143, 249, 0.06) 50%, transparent 70%);
-  filter: blur(70px);
+  background: radial-gradient(ellipse, rgba(129, 140, 248, 0.22) 0%, rgba(91, 143, 249, 0.08) 50%, transparent 70%);
+  filter: blur(65px);
   pointer-events: none;
   z-index: 0;
   animation: blob-drift-2 22s ease-in-out infinite alternate;
@@ -1300,7 +1300,7 @@ textarea:focus-visible {
 /* Header for onboarding section */
 .onboarding-header {
   text-align: center;
-  margin-bottom: 16px;
+  margin-bottom: 28px;
 }
 
 /* North point pulses — the other three points fade in sequence */
@@ -1327,13 +1327,13 @@ textarea:focus-visible {
 }
 
 .onboarding-headline {
-  /* 60px — a true typographic moment, first thing the eye lands on */
-  font-size: 60px;
-  font-weight: 400;
+  /* 76px — fills the viewport, impossible to miss */
+  font-size: 76px;
+  font-weight: 300;
   font-family: "Anthropic Serif", Georgia, serif;
-  letter-spacing: -0.04em;
-  line-height: 1.0;
-  margin-bottom: 16px;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
+  margin-bottom: 20px;
   color: #FFFFFF;
 }
 
@@ -1341,37 +1341,39 @@ textarea:focus-visible {
    that Cartographer works on every repo, not just pre-selected ones */
 .onboarding-headline em {
   font-style: italic;
-  background: linear-gradient(110deg, #93C5FD 0%, #5B8FF9 50%, #818CF8 100%);
+  background: linear-gradient(110deg, #BAD4FF 0%, #7DABFF 40%, #5B8FF9 75%, #818CF8 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  filter: drop-shadow(0 0 20px rgba(91,143,249,0.50));
+  filter: drop-shadow(0 0 28px rgba(91,143,249,0.70));
 }
 
 .onboarding-sub {
-  font-size: 16px;
+  font-size: 17px;
   color: var(--text-2);
-  line-height: 1.65;
-  letter-spacing: -0.01em;
+  line-height: 1.60;
+  letter-spacing: -0.015em;
+  max-width: 460px;
+  margin: 0 auto;
 }
 
 .onboarding-step {
   display: flex;
-  gap: 14px;
+  gap: 16px;
   align-items: flex-start;
-  background: rgba(20, 20, 32, 0.85);
-  border: 1px solid rgba(255,255,255,0.10);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition), transform var(--transition);
+  background: rgba(15, 15, 24, 0.90);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 18px 20px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: border-color 200ms ease, background 200ms ease, box-shadow 200ms ease, transform 200ms ease;
 }
 
 .onboarding-step:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(91, 143, 249,0.08);
+  border-color: rgba(255,255,255,0.14);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 36px rgba(0,0,16,0.5), 0 0 0 1px rgba(91,143,249,0.12);
 }
 
 /* Completed steps compress — description hidden, only title remains */
@@ -1405,38 +1407,39 @@ textarea:focus-visible {
 }
 
 .onboarding-step.active {
-  border-color: var(--accent-border);
-  background: rgba(91, 143, 249, 0.06);
+  border-color: rgba(91, 143, 249, 0.45);
+  border-left-color: var(--accent);
+  border-left-width: 2px;
+  background: rgba(91, 143, 249, 0.07);
   box-shadow:
-    0 0 0 1px rgba(91, 143, 249,0.15),
-    0 8px 24px rgba(91, 143, 249,0.08),
+    0 0 0 0 transparent,
+    0 8px 32px rgba(91, 143, 249,0.12),
     var(--shadow-sm);
 }
 
 .step-num {
-  background: linear-gradient(135deg, #3D6EE8 0%, #5B8FF9 60%, #7DABFF 100%);
-  border: 1px solid rgba(91, 143, 249,0.55);
+  background: linear-gradient(135deg, #3A6FE8 0%, #5B8FF9 55%, #7DABFF 100%);
+  border: 1px solid rgba(91, 143, 249,0.60);
   color: #fff;
   border-radius: 50%;
-  width: 26px; height: 26px;
+  width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
   font-size: 11px; font-weight: 700;
   flex-shrink: 0;
   margin-top: 1px;
-  /* Warm glow ring + outer bloom for the active step circle */
   box-shadow:
-    0 0 0 2px rgba(91, 143, 249,0.20),
-    0 2px 10px rgba(91, 143, 249,0.45),
-    inset 0 1px 0 rgba(200, 220, 255, 0.25);
+    0 0 0 3px rgba(91, 143, 249,0.15),
+    0 2px 14px rgba(91, 143, 249,0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30);
   font-family: var(--mono);
 }
 
 .onboarding-step strong {
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 700;
-  color: var(--text);
+  color: #FFFFFF;
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
   letter-spacing: -0.02em;
 }
 .onboarding-step p {
@@ -1461,13 +1464,14 @@ textarea:focus-visible {
 /* Suggest state */
 .suggest-state { max-width: 620px; width: 100%; text-align: center; padding-bottom: 56px; }
 .suggest-state h2 {
-  font-size: 44px;
-  font-weight: 400;
+  font-size: 48px;
+  font-weight: 300;
   font-family: "Anthropic Serif", Georgia, serif;
-  letter-spacing: -0.03em;
-  line-height: 1.0;
-  margin-bottom: 10px;
+  letter-spacing: -0.035em;
+  line-height: 0.98;
+  margin-bottom: 12px;
   color: #FFFFFF;
+  text-shadow: 0 0 80px rgba(91,143,249,0.20);
 }
 .suggest-state > p {
   font-size: 13.5px;
@@ -1492,9 +1496,9 @@ textarea:focus-visible {
   cursor: pointer;
   position: relative;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 450;
-  padding: 12px 16px 12px 20px;
+  padding: 13px 18px 13px 20px;
   text-align: left;
   transition: border-color var(--transition), background var(--transition), color var(--transition), transform var(--transition), box-shadow var(--transition);
   letter-spacing: -0.01em;
@@ -1560,7 +1564,7 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: rgba(91, 143, 249, 0.10);   /* warm sienna tint — clearly visible */
+  background: rgba(91, 143, 249, 0.10);
   border: 1px solid rgba(91, 143, 249, 0.30);
   border-radius: var(--radius-full);
   padding: 3px 9px;
@@ -1657,7 +1661,7 @@ textarea:focus-visible {
 .pipeline-grade-high   { color: var(--green); }
 .pipeline-grade-medium { color: var(--warning); }
 .pipeline-grade-low    { color: var(--red); }
-/* Quality feature stages (HyDE, expansion) — sienna-tinted to signal extra work */
+/* Quality feature stages (HyDE, expansion) — blueprint-tinted to signal extra work */
 .pipeline-quality {
   color: var(--accent-soft);
   opacity: 0.9;

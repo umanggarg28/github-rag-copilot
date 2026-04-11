@@ -734,7 +734,8 @@ export default function App() {
                   // No repo selected yet (landing), or All repos selected but nothing indexed
                   <div className="onboarding-steps">
                     <div className="onboarding-header">
-                      <svg width="88" height="88" viewBox="0 0 24 24" fill="none" style={{ marginBottom: 20 }}>
+                      <svg width="72" height="72" viewBox="0 0 24 24" fill="none"
+                        style={{ marginBottom: 24, filter: "drop-shadow(0 0 18px rgba(91,143,249,0.65)) drop-shadow(0 0 6px rgba(91,143,249,0.90))" }}>
                         {/* N — pulses bright */}
                         <path className="compass-north" d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
                         {/* S — delayed fade */}
@@ -744,7 +745,7 @@ export default function App() {
                         {/* W — delayed fade */}
                         <path className="compass-west" d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="var(--accent)"/>
                         {/* Center */}
-                        <circle cx="12" cy="12" r="1.4" fill="var(--accent)"/>
+                        <circle cx="12" cy="12" r="1.5" fill="white"/>
                       </svg>
                       <div className="onboarding-headline">Map <em>any</em> codebase</div>
                       <div className="onboarding-sub">Index any public repo and ask questions about the code — architecture, data flow, classes, functions, and more.</div>
