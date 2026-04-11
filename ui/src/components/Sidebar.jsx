@@ -269,21 +269,16 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
 
       {/* ── Brand ── */}
       <div className="sidebar-brand">
-        {/* Compass rose — 4 kite/diamond points, N dominant. Each point is widest
-            at its midpoint and narrows at both tip AND base — that's what makes
-            it a compass diamond, not a triangle or cone. */}
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-          {/* N — tall kite: tip (12,2), widest at y=7 (±2.5), base at center */}
-          <path d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
-          {/* S — shorter kite, dim */}
-          <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="var(--accent)" opacity="0.28"/>
-          {/* E — horizontal kite, dim */}
-          <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="var(--accent)" opacity="0.28"/>
-          {/* W — horizontal kite, dim */}
-          <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="var(--accent)" opacity="0.28"/>
-          {/* Center pivot */}
-          <circle cx="12" cy="12" r="1.4" fill="var(--accent)"/>
-        </svg>
+        {/* Icon container — Raycast-style rounded square with gradient + compass inside */}
+        <div className="sidebar-brand-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="white"/>
+            <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="white" opacity="0.40"/>
+            <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="white" opacity="0.40"/>
+            <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="white" opacity="0.40"/>
+            <circle cx="12" cy="12" r="1.4" fill="white"/>
+          </svg>
+        </div>
         <div style={{ flex: 1 }}>
           <div className="sidebar-brand-name">Cartographer</div>
         </div>
