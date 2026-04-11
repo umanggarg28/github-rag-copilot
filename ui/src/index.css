@@ -56,16 +56,16 @@ html { height: 100dvh; background: #09090E; overflow: hidden; }
   --surface-4:  #23233B;   /* hover states, tooltips — highest elevation */
 
   /* Borders — blue-tinted white for cohesion with blueprint accent */
-  --border:        rgba(255, 255, 255, 0.07);
+  --border:        rgba(255, 255, 255, 0.09);
   --border-subtle: rgba(255, 255, 255, 0.04);
-  --border-strong: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.13);
 
   /* Text — cool near-white with blue undertone.
      High contrast on near-black without harsh pure white. */
-  --text:   #E2E8F8;   /* cool near-white — headings, active labels */
-  --text-2: #8896B8;   /* muted blue-gray — body text, descriptions */
-  --muted:  #4E5E80;   /* steel blue — file paths, secondary */
-  --faint:  #282E45;   /* dark blue-gray — timestamps, placeholders */
+  --text:   #F0F6FF;   /* near-white — headings, active labels (high contrast) */
+  --text-2: #9BAAC8;   /* blue-gray body — clearly readable */
+  --muted:  #5C6E96;   /* steel blue — file paths, secondary */
+  --faint:  #313855;   /* dark blue-gray — timestamps, placeholders */
 
   /* Accent — blueprint blue, the cartographer's ink.
      Used sparingly: active states, primary CTAs, glow effects.
@@ -313,10 +313,7 @@ textarea:focus-visible {
   color: var(--muted);
   margin-bottom: 6px;
   /* Subtle warm tint — makes section headers feel structural, not dead */
-  background: linear-gradient(90deg, var(--muted) 0%, rgba(91, 143, 249,0.50) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--muted);
 }
 
 /* ── Ingest card — wraps the form + try-these to give primary action visual weight ── */
@@ -385,9 +382,9 @@ textarea:focus-visible {
 
 /* ── Buttons ──────────────────────────────────────────────── */
 .btn {
-  /* Sienna gradient — light to bright, reads as warm confident ink stroke */
-  background: linear-gradient(160deg, #4A7EE0 0%, #7DABFF 55%, #A8C5FF 100%);
-  border: 1px solid rgba(237, 186, 154, 0.40);
+  /* Blueprint blue gradient — solid, confident, pops on dark background */
+  background: linear-gradient(160deg, #3A72E8 0%, #5B8FF9 55%, #7DABFF 100%);
+  border: 1px solid rgba(91, 143, 249, 0.50);
   border-radius: var(--radius);
   color: #fff;
   cursor: pointer;
@@ -396,8 +393,7 @@ textarea:focus-visible {
   font-weight: 600;
   padding: 9px 14px;
   transition: opacity var(--transition), transform var(--transition), box-shadow var(--transition);
-  /* Outer glow + warm inner top-edge highlight = depth + vibrancy */
-  box-shadow: 0 2px 16px rgba(91, 143, 249, 0.42), inset 0 1px 0 rgba(200, 220, 255, 0.30);
+  box-shadow: 0 2px 20px rgba(91, 143, 249, 0.50), inset 0 1px 0 rgba(255, 255, 255, 0.25);
   letter-spacing: -0.01em;
 }
 
@@ -415,13 +411,13 @@ textarea:focus-visible {
 /* Stop button — shown instead of send while streaming; use warm red token */
 .btn.btn-stop {
   background: var(--red-dim);
-  border-color: rgba(200,104,88,0.40);
+  border-color: rgba(248,113,113,0.40);
   box-shadow: none;
   color: var(--red);
 }
 .btn.btn-stop:hover {
-  background: rgba(200,104,88,0.22);
-  box-shadow: 0 2px 12px rgba(200,104,88,0.22);
+  background: rgba(248,113,113,0.15);
+  box-shadow: 0 2px 12px rgba(248,113,113,0.22);
   opacity: 1;
 }
 
@@ -1151,13 +1147,13 @@ textarea:focus-visible {
   position: relative;
   display: flex;
   align-items: flex-end;
-  background: #201D19;    /* warm charcoal input tray */
+  background: #14141F;    /* dark blue-gray input tray — matches blueprint palette */
   border-radius: 14px;
   padding: 4px;
   box-shadow:
-    rgba(255, 255, 255, 0.055) 0px 0px 40px 0px inset,
-    rgba(10, 6, 4, 0.65)       0px 8px 32px 0px,
-    rgba(255, 255, 255, 0.09)  0px 0px 0px 1px;
+    rgba(91, 143, 249, 0.04)  0px 0px 40px 0px inset,
+    rgba(0, 0, 16, 0.60)      0px 8px 32px 0px,
+    rgba(255, 255, 255, 0.14) 0px 0px 0px 1px;
   transition: box-shadow 220ms ease;
 }
 .input-row:focus-within {
@@ -1271,7 +1267,7 @@ textarea:focus-visible {
   width: 460px;
   height: 380px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(180, 120, 70, 0.16) 0%, rgba(91, 143, 249, 0.06) 50%, transparent 70%);
+  background: radial-gradient(ellipse, rgba(129, 140, 248, 0.16) 0%, rgba(91, 143, 249, 0.06) 50%, transparent 70%);
   filter: blur(70px);
   pointer-events: none;
   z-index: 0;
@@ -1335,28 +1331,29 @@ textarea:focus-visible {
 }
 
 .onboarding-headline {
-  /* 48px makes this a moment, not a label — the first thing that lands */
-  font-size: 48px;
+  /* 60px — a true typographic moment, first thing the eye lands on */
+  font-size: 60px;
   font-weight: 400;
   font-family: "Anthropic Serif", Georgia, serif;
-  letter-spacing: -0.03em;
-  line-height: 1.05;
-  margin-bottom: 14px;
-  color: var(--text);
+  letter-spacing: -0.04em;
+  line-height: 1.0;
+  margin-bottom: 16px;
+  color: #FFFFFF;
 }
 
 /* "any" in "Map any codebase" — gradient accent highlights the key idea:
    that Cartographer works on every repo, not just pre-selected ones */
 .onboarding-headline em {
-  font-style: normal;
-  background: linear-gradient(110deg, var(--accent-soft) 0%, var(--accent) 65%);
+  font-style: italic;
+  background: linear-gradient(110deg, #93C5FD 0%, #5B8FF9 50%, #818CF8 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  filter: drop-shadow(0 0 20px rgba(91,143,249,0.50));
 }
 
 .onboarding-sub {
-  font-size: 15px;
+  font-size: 16px;
   color: var(--text-2);
   line-height: 1.65;
   letter-spacing: -0.01em;
@@ -1366,9 +1363,8 @@ textarea:focus-visible {
   display: flex;
   gap: 14px;
   align-items: flex-start;
-  /* Warm charcoal card — no cold indigo */
-  background: rgba(30, 26, 22, 0.75);
-  border: 1px solid var(--border);
+  background: rgba(21, 21, 34, 0.85);
+  border: 1px solid rgba(255,255,255,0.10);
   border-radius: var(--radius-lg);
   padding: 16px 18px;
   backdrop-filter: blur(8px);
@@ -1469,8 +1465,8 @@ textarea:focus-visible {
 /* Suggest state */
 .suggest-state { max-width: 540px; width: 100%; text-align: center; }
 .suggest-state h2 {
-  /* 28px gives this moment presence — you've chosen a repo, this is the invitation */
-  font-size: 28px;
+  /* 34px — clear moment of invitation */
+  font-size: 34px;
   font-weight: 400;
   font-family: "Anthropic Serif", Georgia, serif;
   letter-spacing: -0.02em;
@@ -1492,11 +1488,11 @@ textarea:focus-visible {
 }
 
 .suggestion-btn {
-  background: rgba(255, 255, 255, 0.03);   /* warm parchment tint, not cold white */
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14); /* stronger bottom definition */
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 12px;
-  color: var(--text-2);
+  color: var(--text);
   cursor: pointer;
   position: relative;
   font-family: var(--sans);
@@ -2149,7 +2145,7 @@ textarea:focus-visible {
   padding: 14px 24px;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  background: rgba(10, 11, 16, 0.70);
+  background: rgba(9, 9, 14, 0.80);
 }
 
 .diagram-type-btn {
@@ -2160,8 +2156,8 @@ textarea:focus-visible {
   /* More generous padding — these are feature entry points, not list items */
   padding: 11px 18px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: transparent;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: rgba(255,255,255,0.03);
   cursor: pointer;
   /* position: relative anchors the ::before gradient top-edge line */
   position: relative;

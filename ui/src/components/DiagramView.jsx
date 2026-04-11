@@ -277,11 +277,11 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
             onClick={() => setType("explore")}
             style={{
               background: diagramType === "explore"
-                ? "rgba(212,132,90,0.18)"
-                : "rgba(212,132,90,0.07)",
+                ? "rgba(91,143,249,0.14)"
+                : "rgba(91,143,249,0.04)",
               borderColor: diagramType === "explore"
-                ? "rgba(212,132,90,0.55)"
-                : "rgba(212,132,90,0.25)",
+                ? "rgba(91,143,249,0.55)"
+                : "rgba(91,143,249,0.20)",
             }}
           >
             <span className="diagram-type-icon" style={{ color: "var(--accent-soft)" }}><TabIcon id="explore" /></span>

@@ -86,7 +86,7 @@ function Diagram({ mermaid: rawText }) {
   if (error) return (
     <div style={{ padding: "8px 12px" }}>
       <div style={{
-        fontSize: 11, color: "rgba(212,132,90,0.7)", marginBottom: 6,
+        fontSize: 11, color: "rgba(91,143,249,0.80)", marginBottom: 6,
         fontFamily: "var(--mono)",
       }}>
         Diagram syntax error — {error.split("\n")[0].slice(0, 120)}
