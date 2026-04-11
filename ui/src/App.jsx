@@ -5,6 +5,24 @@ import Message from "./components/Message";
 import DiagramView from "./components/DiagramView";
 import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpPrompt, fetchAgentModels } from "./api";
 
+// ── Suggestion card icons ────────────────────────────────────────────────────
+// Simple 16×16 line-art SVGs for each suggestion category.
+// Kept inline so there's no icon-library dependency.
+const ICONS = {
+  architecture: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="2.5" r="1.5"/><circle cx="2.5" cy="13" r="1.5"/><circle cx="13.5" cy="13" r="1.5"/><path d="M8 4v3M8 7l-4 4.5M8 7l4 4.5"/></svg>,
+  entry:        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3H3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3"/><path d="M10 11l4-3-4-3"/><path d="M5 8h9"/></svg>,
+  classes:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="6" height="8" rx="1"/><rect x="9" y="1" width="6" height="4" rx="1"/><rect x="9" y="8" width="6" height="4" rx="1"/><path d="M7 8h2M7 10l2-2"/></svg>,
+  flow:         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 8h3l2-4 3 8 2-4h4"/></svg>,
+  functions:    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2a2 2 0 0 0-2 2v2a2 2 0 0 1-2 2 2 2 0 0 1 2 2v2a2 2 0 0 0 2 2"/><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2 2 2 0 0 0-2 2v2a2 2 0 0 1-2 2"/></svg>,
+  diagram:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="1" width="5" height="4" rx="1"/><rect x="10" y="1" width="5" height="4" rx="1"/><rect x="5" y="11" width="6" height="4" rx="1"/><path d="M3.5 5v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V5M8 8v3"/></svg>,
+  shield:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1L2 3.5v4.3C2 11.1 4.7 13.9 8 15c3.3-1.1 6-3.9 6-7.2V3.5L8 1z"/><path d="M5.5 8l1.5 1.5 3-3"/></svg>,
+  package:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1l7 4v6l-7 4L1 11V5l7-4z"/><path d="M1 5l7 4M15 5l-7 4M8 9v6"/></svg>,
+  compare:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3H2v10h3M11 3h3v10h-3"/><path d="M5 8h6M8 5l3 3-3 3"/></svg>,
+  complexity:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 14L6 6l3 4 2-5 3 8"/></svg>,
+  config:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="2"/><path d="M8 2v1M8 13v1M2 8H1M15 8h-1M3.9 3.9l.7.7M11.4 11.4l.7.7M3.9 12.1l.7-.7M11.4 4.6l.7-.7"/></svg>,
+  pattern:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="1" width="4" height="4" rx="1"/><rect x="6" y="1" width="4" height="4" rx="1"/><rect x="11" y="1" width="4" height="4" rx="1"/><rect x="1" y="6" width="4" height="4" rx="1"/><rect x="6" y="11" width="4" height="4" rx="1"/><rect x="11" y="6" width="4" height="4" rx="1"/></svg>,
+};
+
 export default function App() {
   const [repos, setRepos]           = useState([]);
   const [reposLoading, setReposLoading] = useState(true);
@@ -717,17 +735,25 @@ export default function App() {
                     <p>Searching <strong>{repos.length} indexed repos</strong> at once — {repos.map(r => r.slug.split("/")[1]).join(", ")}. Results show which repo each source comes from.</p>
                     <div className="suggestions">
                       {[
-                        "Compare the architectures of these repos — what patterns do they share?",
-                        "Which repo is most complex and what makes it that way?",
-                        "Find all the main entry points across these repos",
-                        "How do these repos handle configuration and environment setup?",
-                        "What are the common abstractions or design patterns across repos?",
-                      ].map(q => (
-                        <button key={q} className="suggestion-btn"
-                          onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
-                          {q}
-                        </button>
-                      ))}
+                        { icon: "compare", title: "Compare architectures", body: "What patterns do these repos share?" },
+                        { icon: "complexity", title: "Complexity analysis", body: "Which repo is most complex and why?" },
+                        { icon: "entry", title: "Entry points",       body: "Find all main entry points across repos" },
+                        { icon: "config",  title: "Configuration",    body: "How do these repos handle env & config?" },
+                        { icon: "pattern", title: "Design patterns",  body: "Common abstractions across all repos" },
+                      ].map(({ icon, title, body }) => {
+                        const q = `${title}: ${body}`;
+                        return (
+                          <button key={title} className="suggestion-btn"
+                            onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
+                            <span className="suggestion-icon">{ICONS[icon]}</span>
+                            <span className="suggestion-content">
+                              <span className="suggestion-title">{title}</span>
+                              <span className="suggestion-body">{body}</span>
+                            </span>
+                            <svg className="suggestion-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : !activeRepo || activeRepo === "all" ? (
@@ -781,21 +807,29 @@ export default function App() {
                     {agentMode ? (
                       <>
                         <div className="mode-hint" style={{ marginBottom: 12 }}>
-                          <strong>Agent mode</strong> runs the ReAct loop — search → observe → reason → search again. This is the same pattern used in production agents. Watch the tool calls trace as it works.
+                          <strong>Agent mode</strong> — search → observe → reason → search again. Watch the ReAct loop work in real time.
                         </div>
                         <div className="suggestions">
                           {[
-                            `Walk through ${activeRepo.split("/")[1]}'s architecture from entry point to output`,
-                            "What are the most important functions and how do they connect?",
-                            "Draw a diagram showing how the main components connect",
-                            "How is error handling and edge cases managed across the codebase?",
-                            "How does data flow from input to the final result?",
-                          ].map(q => (
-                            <button key={q} className="suggestion-btn"
-                              onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
-                              {q}
-                            </button>
-                          ))}
+                            { icon: "architecture", title: "Map the architecture",    body: `Walk ${activeRepo.split("/")[1]} from entry point to output` },
+                            { icon: "functions",    title: "Key functions",           body: "Most important functions and how they connect" },
+                            { icon: "diagram",      title: "Generate a diagram",      body: "Visual map of the main components" },
+                            { icon: "shield",       title: "Error handling",          body: "How edge cases are managed across the codebase" },
+                            { icon: "flow",         title: "Data flow",               body: "How data moves from input to final result" },
+                          ].map(({ icon, title, body }) => {
+                            const q = `${title}: ${body}`;
+                            return (
+                              <button key={title} className="suggestion-btn"
+                                onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
+                                <span className="suggestion-icon">{ICONS[icon]}</span>
+                                <span className="suggestion-content">
+                                  <span className="suggestion-title">{title}</span>
+                                  <span className="suggestion-body">{body}</span>
+                                </span>
+                                <svg className="suggestion-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+                              </button>
+                            );
+                          })}
                         </div>
                         <button className="graph-hint-btn" onClick={() => setView("graph")}>
                           Explore Diagrams for {activeRepo.split("/")[1]} →
@@ -803,20 +837,27 @@ export default function App() {
                       </>
                     ) : (
                       <>
-                        <p>Try one of these or ask your own:</p>
                         <div className="suggestions">
                           {[
-                            `What is the overall architecture of ${activeRepo.split("/")[1]}?`,
-                            "What are the main entry points and how does the code flow?",
-                            "What are the key classes and what does each one do?",
-                            "How is data processed and transformed through the system?",
-                            "What are the external dependencies and how are they used?",
-                          ].map(q => (
-                            <button key={q} className="suggestion-btn"
-                              onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
-                              {q}
-                            </button>
-                          ))}
+                            { icon: "architecture", title: "Overall architecture",  body: `How is ${activeRepo.split("/")[1]} structured?` },
+                            { icon: "entry",        title: "Entry points",          body: "Main entry points and how the code flows" },
+                            { icon: "classes",      title: "Key classes",           body: "What each major class does" },
+                            { icon: "flow",         title: "Data processing",       body: "How data is transformed through the system" },
+                            { icon: "package",      title: "Dependencies",          body: "External libraries and how they're used" },
+                          ].map(({ icon, title, body }) => {
+                            const q = `${title}: ${body}`;
+                            return (
+                              <button key={title} className="suggestion-btn"
+                                onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
+                                <span className="suggestion-icon">{ICONS[icon]}</span>
+                                <span className="suggestion-content">
+                                  <span className="suggestion-title">{title}</span>
+                                  <span className="suggestion-body">{body}</span>
+                                </span>
+                                <svg className="suggestion-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+                              </button>
+                            );
+                          })}
                         </div>
                         {/* Secondary action row — below suggestions so it doesn't compete */}
                         <div className="suggest-footer">

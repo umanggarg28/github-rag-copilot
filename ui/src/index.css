@@ -1330,10 +1330,22 @@ textarea:focus-visible {
   gap: 12px;
   max-width: 580px;
   width: 100%;
-  /* Some vertical padding keeps it from sitting right at the flex center line */
   padding-top: 16px;
   padding-bottom: 24px;
 }
+
+/* Staggered entrance for onboarding header + steps */
+@keyframes onboardIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.onboarding-header {
+  animation: onboardIn 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 0ms;
+}
+.onboarding-steps .onboarding-step:nth-child(2) { animation: onboardIn 380ms cubic-bezier(0.16, 1, 0.3, 1) 80ms both; }
+.onboarding-steps .onboarding-step:nth-child(3) { animation: onboardIn 380ms cubic-bezier(0.16, 1, 0.3, 1) 150ms both; }
+.onboarding-steps .onboarding-step:nth-child(4) { animation: onboardIn 380ms cubic-bezier(0.16, 1, 0.3, 1) 220ms both; }
 
 /* Header for onboarding section */
 .onboarding-header {
@@ -1506,6 +1518,7 @@ textarea:focus-visible {
 /* Suggest state */
 .suggest-state { max-width: 620px; width: 100%; text-align: center; padding-top: 16px; padding-bottom: 24px; }
 .suggest-state h2 {
+  animation: onboardIn 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
   font-size: 48px;
   font-weight: 300;
   font-family: "Anthropic Serif", Georgia, serif;
@@ -1516,6 +1529,7 @@ textarea:focus-visible {
   text-shadow: 0 0 80px rgba(91,143,249,0.20);
 }
 .suggest-state > p {
+  animation: onboardIn 380ms cubic-bezier(0.16, 1, 0.3, 1) 60ms both;
   font-size: 13.5px;
   color: var(--text-2);
   margin-bottom: 20px;
@@ -1525,66 +1539,106 @@ textarea:focus-visible {
 .suggestions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
   margin-bottom: 18px;
 }
 
+/* Staggered entrance — each card slides up with a short delay */
+@keyframes suggestionIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.suggestions .suggestion-btn:nth-child(1) { animation-delay: 40ms; }
+.suggestions .suggestion-btn:nth-child(2) { animation-delay: 90ms; }
+.suggestions .suggestion-btn:nth-child(3) { animation-delay: 140ms; }
+.suggestions .suggestion-btn:nth-child(4) { animation-delay: 190ms; }
+.suggestions .suggestion-btn:nth-child(5) { animation-delay: 240ms; }
+
 .suggestion-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
   color: var(--text);
   cursor: pointer;
-  position: relative;
   font-family: var(--sans);
-  font-size: 13.5px;
-  font-weight: 450;
-  padding: 13px 18px 13px 20px;
+  padding: 13px 14px 13px 14px;
   text-align: left;
-  transition: border-color var(--transition), background var(--transition), color var(--transition), transform var(--transition), box-shadow var(--transition);
-  letter-spacing: -0.01em;
-  box-shadow:
-    rgba(255, 255, 255, 0.04) 0px 0px 20px 0px inset,
-    rgba(91, 143, 249, 0.06)  0px 4px 20px 0px;
+  transition: border-color var(--transition), background var(--transition), transform var(--transition), box-shadow var(--transition);
+  animation: suggestionIn 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.15);
 }
 
 .suggestion-btn:hover {
-  border-color: rgba(91, 143, 249, 0.65);
-  background: rgba(91, 143, 249, 0.12);
-  color: var(--text);
-  transform: translateX(3px);
+  border-color: rgba(91, 143, 249, 0.50);
+  background: rgba(91, 143, 249, 0.08);
+  transform: translateY(-2px) translateX(1px);
   box-shadow:
-    rgba(255, 255, 255, 0.25) 0px 0px 24px 0px inset,
-    rgba(91, 143, 249, 0.55)  0px 0px 28px 0px,
-    rgba(91, 143, 249, 0.75)  0px 0px 0px 1px,
-    rgba(91, 143, 249, 0.15)  0px 0px 80px 0px;
+    0 0 0 1px rgba(91, 143, 249, 0.45),
+    0 0 24px rgba(91, 143, 249, 0.18),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.suggestion-btn:hover .suggestion-icon {
+  background: rgba(91, 143, 249, 0.18);
+  border-color: rgba(91, 143, 249, 0.40);
+  color: var(--accent-soft);
+}
+.suggestion-btn:hover .suggestion-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+  color: var(--accent-soft);
 }
 
-.suggestion-btn::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2px;
-  height: 55%;
-  border-radius: 1px;
-  background: var(--accent-border);
-  transition: background var(--transition), height var(--transition);
-}
-.suggestion-btn:hover::before {
-  background: var(--accent);
-  height: 75%;
+/* Icon container — rounded square with subtle accent tint */
+.suggestion-icon {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
 }
 
-.suggestion-btn::after {
-  content: " →";
+/* Text content — title + subtitle */
+.suggestion-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.suggestion-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.018em;
+  line-height: 1.3;
+}
+.suggestion-body {
+  font-size: 12px;
   color: var(--muted);
-  transition: color var(--transition);
-  opacity: 0.7;
+  letter-spacing: -0.008em;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.suggestion-btn:hover::after { color: var(--accent-soft); opacity: 1; }
+
+/* Arrow — dim by default, slides right on hover */
+.suggestion-arrow {
+  opacity: 0.30;
+  flex-shrink: 0;
+  transition: opacity var(--transition), transform var(--transition), color var(--transition);
+  color: var(--muted);
+}
 
 /* ── Mode description — one-line explanation below each pill group ── */
 .mode-description {
