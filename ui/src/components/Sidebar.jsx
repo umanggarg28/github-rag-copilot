@@ -301,7 +301,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
         <form className="ingest-form" onSubmit={handleIngest}>
           <input
             type="text"
-            placeholder="github.com/karpathy/nanoGPT"
+            placeholder="github.com/owner/repo"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             disabled={isIngesting}
