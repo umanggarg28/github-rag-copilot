@@ -306,8 +306,8 @@ textarea:focus-visible {
 .sidebar-section {
   display: flex;
   flex-direction: column;
-  padding-top: 18px;
-  padding-bottom: 12px;
+  padding-top: 16px;
+  padding-bottom: 10px;
   /* Gradient divider: fades from accent color → transparent → transparent.
      More premium than a solid 1px border. */
   border-top: none;
@@ -336,69 +336,74 @@ textarea:focus-visible {
   background: linear-gradient(90deg, rgba(91, 143, 249, 0.25) 0%, transparent 100%);
 }
 
-/* ── Ingest card — wraps the form + try-these to give primary action visual weight ── */
+/* ── Ingest card — frameless, the form IS the UI. No box needed. ──────────── */
 .ingest-card {
-  /* surface-3 on #0A0B10 sidebar = clearly elevated */
-  background: var(--surface-3);
-  border: 1px solid var(--border-strong);
-  border-radius: 16px;
-  padding: 12px;
   position: relative;
-  overflow: hidden;
-  /* Subtle depth: very faint warm bloom + top-edge inner highlight */
-  box-shadow:
-    rgba(91, 143, 249, 0.08) 0px 8px 36px 0px,
-    rgba(255, 255, 255, 0.06) 0px 1px 0px 0px inset;
-  transition: border-color var(--transition), box-shadow var(--transition);
-}
-/* Blue top-accent stripe — visual anchor for the primary action area */
-.ingest-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(91, 143, 249, 0.45) 40%, rgba(91, 143, 249, 0.45) 60%, transparent 100%);
-  border-radius: 16px 16px 0 0;
-}
-.ingest-card:focus-within {
-  border-color: var(--accent-border);
-  box-shadow:
-    rgba(91, 143, 249, 0.28) 0px 8px 36px 0px,
-    rgba(91, 143, 249, 0.12) 0px 1px 0px 0px inset;
-}
-.ingest-card:focus-within::before {
-  background: linear-gradient(90deg, transparent 0%, var(--accent) 35%, var(--accent) 65%, transparent 100%);
 }
 
-/* ── Ingest form ──────────────────────────────────────────── */
-.ingest-form { display: flex; flex-direction: column; gap: 8px; }
+/* ── Ingest form — search-bar style: input + button in one row ──────────── */
+.ingest-form {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
 
 .ingest-form input {
-  /* Recessed field — dark well, clearly inset against the card surface */
-  background: rgba(14, 12, 10, 0.65);
+  /* Premium URL input: monospace, dark, minimal border — the developer aesthetic */
+  background: rgba(255, 255, 255, 0.045);
   border: 1px solid rgba(255, 255, 255, 0.10);
-  border-bottom-color: rgba(255, 255, 255, 0.18); /* stronger bottom edge = modern form feel */
-  border-radius: var(--radius);
+  border-radius: 11px;
   color: var(--text);
-  font-size: 13px;
-  font-family: var(--sans);
-  padding: 9px 11px;
+  font-size: 12px;
+  font-family: var(--mono);
+  /* Right padding leaves room for the inline submit button */
+  padding: 11px 80px 11px 13px;
   outline: none;
-  /* Inner shadow for depth */
-  box-shadow: inset 0 2px 5px rgba(0,0,0,0.35);
-  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
   width: 100%;
+  letter-spacing: -0.01em;
 }
 
 .ingest-form input:focus {
-  border-color: var(--accent-border);
-  border-bottom-color: var(--accent);
-  background: rgba(14, 12, 10, 0.85);
-  box-shadow: inset 0 2px 5px rgba(0,0,0,0.30), 0 0 0 2px var(--accent-dim);
+  border-color: rgba(91, 143, 249, 0.50);
+  box-shadow: 0 0 0 3px rgba(91, 143, 249, 0.10);
+  background: rgba(255, 255, 255, 0.06);
 }
-.ingest-form input::placeholder { color: var(--faint); }
+.ingest-form input::placeholder {
+  color: rgba(200, 210, 240, 0.28);
+  font-family: var(--mono);
+}
+
+/* Submit button floats inside the input field on the right */
+.ingest-form .btn {
+  position: absolute !important;
+  right: 5px;
+  top: 5px;
+  bottom: 5px;
+  height: auto;
+  padding: 0 11px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border-radius: 7px;
+  /* Softer blue — doesn't compete with the input */
+  background: rgba(91, 143, 249, 0.70);
+  border: 1px solid rgba(91, 143, 249, 0.40);
+  box-shadow: none;
+  transform: none;
+}
+.ingest-form .btn:hover {
+  background: rgba(91, 143, 249, 0.90);
+  box-shadow: 0 2px 12px rgba(91, 143, 249, 0.30);
+  transform: none;
+  opacity: 1;
+}
+.ingest-form .btn:disabled {
+  background: rgba(91, 143, 249, 0.25);
+  border-color: transparent;
+  opacity: 1;
+}
 
 /* ── Buttons ──────────────────────────────────────────────── */
 .btn {
@@ -465,8 +470,8 @@ textarea:focus-visible {
   padding: 7px 10px;
   border-radius: var(--radius);
   cursor: pointer;
-  /* 3px leaves room for the active accent stripe without layout shift */
-  border-left: 3px solid transparent;
+  /* 2px left accent — cleaner, less dominant */
+  border-left: 2px solid transparent;
   transition: background var(--transition), border-left-color var(--transition), box-shadow var(--transition);
   gap: 7px;
 }
@@ -526,16 +531,12 @@ textarea:focus-visible {
 }
 
 .repo-count {
-  font-size: 10px;
-  color: var(--muted);
-  background: rgba(255, 255, 255,0.07);
-  border: 1px solid var(--border);
-  padding: 1px 6px;
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
+  font-size: 10.5px;
+  color: rgba(200, 210, 240, 0.35);
   font-family: var(--mono);
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-weight: 500;
+  flex-shrink: 0;
+  letter-spacing: -0.01em;
 }
 
 .repo-delete {
@@ -556,25 +557,26 @@ textarea:focus-visible {
 /* ── Mode pills — Raycast-style dark track container with springy active state ─ */
 .mode-pills {
   display: flex;
-  gap: 3px;
-  background: rgba(0, 0, 0, 0.30);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 10px;
-  padding: 3px;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 9px;
+  padding: 2px;
 }
 
 .pill {
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 7px;
-  color: var(--text-2);
+  border-radius: 6px;
+  color: rgba(200, 210, 240, 0.50);
   cursor: pointer;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
-  padding: 5px 13px;
-  transition: box-shadow var(--transition), background var(--transition), color var(--transition), border-color var(--transition);
+  padding: 4px 11px;
+  transition: background 150ms ease, color 150ms ease;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .pill:hover {
@@ -585,14 +587,13 @@ textarea:focus-visible {
 }
 
 .pill.active {
-  background: rgba(91, 143, 249, 0.85);
-  border-color: rgba(200, 220, 255, 0.20);
+  background: linear-gradient(160deg, #4A7FE8 0%, #5B8FF9 60%, #7DABFF 100%);
+  border-color: rgba(200, 220, 255, 0.18);
   color: #fff;
-  box-shadow: 0 2px 12px rgba(91, 143, 249, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.20);
   font-weight: 600;
   box-shadow:
-    rgba(91, 143, 249, 0.50) 0px 2px 12px 0px,
-    rgba(200, 220, 255, 0.20) 0px 1px 0px 0px inset;
+    0 2px 10px rgba(91, 143, 249, 0.40),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1581,18 +1582,18 @@ textarea:focus-visible {
   padding: 0 2px;
 }
 
-/* ── Try-these repo chips ── */
+/* ── Try-these repo chips — tiny monospace chips, utility not decoration ── */
 .try-repo-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
+  gap: 4px;
+  margin-top: 7px;
 }
 .try-repo-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: rgba(91, 143, 249, 0.10);
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(91, 143, 249, 0.30);
   border-radius: var(--radius-full);
   padding: 3px 9px;
@@ -1604,9 +1605,9 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 .try-repo-chip:hover {
-  background: var(--accent-dim);
-  border-color: var(--accent-border);
-  color: var(--text);
+  background: rgba(91, 143, 249, 0.10);
+  border-color: rgba(91, 143, 249, 0.30);
+  color: var(--text-2);
 }
 
 /* ── Contextual retrieval tip — sits inside the repos section ── */
