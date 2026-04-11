@@ -1459,7 +1459,7 @@ textarea:focus-visible {
 }
 
 /* Suggest state */
-.suggest-state { max-width: 620px; width: 100%; text-align: center; }
+.suggest-state { max-width: 620px; width: 100%; text-align: center; padding-bottom: 56px; }
 .suggest-state h2 {
   font-size: 44px;
   font-weight: 400;
