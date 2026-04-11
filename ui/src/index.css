@@ -547,12 +547,17 @@ textarea:focus-visible {
 }
 
 .repo-count {
-  font-size: 10.5px;
-  color: rgba(200, 210, 240, 0.35);
+  font-size: 10px;
+  color: rgba(200, 210, 240, 0.55);
   font-family: var(--mono);
   font-weight: 500;
   flex-shrink: 0;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 5px;
+  padding: 1px 6px;
+  cursor: default;
 }
 
 .repo-delete {
@@ -572,12 +577,13 @@ textarea:focus-visible {
 
 /* ── Mode pills — Raycast-style dark track container with springy active state ─ */
 .mode-pills {
-  display: flex;
+  display: inline-flex;
   gap: 2px;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 9px;
   padding: 2px;
+  width: fit-content;
 }
 
 .pill {
@@ -1327,11 +1333,19 @@ textarea:focus-visible {
 .onboarding-steps {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 580px;
+  gap: 0;
+  max-width: 640px;
   width: 100%;
-  padding-top: 16px;
+  padding-top: 12px;
   padding-bottom: 24px;
+}
+
+/* 3-column grid for the three steps */
+.onboarding-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
 }
 
 /* Staggered entrance for onboarding header + steps */
@@ -1380,13 +1394,12 @@ textarea:focus-visible {
 }
 
 .onboarding-headline {
-  /* 76px — fills the viewport, impossible to miss */
-  font-size: 76px;
+  font-size: 50px;
   font-weight: 300;
   font-family: "Anthropic Serif", Georgia, serif;
-  letter-spacing: -0.045em;
-  line-height: 0.95;
-  margin-bottom: 20px;
+  letter-spacing: -0.040em;
+  line-height: 1.0;
+  margin-bottom: 10px;
   color: #FFFFFF;
 }
 
@@ -1402,32 +1415,32 @@ textarea:focus-visible {
 }
 
 .onboarding-sub {
-  font-size: 17px;
+  font-size: 14px;
   color: var(--text-2);
-  line-height: 1.60;
-  letter-spacing: -0.015em;
-  max-width: 460px;
+  line-height: 1.55;
+  letter-spacing: -0.012em;
+  max-width: 400px;
   margin: 0 auto;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .onboarding-step {
   display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  background: rgba(15, 15, 24, 0.90);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 16px;
-  padding: 18px 20px;
+  flex-direction: column;
+  gap: 10px;
+  background: rgba(15, 15, 24, 0.80);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 14px;
+  padding: 16px;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   transition: border-color 200ms ease, background 200ms ease, box-shadow 200ms ease, transform 200ms ease;
 }
 
 .onboarding-step:hover {
-  border-color: rgba(255,255,255,0.14);
-  transform: translateY(-3px);
-  box-shadow: 0 12px 36px rgba(0,0,16,0.5), 0 0 0 1px rgba(91,143,249,0.12);
+  border-color: rgba(91,143,249,0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,16,0.4), 0 0 0 1px rgba(91,143,249,0.10);
 }
 
 /* Completed steps compress — description hidden, only title remains */
@@ -1489,18 +1502,17 @@ textarea:focus-visible {
 }
 
 .onboarding-step strong {
-  font-size: 14.5px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 650;
   color: #FFFFFF;
   display: block;
-  margin-bottom: 5px;
-  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+  letter-spacing: -0.018em;
 }
 .onboarding-step p {
-  font-size: 13px;
-  /* text-2 not muted — this is the body of a learning step, not decoration */
-  color: var(--text-2);
-  margin: 3px 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin: 2px 0;
   line-height: 1.55;
 }
 .onboarding-step code {

@@ -475,7 +475,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
                       {r.contextual_at && (
                         <span className="repo-contextual" title={`Contextual retrieval applied — re-indexed ${timeAgo(r.contextual_at)}`}>✦</span>
                       )}
-                      <span className="repo-count">{r.chunks}</span>
+                      <span className="repo-count" title={`${r.chunks} indexed code chunks`}>{r.chunks}</span>
                     </div>
                   </div>
                   <div className="repo-item-actions">

@@ -8,19 +8,25 @@ import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpProm
 // ── Suggestion card icons ────────────────────────────────────────────────────
 // Simple 16×16 line-art SVGs for each suggestion category.
 // Kept inline so there's no icon-library dependency.
+// Clean Octicons-inspired icons — 16×16 filled/stroked, consistent 1.5px stroke
 const ICONS = {
-  architecture: <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="2.5" r="1.5"/><circle cx="2.5" cy="13" r="1.5"/><circle cx="13.5" cy="13" r="1.5"/><path d="M8 4v3M8 7l-4 4.5M8 7l4 4.5"/></svg>,
-  entry:        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3H3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3"/><path d="M10 11l4-3-4-3"/><path d="M5 8h9"/></svg>,
-  classes:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="6" height="8" rx="1"/><rect x="9" y="1" width="6" height="4" rx="1"/><rect x="9" y="8" width="6" height="4" rx="1"/><path d="M7 8h2M7 10l2-2"/></svg>,
-  flow:         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 8h3l2-4 3 8 2-4h4"/></svg>,
-  functions:    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2a2 2 0 0 0-2 2v2a2 2 0 0 1-2 2 2 2 0 0 1 2 2v2a2 2 0 0 0 2 2"/><path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2 2 2 0 0 0-2 2v2a2 2 0 0 1-2 2"/></svg>,
-  diagram:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="1" width="5" height="4" rx="1"/><rect x="10" y="1" width="5" height="4" rx="1"/><rect x="5" y="11" width="6" height="4" rx="1"/><path d="M3.5 5v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V5M8 8v3"/></svg>,
-  shield:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1L2 3.5v4.3C2 11.1 4.7 13.9 8 15c3.3-1.1 6-3.9 6-7.2V3.5L8 1z"/><path d="M5.5 8l1.5 1.5 3-3"/></svg>,
-  package:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 1l7 4v6l-7 4L1 11V5l7-4z"/><path d="M1 5l7 4M15 5l-7 4M8 9v6"/></svg>,
-  compare:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3H2v10h3M11 3h3v10h-3"/><path d="M5 8h6M8 5l3 3-3 3"/></svg>,
-  complexity:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 14L6 6l3 4 2-5 3 8"/></svg>,
-  config:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="2"/><path d="M8 2v1M8 13v1M2 8H1M15 8h-1M3.9 3.9l.7.7M11.4 11.4l.7.7M3.9 12.1l.7-.7M11.4 4.6l.7-.7"/></svg>,
-  pattern:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="1" width="4" height="4" rx="1"/><rect x="6" y="1" width="4" height="4" rx="1"/><rect x="11" y="1" width="4" height="4" rx="1"/><rect x="1" y="6" width="4" height="4" rx="1"/><rect x="6" y="11" width="4" height="4" rx="1"/><rect x="11" y="6" width="4" height="4" rx="1"/></svg>,
+  // Suggestion card icons
+  architecture: <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8.75 3.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM3.75 11.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM13.75 11.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM8 5.5a.5.5 0 0 0-.5.5v1.5H5.06A2.25 2.25 0 1 0 5 9.25h.06l.44.44V11a2.25 2.25 0 1 0 1.5.04V9.69l.44-.44H11a2.25 2.25 0 1 0-.06-1.5H8.5V6a.5.5 0 0 0-.5-.5Z"/></svg>,
+  entry:        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 1h6.5c.966 0 1.75.784 1.75 1.75v2.5a.75.75 0 0 1-1.5 0v-2.5a.25.25 0 0 0-.25-.25h-6.5a.25.25 0 0 0-.25.25v11.5c0 .138.112.25.25.25h6.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 8.25 15h-6.5A1.75 1.75 0 0 1 0 13.25V2.75C0 1.784.784 1 1.75 1Zm9.42 7.75-3.22 3.22a.75.75 0 1 1-1.06-1.06l1.97-1.97H3.75a.75.75 0 0 1 0-1.5h5.11L6.89 5.47a.75.75 0 1 1 1.06-1.06l3.22 3.22a.75.75 0 0 1 0 1.06Z"/></svg>,
+  classes:      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M14.064 0h.186C15.216 0 16 .784 16 1.75v.186a8.752 8.752 0 0 1-2.564 6.186l-.458.459c-.314.314-.641.616-.979.904v3.207l-2.209 3.322A.75.75 0 0 1 9 15.75v-4.055c-.338-.288-.665-.59-.979-.904l-.458-.459A8.752 8.752 0 0 1 5 4.136V3.75A.75.75 0 0 1 5.75 3H9.5l-1.75 2h3.5l-1 2h2.25l1-4h.064ZM4.751 7.5H1a.75.75 0 0 0 0 1.5h2.37L4.75 7.5Zm.375 2.5L3.75 12.5H7l1.376-2.5H5.126Z"/></svg>,
+  flow:         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M11.28 12.78a.75.75 0 0 1-1.06-1.06l1.72-1.72H6.75a3.25 3.25 0 0 1-3.25-3.25v-3a.75.75 0 0 1 1.5 0v3a1.75 1.75 0 0 0 1.75 1.75h5.19l-1.72-1.72a.75.75 0 1 1 1.06-1.06l3 3a.75.75 0 0 1 0 1.06l-3 3Z"/></svg>,
+  functions:    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4.72.22a.75.75 0 0 1 1.06 0L9.53 4 8.47 5.06 5.25 1.84 3.28 3.81l1.5 1.5a.75.75 0 0 1-1.06 1.06L2.22 4.87a.75.75 0 0 1 0-1.06L4.72.22ZM11.28 11.78a.75.75 0 0 1-1.06 0L6.47 8 7.53 6.94l3.22 3.22 1.97-1.97-1.5-1.5a.75.75 0 1 1 1.06-1.06l1.5 1.5a.75.75 0 0 1 0 1.06l-2.5 2.59ZM1.5 8.75h.69l.5-2H2a.75.75 0 0 1 0-1.5h1.19l.41-1.66a.75.75 0 1 1 1.46.36l-.33 1.3H6l.41-1.66a.75.75 0 1 1 1.46.36L7.5 5.25h.75a.75.75 0 0 1 0 1.5H7.19l-.5 2H8a.75.75 0 0 1 0 1.5H6.31l-.41 1.66a.75.75 0 1 1-1.46-.36l.33-1.3H3.5l-.41 1.66a.75.75 0 0 1-1.46-.36L2 8.75H1.5a.75.75 0 0 1 0-1.5h-.5Zm2.5 0h1.5l.5-2h-1.5l-.5 2Z"/></svg>,
+  diagram:      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l1.22 1.22a.75.75 0 0 1-1.06 1.06L7.75 12.81l-1.47 1.47a.75.75 0 0 1-1.06-1.06L6.44 12H2.75A1.75 1.75 0 0 1 1 10.25v-7.5Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25H2.75Z"/></svg>,
+  shield:       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M7.467.133a1.748 1.748 0 0 1 1.066 0l5.25 1.68A1.75 1.75 0 0 1 15 3.48V7c0 1.566-.32 3.182-1.303 4.682-.983 1.498-2.585 2.813-5.032 3.855a1.697 1.697 0 0 1-1.33 0c-2.447-1.042-4.049-2.357-5.032-3.855C1.32 10.182 1 8.566 1 7V3.48a1.75 1.75 0 0 1 1.217-1.667Zm.61 1.429a.25.25 0 0 0-.153 0l-5.25 1.68a.25.25 0 0 0-.174.238V7c0 1.358.275 2.666 1.057 3.86.784 1.194 2.121 2.34 4.366 3.297a.196.196 0 0 0 .154 0c2.245-.956 3.582-2.104 4.366-3.298C13.225 9.666 13.5 8.36 13.5 7V3.48a.25.25 0 0 0-.174-.237l-5.25-1.68ZM11.28 6.28l-3.5 3.5a.75.75 0 0 1-1.06 0l-1.5-1.5a.75.75 0 0 1 1.06-1.06l.97.97 2.97-2.97a.75.75 0 0 1 1.06 1.06Z"/></svg>,
+  package:      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8.878.392a1.75 1.75 0 0 0-1.756 0l-5.25 3.045A1.75 1.75 0 0 0 1 4.951v6.098c0 .624.332 1.2.872 1.514l5.25 3.045a1.75 1.75 0 0 0 1.756 0l5.25-3.045c.54-.313.872-.89.872-1.514V4.951c0-.624-.332-1.2-.872-1.514Zm-.438 1.297a.25.25 0 0 1 .25 0l2.688 1.559-4.003 2.32-2.929-1.71Zm.31 4.171v5.058l-4.25-2.464V5.745Zm1.5 5.058V5.745l4.25-2.464v5.07Z"/></svg>,
+  compare:      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M9.78 12.78a.75.75 0 0 1-1.06-1.06l1.97-1.97H5.75a3.25 3.25 0 0 1-3.25-3.25v-3a.75.75 0 0 1 1.5 0v3a1.75 1.75 0 0 0 1.75 1.75h4.94l-1.97-1.97a.75.75 0 1 1 1.06-1.06l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25Z"/></svg>,
+  complexity:   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.75V13.5h13.75a.75.75 0 0 1 0 1.5H.75a.75.75 0 0 1-.75-.75V1.75a.75.75 0 0 1 1.5 0Zm14.28 2.53-5.25 5.25a.75.75 0 0 1-1.06 0L7 7.06 4.28 9.78a.75.75 0 0 1-1.06-1.06l3.25-3.25a.75.75 0 0 1 1.06 0L9.97 7.94l4.72-4.72a.75.75 0 1 1 1.06 1.06Z"/></svg>,
+  config:       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8.2 8.2 0 0 1 .701.031C9.444.095 9.99.645 10.16 1.29l.288 1.107c.018.066.079.158.212.224.231.114.454.243.668.386.123.082.233.09.299.071l1.103-.303c.644-.176 1.392.021 1.82.63.27.385.506.792.704 1.218.315.675.111 1.422-.364 1.891l-.814.806c-.049.048-.098.147-.088.294.016.257.016.515 0 .772-.01.147.038.246.088.294l.814.806c.475.469.679 1.216.364 1.891a7.977 7.977 0 0 1-.704 1.217c-.428.61-1.176.807-1.82.63l-1.103-.303c-.066-.019-.176-.011-.299.071a5.909 5.909 0 0 1-.668.386c-.133.066-.194.158-.211.224l-.29 1.106c-.168.646-.715 1.196-1.458 1.26a8.006 8.006 0 0 1-1.402 0c-.743-.064-1.289-.614-1.458-1.26l-.289-1.106c-.018-.066-.079-.158-.212-.224a5.738 5.738 0 0 1-.668-.386c-.123-.082-.233-.09-.299-.071l-1.103.303c-.644.176-1.392-.021-1.82-.63a8.12 8.12 0 0 1-.704-1.218c-.315-.675-.111-1.422.363-1.891l.815-.806c.05-.048.098-.147.088-.294a6.214 6.214 0 0 1 0-.772c.01-.147-.038-.246-.088-.294l-.815-.806C.635 6.045.431 5.298.746 4.623a7.92 7.92 0 0 1 .704-1.217c.428-.61 1.176-.807 1.82-.63l1.103.303c.066.019.176.011.299-.071.214-.143.437-.272.668-.386.133-.066.194-.158.211-.224l.29-1.106C6.009.645 6.556.095 7.299.03 7.531.01 7.764 0 8 0Zm-.571 1.525c-.036.003-.108.036-.137.146l-.289 1.105c-.147.561-.549.967-.998 1.189-.173.086-.34.183-.5.29-.417.278-.97.423-1.529.27l-1.103-.303c-.109-.03-.175.016-.195.045-.22.312-.412.644-.573.99-.014.031-.021.11.059.19l.815.806c.411.406.562.957.53 1.456a4.709 4.709 0 0 0 0 .582c.032.499-.119 1.05-.53 1.456l-.815.806c-.081.08-.073.159-.059.19.162.346.353.677.573.989.02.03.085.076.195.046l1.102-.303c.56-.153 1.113-.008 1.53.27.161.107.328.204.501.29.447.222.85.629.997 1.189l.289 1.105c.029.109.101.143.137.146a6.6 6.6 0 0 0 1.142 0c.036-.003.108-.036.137-.146l.289-1.105c.147-.561.549-.967.998-1.189.173-.086.34-.183.5-.29.417-.278.97-.423 1.529-.27l1.103.303c.109.029.175-.016.195-.045.22-.313.411-.644.573-.99.014-.031.021-.11-.059-.19l-.815-.806c-.411-.406-.562-.957-.53-1.456a4.709 4.709 0 0 0 0-.582c-.032-.499.119-1.05.53-1.456l.815-.806c.081-.08.073-.159.059-.19a6.464 6.464 0 0 0-.573-.989c-.02-.03-.085-.076-.195-.046l-1.102.303c-.56.153-1.113.008-1.53-.27a4.44 4.44 0 0 0-.501-.29c-.447-.222-.85-.629-.997-1.189l-.289-1.105c-.029-.11-.101-.143-.137-.146a6.6 6.6 0 0 0-1.142 0ZM11 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9.5 8a1.5 1.5 0 1 0-3.001.001A1.5 1.5 0 0 0 9.5 8Z"/></svg>,
+  pattern:      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h1.5c.966 0 1.75.784 1.75 1.75v1.5A1.75 1.75 0 0 1 4.25 6h-1.5A1.75 1.75 0 0 1 1 4.25Zm1.75-.25a.25.25 0 0 0-.25.25v1.5c0 .138.112.25.25.25h1.5a.25.25 0 0 0 .25-.25v-1.5a.25.25 0 0 0-.25-.25ZM1 11.75C1 10.784 1.784 10 2.75 10h1.5c.966 0 1.75.784 1.75 1.75v1.5A1.75 1.75 0 0 1 4.25 15h-1.5A1.75 1.75 0 0 1 1 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v1.5c0 .138.112.25.25.25h1.5a.25.25 0 0 0 .25-.25v-1.5a.25.25 0 0 0-.25-.25Zm5.5-9.5C8.25 1 9.034 1.784 9.034 2.75v1.5a1.75 1.75 0 0 1-1.75 1.75h-1.5A1.75 1.75 0 0 1 4.034 4.25v-1.5C4.034 1.784 4.818 1 5.784 1h1.5v.25ZM8.25 1h1.5c.966 0 1.75.784 1.75 1.75v1.5A1.75 1.75 0 0 1 9.75 6h-1.5A1.75 1.75 0 0 1 6.5 4.25v-1.5C6.5 1.784 7.284 1 8.25 1Zm.25 1.5a.25.25 0 0 0-.25.25v1.5c0 .138.112.25.25.25h1.5a.25.25 0 0 0 .25-.25v-1.5a.25.25 0 0 0-.25-.25Zm3.25-.75c0-.966.784-1.75 1.75-1.75h1.5c.966 0 1.75.784 1.75 1.75v1.5A1.75 1.75 0 0 1 15 6h-1.5a1.75 1.75 0 0 1-1.75-1.75Zm1.75-.25a.25.25 0 0 0-.25.25v1.5c0 .138.112.25.25.25H15a.25.25 0 0 0 .25-.25v-1.5A.25.25 0 0 0 15 1.5Zm-3.25 9.5a1.75 1.75 0 0 0-1.75 1.75v1.5c0 .966.784 1.75 1.75 1.75h1.5A1.75 1.75 0 0 0 15 13.25v-1.5A1.75 1.75 0 0 0 13.5 10Zm-.25 1.75a.25.25 0 0 1 .25-.25h1.5a.25.25 0 0 1 .25.25v1.5a.25.25 0 0 1-.25.25h-1.5a.25.25 0 0 1-.25-.25Z"/></svg>,
+  // Onboarding step icons
+  github:  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>,
+  chat:    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.75C1 1.784 1.784 1 2.75 1h10.5c.966 0 1.75.784 1.75 1.75v7.5A1.75 1.75 0 0 1 13.25 12H9.06l-2.573 2.573A1.457 1.457 0 0 1 4 13.543V12H2.75A1.75 1.75 0 0 1 1 10.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h4.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>,
+  explore: <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm3.94-1.5 2.656.886 1.316-1.316a.75.75 0 0 1 1.09 1.03l-.03.03-1.316 1.316.887 2.657a.75.75 0 0 1-.975.975l-4-2a.75.75 0 0 1-.31-.31l-2-4a.75.75 0 0 1 .975-.975l4 2Zm.16 2.11L4.5 9.5l1.89.63-.69-2.07Zm1.74.5.63 1.89 1.07-1.07-.63-1.89-.07.07-1 1Z"/></svg>,
 };
 
 export default function App() {
@@ -761,8 +767,8 @@ export default function App() {
                   // No repo selected yet (landing), or All repos selected but nothing indexed
                   <div className="onboarding-steps">
                     <div className="onboarding-header">
-                      <svg width="72" height="72" viewBox="0 0 24 24" fill="none"
-                        style={{ marginBottom: 14, filter: "drop-shadow(0 0 18px rgba(91,143,249,0.65)) drop-shadow(0 0 6px rgba(91,143,249,0.90))" }}>
+                      <svg width="60" height="60" viewBox="0 0 24 24" fill="none"
+                        style={{ marginBottom: 12, filter: "drop-shadow(0 0 8px rgba(91,143,249,0.70))" }}>
                         {/* N — pulses bright */}
                         <path className="compass-north" d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
                         {/* S — delayed fade */}
@@ -777,26 +783,21 @@ export default function App() {
                       <div className="onboarding-headline">Map <em>any</em> codebase</div>
                       <div className="onboarding-sub">Index any public repo and ask questions about the code — architecture, data flow, classes, functions, and more.</div>
                     </div>
-                    <div className="onboarding-step active">
-                      <span className="step-num">1</span>
-                      <div>
-                        <strong>Paste a GitHub URL in the sidebar</strong>
-                        <p>e.g. <code>github.com/karpathy/nanoGPT</code> — indexes every function and class.</p>
-                      </div>
-                    </div>
-                    <div className="onboarding-step">
-                      <span className="step-num">2</span>
-                      <div>
-                        <strong>Ask anything about the code</strong>
-                        <p>e.g. <em>"How does the main loop work?"</em> — finds relevant code and explains it with citations.</p>
-                      </div>
-                    </div>
-                    <div className="onboarding-step">
-                      <span className="step-num">3</span>
-                      <div>
-                        <strong>Use Explore to map the structure</strong>
-                        <p>Generates a concept map of key components and how they connect.</p>
-                      </div>
+                    <div className="onboarding-grid">
+                      {[
+                        { icon: "github",  num: 1, title: "Paste a GitHub URL", body: "Index any public repo — every function and class." },
+                        { icon: "chat",    num: 2, title: "Ask about the code",  body: "\"How does the main loop work?\" — cited answers." },
+                        { icon: "explore", num: 3, title: "Explore the structure", body: "Concept map of key components and how they connect." },
+                      ].map(({ icon, num, title, body }, i) => (
+                        <div key={num} className="onboarding-step active"
+                          style={{ animationDelay: `${80 + i * 90}ms` }}>
+                          <span className="suggestion-icon" style={{ marginBottom: 4 }}>{ICONS[icon]}</span>
+                          <div>
+                            <strong>{title}</strong>
+                            <p>{body}</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ) : (
