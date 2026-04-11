@@ -305,7 +305,11 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     }
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  // !!data as dep: ExploreView has early returns for loading/error/null states,
+  // so wrapRef.current is null on first mount. Re-run once data arrives and the
+  // canvas wrapper is actually in the DOM. Cleanup removes the old listener
+  // before reattaching, so there's no double-registration risk.
+  }, [!!data]);
 
   // ── Pan handlers ──────────────────────────────────────────────────────────
   // We attach mousemove/mouseup to the DOCUMENT rather than the wrapper div.
