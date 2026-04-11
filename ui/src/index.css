@@ -360,8 +360,8 @@ textarea:focus-visible {
   color: var(--text);
   font-size: 12px;
   font-family: var(--mono);
-  /* Right padding leaves room for the inline submit button */
-  padding: 11px 80px 11px 13px;
+  /* Right padding must clear the "Index Repo" button (~90px wide + 10px gap) */
+  padding: 11px 108px 11px 13px;
   outline: none;
   transition: border-color 180ms ease, box-shadow 180ms ease;
   width: 100%;
