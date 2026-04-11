@@ -272,10 +272,15 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
         {/* Icon container — Raycast-style rounded square with gradient + compass inside */}
         <div className="sidebar-brand-icon">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="white"/>
-            <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="white" opacity="0.50"/>
-            <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="white" opacity="0.50"/>
-            <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="white" opacity="0.50"/>
+            {/* Subtle glow behind compass — same as favicon */}
+            <circle cx="12" cy="12" r="10" fill="rgba(91,143,249,0.10)"/>
+            {/* N — dominant, full accent blue */}
+            <path d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="#5B8FF9"/>
+            {/* S/E/W — dim */}
+            <path d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="#5B8FF9" opacity="0.28"/>
+            <path d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="#5B8FF9" opacity="0.28"/>
+            <path d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="#5B8FF9" opacity="0.28"/>
+            {/* Center pivot — white for contrast */}
             <circle cx="12" cy="12" r="1.6" fill="white"/>
           </svg>
         </div>

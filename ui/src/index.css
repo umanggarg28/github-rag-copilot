@@ -258,16 +258,16 @@ textarea:focus-visible {
 .sidebar-brand-icon {
   width: 36px;
   height: 36px;
-  background: linear-gradient(145deg, #2A5ED8 0%, #4A7FE8 45%, #6B9FFF 100%);
+  /* Dark bg + blue border — matches favicon exactly */
+  background: #09090E;
   border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
   box-shadow:
-    0 0 0 1px rgba(91, 143, 249, 0.35),
-    0 4px 20px rgba(91, 143, 249, 0.30),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    0 0 0 1px rgba(91, 143, 249, 0.30),
+    0 4px 16px rgba(91, 143, 249, 0.18),
+    inset 0 1px 0 rgba(91, 143, 249, 0.12);
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
