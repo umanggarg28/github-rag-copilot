@@ -917,7 +917,7 @@ textarea:focus-visible {
 
 .source-item {
   /* Warm charcoal source card */
-  background: rgba(30, 26, 22, 0.90);
+  background: rgba(20, 20, 32, 0.90);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -1224,13 +1224,8 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Upper-positioned content — input is pinned at the bottom, so content
-     in the vertical center creates dead space in the lower half.
-     Sitting content in the upper ~40% feels more intentional and mirrors
-     how Linear / Raycast handle their empty states. */
+  /* Upper-third positioning — mirrors Linear / Raycast empty states */
   justify-content: flex-start;
-  /* Bottom padding scales with viewport height — ensures step 3 never
-     crowds the chat bar on compact viewports */
   padding: max(6vh, 48px) 24px max(80px, 10vh);
   overflow-y: auto;
   position: relative;
@@ -1297,7 +1292,7 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 540px;
+  max-width: 580px;
   width: 100%;
 }
 
@@ -1363,7 +1358,7 @@ textarea:focus-visible {
   display: flex;
   gap: 14px;
   align-items: flex-start;
-  background: rgba(21, 21, 34, 0.85);
+  background: rgba(20, 20, 32, 0.85);
   border: 1px solid rgba(255,255,255,0.10);
   border-radius: var(--radius-lg);
   padding: 16px 18px;
@@ -1463,15 +1458,15 @@ textarea:focus-visible {
 }
 
 /* Suggest state */
-.suggest-state { max-width: 540px; width: 100%; text-align: center; }
+.suggest-state { max-width: 620px; width: 100%; text-align: center; }
 .suggest-state h2 {
-  /* 34px — clear moment of invitation */
-  font-size: 34px;
+  font-size: 44px;
   font-weight: 400;
   font-family: "Anthropic Serif", Georgia, serif;
-  letter-spacing: -0.02em;
-  margin-bottom: 8px;
-  color: var(--text);
+  letter-spacing: -0.03em;
+  line-height: 1.0;
+  margin-bottom: 10px;
+  color: #FFFFFF;
 }
 .suggest-state > p {
   font-size: 13.5px;
@@ -1488,9 +1483,9 @@ textarea:focus-visible {
 }
 
 .suggestion-btn {
-  background: rgba(255, 255, 255, 0.055);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 12px;
   color: var(--text);
   cursor: pointer;
@@ -3615,7 +3610,7 @@ textarea:focus-visible {
 .ec-entry-hint code {
   background: rgba(237,186,154,0.12);
   border: 1px solid rgba(237,186,154,0.25);
-  color: #EDBA9A;
+  color: var(--accent-soft);
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 11px;
@@ -3646,8 +3641,8 @@ textarea:focus-visible {
 
 /* ── Concept cards ── */
 .ec-card {
-  /* Warm charcoal card — no cold indigo; one step above canvas bg */
-  background: rgba(33, 30, 26, 0.96);
+  /* Blueprint dark surface — blueprint dark base, consistent with surface-2 */
+  background: rgba(20, 20, 32, 0.96);
   border: 1px solid rgba(255, 255, 255,0.09);
   border-radius: 10px;
   padding: 13px 14px 11px;
@@ -3681,7 +3676,7 @@ textarea:focus-visible {
   border-radius: 50%;
   background: rgba(91, 143, 249,0.18);
   border: 1px solid rgba(91, 143, 249,0.4);
-  color: #EDBA9A;
+  color: var(--accent-soft);
   font-size: 10px;
   font-weight: 700;
   font-family: var(--mono);
@@ -3771,7 +3766,7 @@ textarea:focus-visible {
   border: 1px solid rgba(255, 255, 255,0.1);
   border-radius: 4px;
   padding: 2px 7px;
-  color: #EDBA9A;
+  color: var(--accent-soft);
   font-family: var(--mono);
 }
 
@@ -3793,7 +3788,7 @@ textarea:focus-visible {
 .ec-ask:hover {
   background: rgba(91, 143, 249,0.10);
   border-color: rgba(91, 143, 249,0.55);
-  color: #EDBA9A;
+  color: var(--accent-soft);
 }
 
 /* Legend */

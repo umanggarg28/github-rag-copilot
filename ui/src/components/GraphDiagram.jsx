@@ -175,7 +175,7 @@ function DiagramCard({ node, pos, hoveredId, connectedIds, onSelect, onHover, on
         borderColor: highlight ? s.dot : undefined,
         boxShadow:   highlight
           ? `0 0 0 1.5px ${s.dot}, 0 8px 32px ${s.glow}`
-          : `inset 0 2.5px 0 0 ${s.border}`,
+          : undefined,
       }}
       onMouseDown={(e) => onDragStart?.(e, node)}
       onClick={() => { if (!wasDragged?.current) onSelect(node); }}
