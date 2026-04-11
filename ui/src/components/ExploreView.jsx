@@ -162,9 +162,9 @@ function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, o
           ? s.border
           : undefined,
         boxShadow: isSelected
-          ? `0 0 0 2px ${s.border}, 0 0 18px ${s.border}99, 0 16px 56px ${s.glow.replace(/[\d.]+\)$/, '0.65)')}`
+          ? `0 0 0 2px ${s.border}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : isHovered
-          ? `0 0 0 2px ${s.border}, 0 0 18px ${s.border}99, 0 16px 56px ${s.glow.replace(/[\d.]+\)$/, '0.65)')}`
+          ? `0 0 0 2px ${s.border}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : undefined,
       }}
       onMouseDown={(e) => e.stopPropagation()}
@@ -515,7 +515,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
                 concept={c}
                 isEntry={isEntry}
                 isSelected={selectedId === c.id}
-                isHovered={hoveredId === c.id}
+                isHovered={hoveredId === c.id || (!!connectedIds && connectedIds.has(c.id))}
                 isDimmed={!!connectedIds && !connectedIds.has(c.id)}
                 pos={pos}
                 onSelect={id => setSelected(v => v === id ? null : id)}

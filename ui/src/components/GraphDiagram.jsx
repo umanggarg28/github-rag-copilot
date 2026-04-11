@@ -174,7 +174,7 @@ function DiagramCard({ node, pos, hoveredId, connectedIds, onSelect, onHover, on
         // avoids a separate child div while still giving each type its own colour.
         borderColor: highlight ? s.dot : undefined,
         boxShadow: highlight
-          ? `0 0 0 2px ${s.dot}, 0 0 18px ${s.dot}99, 0 16px 56px ${s.glow.replace(/[\d.]+\)$/, '0.65)')}`
+          ? `0 0 0 2px ${s.dot}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : undefined,
       }}
       onMouseDown={(e) => onDragStart?.(e, node)}
