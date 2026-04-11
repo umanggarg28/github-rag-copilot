@@ -293,9 +293,11 @@ def _get_distinct_id(request: Request) -> str:
 
 
 def _ph_capture(distinct_id: str, event: str, properties: dict | None = None) -> None:
-    """Fire a PostHog event only when analytics are configured."""
+    """Fire a PostHog event only when analytics are configured.
+    posthog>=3.0 changed the signature: capture(event, distinct_id=..., properties=...)
+    """
     if settings.posthog_api_key:
-        _posthog.capture(distinct_id, event, properties or {})
+        _posthog.capture(event, distinct_id=distinct_id, properties=properties or {})
 
 
 # ── Routes: MCP status ─────────────────────────────────────────────────────────

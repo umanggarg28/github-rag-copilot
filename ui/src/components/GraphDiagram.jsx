@@ -14,20 +14,20 @@
 
 import { useEffect, useMemo, useCallback, useState, useRef } from "react";
 
-// ── Type colours — warm palette, no cold violet/indigo ───────────────────────
+// ── Type colours — blueprint palette, consistent with ExploreView ────────────
 const TYPE_STYLE = {
-  module:    { border: "#B45309", glow: "rgba(180,83,9,0.38)",    dot: "#FBBF24" },
-  class:     { border: "#C4603A", glow: "rgba(196,96,58,0.40)",   dot: "#E09A72" },
-  abstract:  { border: "#A84030", glow: "rgba(168,64,48,0.38)",   dot: "#D4845A" },
-  mixin:     { border: "#8B3A1E", glow: "rgba(139,58,30,0.38)",   dot: "#C4603A" },
-  service:   { border: "#3A9E8C", glow: "rgba(58,158,140,0.38)",  dot: "#5DC4B0" },
-  database:  { border: "#C47A30", glow: "rgba(196,122,48,0.38)",  dot: "#E0A050" },
-  external:  { border: "#5E5044", glow: "rgba(94,80,68,0.35)",    dot: "#8A7A64" },
-  input:     { border: "#3A9E8C", glow: "rgba(58,158,140,0.38)",  dot: "#5DC4B0" },
-  transform: { border: "#C4603A", glow: "rgba(196,96,58,0.38)",   dot: "#EDBA9A" },
-  output:    { border: "#A0522D", glow: "rgba(160,82,45,0.40)",   dot: "#C4845A" },
+  module:    { border: "#818CF8", glow: "rgba(129,140,248,0.32)", dot: "#A5B4FC" }, // indigo
+  class:     { border: "#5B8FF9", glow: "rgba(91,143,249,0.35)",  dot: "#7DABFF" }, // blueprint blue
+  abstract:  { border: "#7DABFF", glow: "rgba(125,171,255,0.30)", dot: "#A8C5FF" }, // lighter blue
+  mixin:     { border: "#60A5FA", glow: "rgba(96,165,250,0.30)",  dot: "#93C5FD" }, // sky-blue
+  service:   { border: "#2DD4BF", glow: "rgba(45,212,191,0.32)",  dot: "#5EEAD4" }, // teal
+  database:  { border: "#38BDF8", glow: "rgba(56,189,248,0.32)",  dot: "#7DD3FC" }, // sky
+  external:  { border: "#4E5E80", glow: "rgba(78,94,128,0.28)",   dot: "#8896B8" }, // steel
+  input:     { border: "#2DD4BF", glow: "rgba(45,212,191,0.32)",  dot: "#5EEAD4" }, // teal
+  transform: { border: "#818CF8", glow: "rgba(129,140,248,0.30)", dot: "#A5B4FC" }, // indigo
+  output:    { border: "#5B8FF9", glow: "rgba(91,143,249,0.32)",  dot: "#7DABFF" }, // blue
 };
-const FALLBACK_STYLE = { border: "#8A7A64", glow: "rgba(138,122,100,0.35)", dot: "#C4B59A" };
+const FALLBACK_STYLE = { border: "#4E5E80", glow: "rgba(78,94,128,0.28)", dot: "#8896B8" };
 function styleFor(type) { return TYPE_STYLE[type] || FALLBACK_STYLE; }
 
 // ── Card geometry ─────────────────────────────────────────────────────────────
@@ -431,10 +431,10 @@ export default function GraphDiagram({ data, onNodeSelect, onEdgeSelect, onAskAb
           >
             <defs>
               <marker id="gd-arrow"    markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(212,132,90,0.35)" />
+                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(91,143,249,0.35)" />
               </marker>
               <marker id="gd-arrow-hi" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-                <polygon points="0 0, 7 2.5, 0 5" fill="#E09A72" />
+                <polygon points="0 0, 7 2.5, 0 5" fill="#7DABFF" />
               </marker>
             </defs>
 
@@ -474,7 +474,7 @@ export default function GraphDiagram({ data, onNodeSelect, onEdgeSelect, onAskAb
                   <path
                     d={d}
                     fill="none"
-                    stroke={isHi ? "#E09A72" : "rgba(212,132,90,0.22)"}
+                    stroke={isHi ? "#7DABFF" : "rgba(91,143,249,0.22)"}
                     strokeWidth={isHi ? 2 : 1.5}
                     strokeDasharray={edge.label === "uses" ? "5 3" : undefined}
                     markerEnd={isHi ? "url(#gd-arrow-hi)" : "url(#gd-arrow)"}
@@ -491,13 +491,13 @@ export default function GraphDiagram({ data, onNodeSelect, onEdgeSelect, onAskAb
                       textAnchor="middle"
                       fontSize="10"
                       fontFamily="JetBrains Mono, monospace"
-                      fill="#EDBA9A"
+                      fill="#A8C5FF"
                       style={{
                         opacity:    isDim ? 0.08 : 0.75,
                         transition: "opacity 0.15s",
                         pointerEvents: "none",
                         paintOrder: "stroke",
-                        stroke: "#1A1916",
+                        stroke: "#09090E",
                         strokeWidth: 3,
                       }}
                     >

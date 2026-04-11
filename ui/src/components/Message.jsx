@@ -48,7 +48,7 @@ const mdComponents = {
         <SyntaxHighlighter
           language={lang}
           style={oneDark}
-          customStyle={{ fontSize: 13, background: '#090A0F', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', borderLeft: '2px solid rgba(212,132,90,0.45)', margin: '10px 0' }}
+          customStyle={{ fontSize: 13, background: '#06060F', borderRadius: 8, border: '1px solid rgba(255,255,255,0.07)', borderLeft: '2px solid rgba(91,143,249,0.50)', margin: '10px 0' }}
         >
           {String(children).replace(/\n$/, "")}
         </SyntaxHighlighter>

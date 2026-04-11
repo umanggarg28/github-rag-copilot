@@ -56,13 +56,14 @@ function tourLsKey(repo) { return `ghrc_tour_${repo.replace(/\//g, "_")}`; }
 // group "data structures" vs "algorithms" vs "entry points" at a glance.
 // All colors are warm-toned to stay within the sketchbook palette —
 // no cold violet/indigo; teal and amber are the warm analogues.
+// Blueprint palette — each type gets a distinct hue in the blue/teal family
 const TYPE_STYLE = {
-  class:     { border: "#C4603A", glow: "rgba(196,96,58,0.40)",  dot: "#E09A72", tag: "class"  }, // sienna — the primary ink
-  function:  { border: "#3A9E8C", glow: "rgba(58,158,140,0.38)", dot: "#5DC4B0", tag: "fn"     }, // warm teal — secondary accent
-  module:    { border: "#B45309", glow: "rgba(180,83,9,0.40)",   dot: "#FBBF24", tag: "module" }, // amber — warm
-  algorithm: { border: "#A0522D", glow: "rgba(160,82,45,0.40)",  dot: "#C4845A", tag: "algo"   }, // sienna-brown — warm
+  class:     { border: "#5B8FF9", glow: "rgba(91,143,249,0.35)",  dot: "#7DABFF", tag: "class"  }, // blueprint blue
+  function:  { border: "#2DD4BF", glow: "rgba(45,212,191,0.32)",  dot: "#5EEAD4", tag: "fn"     }, // teal
+  module:    { border: "#818CF8", glow: "rgba(129,140,248,0.32)", dot: "#A5B4FC", tag: "module" }, // indigo
+  algorithm: { border: "#38BDF8", glow: "rgba(56,189,248,0.32)",  dot: "#7DD3FC", tag: "algo"   }, // sky
 };
-const FALLBACK_STYLE = { border: "#8A7A64", glow: "rgba(138,122,100,0.35)", dot: "#C4B59A", tag: "?" }; // muted parchment
+const FALLBACK_STYLE = { border: "#4E5E80", glow: "rgba(78,94,128,0.30)", dot: "#8896B8", tag: "?" };
 
 function styleFor(type) {
   return TYPE_STYLE[type] || FALLBACK_STYLE;
@@ -158,7 +159,7 @@ function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, o
         borderColor: isSelected
           ? s.border
           : isHovered
-          ? "rgba(167,139,250,0.5)"
+          ? "rgba(91,143,249,0.45)"
           : undefined,
         boxShadow: isSelected
           ? `0 0 0 1.5px ${s.border}, 0 8px 40px ${s.glow}`
@@ -463,11 +464,11 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
             <defs>
               {/* Default arrowhead — warm sienna */}
               <marker id="ec-arrow" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(212,132,90,0.35)" />
+                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(91,143,249,0.35)" />
               </marker>
               {/* Highlighted arrowhead */}
               <marker id="ec-arrow-hi" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-                <polygon points="0 0, 7 2.5, 0 5" fill="#E09A72" />
+                <polygon points="0 0, 7 2.5, 0 5" fill="#7DABFF" />
               </marker>
             </defs>
 
@@ -484,7 +485,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
                   <path
                     key={`${depId}→${c.id}`}
                     d={bezierPath(from, to)}
-                    stroke={isHi ? "#E09A72" : "rgba(212,132,90,0.22)"}
+                    stroke={isHi ? "#7DABFF" : "rgba(91,143,249,0.22)"}
                     strokeWidth={isHi ? 2 : 1.5}
                     strokeDasharray={isHi ? undefined : "none"}
                     fill="none"

@@ -1,11 +1,10 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   COOL DARK  (Linear / Raycast base + warm Anthropic foreground)
-   Palette: cool near-black base + burnt sienna ink + warm cream text.
-   Background: cool graphite (#0E0F14) — temperature contrast base.
-   Text: warm parchment (#EDE4CE) — glows MORE against cool, not warm.
-   Accent: burnt sienna (#D4845A) — the classic illustration pigment.
-   Principle: cool foil for warm jewels — same cream/sienna palette
-   appears MORE luminous on a cool base (like candlelight in a dark room).
+   BLUEPRINT DARK  (Awwwards-tier — Linear / Vercel / Liveblocks influence)
+   Palette: near-pure black base + blueprint blue accent + cool white text.
+   Background: #09090E — deeper than Linear, creates more atmospheric depth.
+   Text: cool near-white (#E2E8F8) — crisp against near-black.
+   Accent: blueprint blue (#5B8FF9) — cartographer/mapmaking identity.
+   Principle: restraint — accent on <10% of elements, max impact.
    ════════════════════════════════════════════════════════════════════════ */
 @font-face {
   font-family: "Anthropic Sans";
@@ -44,53 +43,52 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { height: 100dvh; background: #0E0F14; overflow: hidden; }
+html { height: 100dvh; background: #09090E; overflow: hidden; }
 
 :root {
-  /* ── Cool near-black backgrounds — temperature-contrast base ──
-     Cool base makes the warm foreground (cream text, sienna accent) pop.
-     Same principle as Linear/Raycast: neutral stage, warm performers. */
-  --bg:         #0E0F14;   /* canvas — cool near-black */
-  --surface:    #13141C;   /* sidebar, panels — first elevation */
-  --surface-2:  #1A1B24;   /* cards, source items — second elevation */
-  --surface-3:  #21222E;   /* modals, active items — third elevation */
-  --surface-4:  #292A38;   /* hover states, tooltips — highest elevation */
+  /* ── Near-pure black backgrounds — blueprint dark base ──
+     Deeper than Linear (#0A0A0A), creates richer canvas depth.
+     Each surface uses a subtle blue undertone for cohesion. */
+  --bg:         #09090E;   /* canvas — near-pure black */
+  --surface:    #0F0F18;   /* sidebar, panels — first elevation */
+  --surface-2:  #151522;   /* cards, source items — second elevation */
+  --surface-3:  #1C1C2E;   /* modals, active items — third elevation */
+  --surface-4:  #23233B;   /* hover states, tooltips — highest elevation */
 
-  /* Borders — pure white rgba (not warm) for crisper edges on cool base */
+  /* Borders — blue-tinted white for cohesion with blueprint accent */
   --border:        rgba(255, 255, 255, 0.07);
   --border-subtle: rgba(255, 255, 255, 0.04);
   --border-strong: rgba(255, 255, 255, 0.10);
 
-  /* Text — warm parchment, not cold white.
-     Like ink on aged paper — every tier is warm brown-cream. */
-  --text:      #EDE4CE;   /* warm parchment — headings, active labels */
-  --text-2:    #C4B59A;   /* aged paper — body text, descriptions */
-  --muted:     #8A7A64;   /* warm gray — file paths, secondary */
-  --faint:     #5E5044;   /* dark sepia — timestamps, placeholders */
+  /* Text — cool near-white with blue undertone.
+     High contrast on near-black without harsh pure white. */
+  --text:   #E2E8F8;   /* cool near-white — headings, active labels */
+  --text-2: #8896B8;   /* muted blue-gray — body text, descriptions */
+  --muted:  #4E5E80;   /* steel blue — file paths, secondary */
+  --faint:  #282E45;   /* dark blue-gray — timestamps, placeholders */
 
-  /* Accent — terracotta, brand identity color.
-     Slightly cooled/desaturated from pure sienna so it reads refined rather
-     than "orange" on the cool-dark base. Used sparingly: only active states
-     and primary CTAs. Background tints kept very low-opacity. */
-  --accent:          #C47B5A;   /* terracotta — slightly more red, less orange */
-  --accent-light:    #D48F6E;   /* lighter on hover */
-  --accent-soft:     #DBA882;   /* pale terracotta for secondary text */
-  --accent-lavender: #EDCAB0;   /* high-luminance warm labels */
-  --accent-dim:      rgba(196, 123, 90, 0.09);   /* very subtle — backgrounds only */
-  --accent-glow:     rgba(196, 123, 90, 0.18);
-  --accent-border:   rgba(196, 123, 90, 0.32);
+  /* Accent — blueprint blue, the cartographer's ink.
+     Used sparingly: active states, primary CTAs, glow effects.
+     Maximum impact through restraint — Linear/Vercel principle. */
+  --accent:          #5B8FF9;   /* blueprint blue — main accent */
+  --accent-light:    #7DABFF;   /* lighter on hover */
+  --accent-soft:     #A8C5FF;   /* pale blue for secondary text */
+  --accent-lavender: #C5D8FF;   /* high-luminance labels */
+  --accent-dim:      rgba(91, 143, 249, 0.10);   /* very subtle — backgrounds only */
+  --accent-glow:     rgba(91, 143, 249, 0.22);
+  --accent-border:   rgba(91, 143, 249, 0.35);
 
-  /* Secondary accent — warm teal, like watercolor over charcoal */
-  --accent-2:      #3A9E8C;
-  --accent-2-dim:  rgba(58, 158, 140, 0.12);
+  /* Secondary accent — teal, for data/service node types */
+  --accent-2:      #2DD4BF;
+  --accent-2-dim:  rgba(45, 212, 191, 0.12);
 
-  /* Semantic — warm-toned, native to the palette */
-  --green:      #72B87E;   /* sage green — success */
-  --green-dim:  rgba(114, 184, 126, 0.12);
-  --red:        #C86858;   /* warm red — errors */
-  --red-dim:    rgba(200, 104, 88, 0.12);
-  --warning:    #C9933A;   /* raw umber — warnings */
-  --amber:      #C47A30;
+  /* Semantic */
+  --green:      #4ADE80;   /* emerald green — success */
+  --green-dim:  rgba(74, 222, 128, 0.12);
+  --red:        #F87171;   /* soft red — errors */
+  --red-dim:    rgba(248, 113, 113, 0.12);
+  --warning:    #FBBF24;   /* amber — warnings */
+  --amber:      #F59E0B;
 
   /* Legacy alias */
   --pill-bg: var(--surface-3);
@@ -116,13 +114,13 @@ html { height: 100dvh; background: #0E0F14; overflow: hidden; }
   --transition-slow: 300ms ease;
 
   /* Shadows — cool-tinted deep shadows (no warm brown) */
-  --shadow-sm: 0 1px 3px rgba(0,0,8,0.65), 0 1px 2px rgba(0,0,8,0.45);
-  --shadow:    0 4px 16px rgba(0,0,8,0.75), 0 2px 8px rgba(0,0,8,0.55);
-  --shadow-lg: 0 12px 40px rgba(0,0,8,0.85), 0 4px 16px rgba(0,0,8,0.65);
-  --shadow-accent: 0 0 20px rgba(196, 123, 90, 0.20);
+  --shadow-sm: 0 1px 3px rgba(0,0,16,0.70), 0 1px 2px rgba(0,0,16,0.50);
+  --shadow:    0 4px 16px rgba(0,0,16,0.80), 0 2px 8px rgba(0,0,16,0.60);
+  --shadow-lg: 0 12px 40px rgba(0,0,16,0.90), 0 4px 16px rgba(0,0,16,0.70);
+  --shadow-accent: 0 0 20px rgba(91, 143, 249, 0.25);
 
   /* Glass */
-  --glass-bg:     rgba(14, 15, 20, 0.82);
+  --glass-bg:     rgba(9, 9, 14, 0.85);
   --glass-border: rgba(255, 255, 255, 0.06);
   --blur:         16px;
 }
@@ -135,36 +133,34 @@ body {
   font-family: var(--sans);
   font-size: 15px;
   line-height: 1.65;
-  background: #0E0F14;
+  background: #09090E;
   color: var(--text);
   height: 100%;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Atmospheric bloom — subtle warmth at corners, barely perceptible.
-     Linear/Raycast principle: background texture is felt, not seen.
-     Heavy bloom was making the cool base look warm-muddy again. */
+  /* Atmospheric bloom — blueprint blue at top-left, barely perceptible.
+     Linear/Vercel principle: depth is felt, not seen. */
   background-image:
-    radial-gradient(ellipse 70% 55% at -5% 0%,   rgba(180, 80, 40, 0.18) 0%, transparent 65%),
-    radial-gradient(ellipse 50% 40% at 105% 100%, rgba(160, 100, 60, 0.10) 0%, transparent 60%),
-    radial-gradient(ellipse 80% 30% at 50% 50%,   rgba(212, 132, 90, 0.03) 0%, transparent 70%);
+    radial-gradient(ellipse 60% 50% at -5% 0%,   rgba(20, 60, 160, 0.22) 0%, transparent 65%),
+    radial-gradient(ellipse 40% 35% at 105% 100%, rgba(10, 30, 90,  0.12) 0%, transparent 60%);
   animation: page-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Signature dot grid — violet-tinted, masked to center, creates spatial texture.
+/* Signature dot grid — blueprint-tinted, masked to center, creates spatial texture.
    Sits behind all content via z-index. Inspired by Linear/Vercel premium dark aesthetic.
-   At 18% opacity most users feel it subconsciously without seeing it explicitly. */
+   Blue tint ties the grid to the blueprint accent for cohesion. */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-image: radial-gradient(circle, rgba(91, 143, 249, 0.08) 1px, transparent 1px);
   background-size: 24px 24px;
   /* Vignette mask — grid strongest at center, invisible at edges */
-  mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, rgba(0,0,0,0.45) 0%, transparent 100%);
-  -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, rgba(0,0,0,0.45) 0%, transparent 100%);
+  mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, rgba(0,0,0,0.50) 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 50%, rgba(0,0,0,0.50) 0%, transparent 100%);
 }
 
 @keyframes page-in {
@@ -215,17 +211,17 @@ textarea:focus-visible {
    ══════════════════════════════════════════════════════════ */
 .sidebar {
   background:
-    /* Top-left violet bloom — the brand "light source" */
-    radial-gradient(ellipse 180% 40% at 0% 0%, rgba(212, 132, 90, 0.10) 0%, transparent 55%),
-    /* Sidebar: cool charcoal, one step darker than canvas */
-    #0A0B10;
-  border-right: 1px solid rgba(237, 228, 206, 0.06);
+    /* Top-left blue bloom — blueprint brand "light source" */
+    radial-gradient(ellipse 180% 40% at 0% 0%, rgba(91, 143, 249, 0.08) 0%, transparent 55%),
+    /* Sidebar: deeper than canvas — one step darker */
+    #070710;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Glass edge + ambient right spill — sidebar casts depth rightward */
+  /* Glass edge + ambient right spill */
   box-shadow:
-    inset -1px 0 0 rgba(237, 228, 206, 0.04),
+    inset -1px 0 0 rgba(91, 143, 249, 0.05),
     4px 0 32px rgba(0, 0, 0, 0.60),
     8px 0 64px rgba(0, 0, 0, 0.25);
 }
@@ -255,15 +251,15 @@ textarea:focus-visible {
 .sidebar-brand-icon {
   width: 34px;
   height: 34px;
-  background: linear-gradient(135deg, #8B3A1E 0%, #C4603A 50%, #D4845A 100%);
+  background: linear-gradient(135deg, #3D6EE8 0%, #5B8FF9 50%, #7DABFF 100%);
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   box-shadow:
-    0 0 0 1px rgba(196, 123, 90, 0.28),
-    0 4px 16px rgba(196, 123, 90, 0.22);
+    0 0 0 1px rgba(91, 143, 249, 0.28),
+    0 4px 16px rgba(91, 143, 249, 0.22);
   flex-shrink: 0;
   position: relative;
   overflow: hidden;
@@ -273,7 +269,7 @@ textarea:focus-visible {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(237, 228, 206, 0.25) 0%, transparent 60%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, transparent 60%);
   border-radius: inherit;
 }
 
@@ -317,7 +313,7 @@ textarea:focus-visible {
   color: var(--muted);
   margin-bottom: 6px;
   /* Subtle warm tint — makes section headers feel structural, not dead */
-  background: linear-gradient(90deg, var(--muted) 0%, rgba(196,123,90,0.50) 100%);
+  background: linear-gradient(90deg, var(--muted) 0%, rgba(91, 143, 249,0.50) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -334,7 +330,7 @@ textarea:focus-visible {
   overflow: hidden;
   /* Subtle depth: very faint warm bloom + top-edge inner highlight */
   box-shadow:
-    rgba(196, 123, 90, 0.08) 0px 8px 36px 0px,
+    rgba(91, 143, 249, 0.08) 0px 8px 36px 0px,
     rgba(255, 255, 255, 0.06) 0px 1px 0px 0px inset;
   transition: border-color var(--transition), box-shadow var(--transition);
 }
@@ -346,13 +342,13 @@ textarea:focus-visible {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(196, 123, 90, 0.45) 40%, rgba(196, 123, 90, 0.45) 60%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(91, 143, 249, 0.45) 40%, rgba(91, 143, 249, 0.45) 60%, transparent 100%);
   border-radius: 16px 16px 0 0;
 }
 .ingest-card:focus-within {
   border-color: var(--accent-border);
   box-shadow:
-    rgba(212, 132, 90, 0.28) 0px 8px 36px 0px,
+    rgba(91, 143, 249, 0.28) 0px 8px 36px 0px,
     rgba(237, 186, 154, 0.12) 0px 1px 0px 0px inset;
 }
 .ingest-card:focus-within::before {
@@ -365,8 +361,8 @@ textarea:focus-visible {
 .ingest-form input {
   /* Recessed field — dark well, clearly inset against the card surface */
   background: rgba(14, 12, 10, 0.65);
-  border: 1px solid rgba(237, 228, 206, 0.10);
-  border-bottom-color: rgba(237, 228, 206, 0.18); /* stronger bottom edge = modern form feel */
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-bottom-color: rgba(255, 255, 255, 0.18); /* stronger bottom edge = modern form feel */
   border-radius: var(--radius);
   color: var(--text);
   font-size: 13px;
@@ -390,7 +386,7 @@ textarea:focus-visible {
 /* ── Buttons ──────────────────────────────────────────────── */
 .btn {
   /* Sienna gradient — light to bright, reads as warm confident ink stroke */
-  background: linear-gradient(160deg, #C45A34 0%, #D4845A 55%, #E09A72 100%);
+  background: linear-gradient(160deg, #4A7EE0 0%, #7DABFF 55%, #A8C5FF 100%);
   border: 1px solid rgba(237, 186, 154, 0.40);
   border-radius: var(--radius);
   color: #fff;
@@ -401,16 +397,16 @@ textarea:focus-visible {
   padding: 9px 14px;
   transition: opacity var(--transition), transform var(--transition), box-shadow var(--transition);
   /* Outer glow + warm inner top-edge highlight = depth + vibrancy */
-  box-shadow: 0 2px 16px rgba(212, 132, 90, 0.42), inset 0 1px 0 rgba(237, 210, 185, 0.30);
+  box-shadow: 0 2px 16px rgba(91, 143, 249, 0.42), inset 0 1px 0 rgba(200, 220, 255, 0.30);
   letter-spacing: -0.01em;
 }
 
 .btn:hover {
   opacity: 0.95;
   box-shadow:
-    0 4px 24px rgba(212, 132, 90, 0.55),
-    0 0 12px rgba(212, 132, 90, 0.30),
-    inset 0 1px 0 rgba(237, 210, 185, 0.25);
+    0 4px 24px rgba(91, 143, 249, 0.55),
+    0 0 12px rgba(91, 143, 249, 0.30),
+    inset 0 1px 0 rgba(200, 220, 255, 0.25);
   transform: translateY(-1px);
 }
 .btn:active { transform: scale(0.97) translateY(0); box-shadow: none; }
@@ -489,14 +485,14 @@ textarea:focus-visible {
 
 .repo-item:hover {
   background: var(--surface-2);
-  border-left-color: rgba(212, 132, 90, 0.4);
+  border-left-color: rgba(91, 143, 249, 0.4);
 }
 
 .repo-item.active {
   background: var(--accent-dim);
   border-left-color: var(--accent);
   /* Inset ambient glow reinforces the selected state without being loud */
-  box-shadow: inset 2px 0 14px rgba(212, 132, 90, 0.07);
+  box-shadow: inset 2px 0 14px rgba(91, 143, 249, 0.07);
 }
 /* Active repo: text pops to full brightness */
 .repo-item.active .repo-slug { color: var(--text); font-weight: 600; }
@@ -515,7 +511,7 @@ textarea:focus-visible {
 .repo-count {
   font-size: 10px;
   color: var(--muted);
-  background: rgba(237,228,206,0.07);
+  background: rgba(255, 255, 255,0.07);
   border: 1px solid var(--border);
   padding: 1px 6px;
   border-radius: var(--radius-full);
@@ -544,9 +540,9 @@ textarea:focus-visible {
 .mode-pills { display: flex; gap: 5px; }
 
 .pill {
-  background: rgba(237, 228, 206, 0.04);
+  background: rgba(255, 255, 255, 0.04);
   /* Crisp 1px border gives pills clear form definition against the dark sidebar */
-  border: 1px solid rgba(237, 228, 206, 0.11);
+  border: 1px solid rgba(255, 255, 255, 0.11);
   border-radius: 8px;
   color: var(--text-2);
   cursor: pointer;
@@ -559,21 +555,21 @@ textarea:focus-visible {
 }
 
 .pill:hover {
-  background: rgba(212, 132, 90, 0.10);
+  background: rgba(91, 143, 249, 0.10);
   border-color: var(--accent-border);
   color: var(--accent-soft);
-  box-shadow: rgba(212, 132, 90, 0.20) 0px 0px 14px 0px;
+  box-shadow: rgba(91, 143, 249, 0.20) 0px 0px 14px 0px;
 }
 
 .pill.active {
   /* Solid sienna fill — unambiguously selected, not just glowing */
   background: var(--accent);
-  border-color: rgba(237, 210, 185, 0.30);
+  border-color: rgba(200, 220, 255, 0.30);
   color: #fff;
   font-weight: 600;
   box-shadow:
-    rgba(212, 132, 90, 0.50) 0px 2px 12px 0px,
-    rgba(237, 210, 185, 0.20) 0px 1px 0px 0px inset;
+    rgba(91, 143, 249, 0.50) 0px 2px 12px 0px,
+    rgba(200, 220, 255, 0.20) 0px 1px 0px 0px inset;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -587,7 +583,7 @@ textarea:focus-visible {
   overflow: hidden;
   /* Subtle ambient light from top — "the conversation space" */
   background:
-    radial-gradient(ellipse 60% 30% at 50% -5%, rgba(212, 132, 90, 0.10) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 30% at 50% -5%, rgba(91, 143, 249, 0.10) 0%, transparent 50%),
     var(--bg);
 }
 
@@ -604,7 +600,7 @@ textarea:focus-visible {
   align-items: center;
   gap: 0;
   /* Frosted glass header */
-  background: rgba(10, 11, 16, 0.82);
+  background: rgba(9, 9, 14, 0.85);
   backdrop-filter: blur(16px) saturate(160%);
   -webkit-backdrop-filter: blur(16px) saturate(160%);
   min-height: 52px;
@@ -637,7 +633,7 @@ textarea:focus-visible {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(196,123,90,0.20), transparent);
+  background: linear-gradient(90deg, transparent, rgba(91, 143, 249,0.20), transparent);
 }
 
 .chat-header .repo-badge {
@@ -651,8 +647,8 @@ textarea:focus-visible {
   letter-spacing: -0.01em;
   /* Glow + top-edge inner highlight for a lit badge feel */
   box-shadow:
-    0 2px 10px rgba(212,132,90,0.18),
-    inset 0 1px 0 rgba(237,210,185,0.15);
+    0 2px 10px rgba(91, 143, 249,0.18),
+    inset 0 1px 0 rgba(200, 220, 255,0.15);
 }
 
 .chat-header .no-repo {
@@ -679,7 +675,7 @@ textarea:focus-visible {
 .chat-header .clear-btn:hover {
   color: var(--text);
   border-color: var(--border-strong);
-  background: rgba(237,228,206,0.05);
+  background: rgba(255, 255, 255,0.05);
 }
 
 /* ── Messages ─────────────────────────────────────────────── */
@@ -780,12 +776,12 @@ textarea:focus-visible {
 
 .message-avatar.assistant {
   /* Sienna gradient avatar — matches brand icon */
-  background: linear-gradient(135deg, #8B3A1E, #C4603A);
+  background: linear-gradient(135deg, #3D6EE8, #5B8FF9);
   color: #fff;
   font-size: 13px;
   box-shadow:
-    0 0 0 2px rgba(212, 132, 90, 0.25),
-    0 4px 12px rgba(212, 132, 90, 0.30);
+    0 0 0 2px rgba(91, 143, 249, 0.25),
+    0 4px 12px rgba(91, 143, 249, 0.30);
 }
 
 /* ── GFM table styles (remark-gfm renders <table> inside .bubble) ── */
@@ -802,12 +798,12 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 .bubble th {
-  background: rgba(237,228,206,0.06);
+  background: rgba(255, 255, 255,0.06);
   font-weight: 600;
   color: var(--text);
 }
 .bubble tr:nth-child(even) td {
-  background: rgba(237,228,206,0.03);
+  background: rgba(255, 255, 255,0.03);
 }
 
 /* ── Message bubbles ──────────────────────────────────────── */
@@ -822,13 +818,13 @@ textarea:focus-visible {
 
 .message.user .bubble {
   /* User bubble — warm sienna gradient, earthy and distinct */
-  background: linear-gradient(145deg, #6B2910 0%, #9E3D22 40%, #C4603A 100%);
+  background: linear-gradient(145deg, #6B2910 0%, #9E3D22 40%, #5B8FF9 100%);
   color: rgba(255, 240, 225, 0.95);
   border-bottom-right-radius: 4px;
-  border: 1px solid rgba(212, 132, 90, 0.35);
+  border: 1px solid rgba(91, 143, 249, 0.35);
   box-shadow:
-    0 4px 20px rgba(212, 132, 90, 0.25),
-    inset 0 1px 0 rgba(237, 210, 185, 0.18);
+    0 4px 20px rgba(91, 143, 249, 0.25),
+    inset 0 1px 0 rgba(200, 220, 255, 0.18);
   font-weight: 450;
 }
 
@@ -837,9 +833,9 @@ textarea:focus-visible {
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   border-bottom-left-radius: 4px;
-  box-shadow: 0 2px 16px rgba(0,0,0,0.28), inset 0 1px 0 rgba(237,228,206,0.04);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255, 255, 255,0.04);
   /* Left accent bar — more visible at 0.45 */
-  border-left: 2px solid rgba(212,132,90,0.45);
+  border-left: 2px solid rgba(91, 143, 249,0.45);
 }
 
 /* Markdown inside assistant bubble */
@@ -874,7 +870,7 @@ textarea:focus-visible {
 
 /* Inline code — warm sienna tint on dark well */
 .bubble :not(pre) > code {
-  background: rgba(212,132,90,0.12);
+  background: rgba(91, 143, 249,0.12);
   border: 1px solid var(--accent-border);
   color: var(--accent-lavender);
   border-radius: var(--radius-sm);
@@ -882,7 +878,7 @@ textarea:focus-visible {
   font-family: var(--mono);
   font-size: 12.5px;
   /* Subtle top-edge inner light so it reads as slightly raised */
-  box-shadow: inset 0 1px 0 rgba(237,210,185,0.10);
+  box-shadow: inset 0 1px 0 rgba(200, 220, 255,0.10);
 }
 
 .bubble strong {
@@ -937,7 +933,7 @@ textarea:focus-visible {
 .source-item:hover {
   border-color: var(--accent-border);
   background: rgba(40, 35, 29, 0.98);
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(212,132,90,0.08);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(91, 143, 249,0.08);
 }
 
 /* Accent left border on source cards */
@@ -970,7 +966,7 @@ textarea:focus-visible {
   transition: background var(--transition);
 }
 
-.source-header:hover { background: rgba(237,228,206,0.04); }
+.source-header:hover { background: rgba(255, 255, 255,0.04); }
 
 .source-num {
   font-size: 10px;
@@ -1054,8 +1050,8 @@ textarea:focus-visible {
   padding: 2px 7px;
   border-radius: var(--radius);
   color: var(--accent-soft);
-  background: rgba(212,132,90,0.12);
-  border: 1px solid rgba(212,132,90,0.25);
+  background: rgba(91, 143, 249,0.12);
+  border: 1px solid rgba(91, 143, 249,0.25);
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -1068,7 +1064,7 @@ textarea:focus-visible {
   padding: 2px 7px;
   border-radius: 10px;            /* pill shape — more polished than square */
   text-transform: lowercase;
-  background: rgba(237,228,206,0.06);
+  background: rgba(255, 255, 255,0.06);
   color: var(--muted);
   border: 1px solid var(--border);
   flex-shrink: 0;
@@ -1079,7 +1075,7 @@ textarea:focus-visible {
 .source-lang-badge[data-lang="javascript"] { color: #D4B84A; background: rgba(212,184,74,0.10); border-color: rgba(212,184,74,0.22); }
 .source-lang-badge[data-lang="typescript"] { color: #C8A0A8; background: rgba(200,160,168,0.10); border-color: rgba(200,160,168,0.24); }
 .source-lang-badge[data-lang="go"]         { color: var(--accent-2); background: rgba(58,158,140,0.10); border-color: rgba(58,158,140,0.24); }
-.source-lang-badge[data-lang="rust"]       { color: var(--accent-light); background: rgba(212,132,90,0.12); border-color: var(--accent-border); }
+.source-lang-badge[data-lang="rust"]       { color: var(--accent-light); background: rgba(91, 143, 249,0.12); border-color: var(--accent-border); }
 .source-lang-badge[data-lang="java"]       { color: #C9933A; background: rgba(201,147,58,0.12); border-color: rgba(201,147,58,0.28); }
 
 /* Copy button */
@@ -1101,7 +1097,7 @@ textarea:focus-visible {
 @media (hover: none) { .source-copy-btn { opacity: 1; } }
 .source-copy-btn:hover {
   color: var(--text);
-  background: rgba(237,228,206,0.07);
+  background: rgba(255, 255, 255,0.07);
 }
 
 /* GitHub link — always styled as a link so it's obviously clickable */
@@ -1133,7 +1129,7 @@ textarea:focus-visible {
 .source-open-btn:hover {
   color: var(--accent-soft);
   border-color: var(--accent-border);
-  background: rgba(212,132,90,0.10);
+  background: rgba(91, 143, 249,0.10);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1159,16 +1155,16 @@ textarea:focus-visible {
   border-radius: 14px;
   padding: 4px;
   box-shadow:
-    rgba(237, 228, 206, 0.055) 0px 0px 40px 0px inset,
+    rgba(255, 255, 255, 0.055) 0px 0px 40px 0px inset,
     rgba(10, 6, 4, 0.65)       0px 8px 32px 0px,
-    rgba(237, 228, 206, 0.09)  0px 0px 0px 1px;
+    rgba(255, 255, 255, 0.09)  0px 0px 0px 1px;
   transition: box-shadow 220ms ease;
 }
 .input-row:focus-within {
   box-shadow:
-    rgba(212, 132, 90, 0.14) 0px 0px 40px 0px inset,
-    rgba(212, 132, 90, 0.22) 0px 8px 32px 0px,
-    rgba(212, 132, 90, 0.55) 0px 0px 0px 1.5px;
+    rgba(91, 143, 249, 0.14) 0px 0px 40px 0px inset,
+    rgba(91, 143, 249, 0.22) 0px 8px 32px 0px,
+    rgba(91, 143, 249, 0.55) 0px 0px 0px 1.5px;
 }
 
 /* Top glow line on input bar */
@@ -1179,7 +1175,7 @@ textarea:focus-visible {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(212,132,90,0.40), transparent);
+  background: linear-gradient(90deg, transparent, rgba(91, 143, 249,0.40), transparent);
 }
 
 .input-bar textarea {
@@ -1260,7 +1256,7 @@ textarea:focus-visible {
   width: 520px;
   height: 420px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(212, 132, 90, 0.22) 0%, rgba(212, 132, 90, 0.08) 50%, transparent 70%);
+  background: radial-gradient(ellipse, rgba(91, 143, 249, 0.22) 0%, rgba(91, 143, 249, 0.08) 50%, transparent 70%);
   filter: blur(60px);
   pointer-events: none;
   z-index: 0;
@@ -1275,7 +1271,7 @@ textarea:focus-visible {
   width: 460px;
   height: 380px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(180, 120, 70, 0.16) 0%, rgba(212, 132, 90, 0.06) 50%, transparent 70%);
+  background: radial-gradient(ellipse, rgba(180, 120, 70, 0.16) 0%, rgba(91, 143, 249, 0.06) 50%, transparent 70%);
   filter: blur(70px);
   pointer-events: none;
   z-index: 0;
@@ -1383,7 +1379,7 @@ textarea:focus-visible {
 .onboarding-step:hover {
   border-color: var(--border-strong);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(212,132,90,0.08);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(91, 143, 249,0.08);
 }
 
 /* Completed steps compress — description hidden, only title remains */
@@ -1410,7 +1406,7 @@ textarea:focus-visible {
 .onboarding-step:not(.active):not(.done) strong { color: var(--text-2); }
 .onboarding-step:not(.active):not(.done) p { color: var(--muted); }
 .onboarding-step:not(.active):not(.done) .step-num {
-  background: rgba(237,228,206,0.06);
+  background: rgba(255, 255, 255,0.06);
   color: var(--muted);
   border-color: var(--border);
   box-shadow: none;
@@ -1418,16 +1414,16 @@ textarea:focus-visible {
 
 .onboarding-step.active {
   border-color: var(--accent-border);
-  background: rgba(212, 132, 90, 0.06);
+  background: rgba(91, 143, 249, 0.06);
   box-shadow:
-    0 0 0 1px rgba(212,132,90,0.15),
-    0 8px 24px rgba(212,132,90,0.08),
+    0 0 0 1px rgba(91, 143, 249,0.15),
+    0 8px 24px rgba(91, 143, 249,0.08),
     var(--shadow-sm);
 }
 
 .step-num {
-  background: linear-gradient(135deg, #A84030 0%, #C4603A 60%, #D4845A 100%);
-  border: 1px solid rgba(212,132,90,0.55);
+  background: linear-gradient(135deg, #3D6EE8 0%, #5B8FF9 60%, #7DABFF 100%);
+  border: 1px solid rgba(91, 143, 249,0.55);
   color: #fff;
   border-radius: 50%;
   width: 26px; height: 26px;
@@ -1437,9 +1433,9 @@ textarea:focus-visible {
   margin-top: 1px;
   /* Warm glow ring + outer bloom for the active step circle */
   box-shadow:
-    0 0 0 2px rgba(212,132,90,0.20),
-    0 2px 10px rgba(212,132,90,0.45),
-    inset 0 1px 0 rgba(237, 210, 185, 0.25);
+    0 0 0 2px rgba(91, 143, 249,0.20),
+    0 2px 10px rgba(91, 143, 249,0.45),
+    inset 0 1px 0 rgba(200, 220, 255, 0.25);
   font-family: var(--mono);
 }
 
@@ -1462,12 +1458,12 @@ textarea:focus-visible {
   font-family: var(--mono);
   color: var(--accent-lavender);
   font-size: 12px;
-  background: rgba(212, 132, 90, 0.14);
+  background: rgba(91, 143, 249, 0.14);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-sm);
   padding: 2px 6px;
   /* Subtle glow so code snippets catch the eye */
-  box-shadow: inset 0 1px 0 rgba(237, 210, 185, 0.12);
+  box-shadow: inset 0 1px 0 rgba(200, 220, 255, 0.12);
 }
 
 /* Suggest state */
@@ -1496,9 +1492,9 @@ textarea:focus-visible {
 }
 
 .suggestion-btn {
-  background: rgba(237, 228, 206, 0.03);   /* warm parchment tint, not cold white */
-  border: 1px solid rgba(237, 228, 206, 0.09);
-  border-bottom: 1px solid rgba(237, 228, 206, 0.14); /* stronger bottom definition */
+  background: rgba(255, 255, 255, 0.03);   /* warm parchment tint, not cold white */
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14); /* stronger bottom definition */
   border-radius: 12px;
   color: var(--text-2);
   cursor: pointer;
@@ -1511,19 +1507,19 @@ textarea:focus-visible {
   transition: border-color var(--transition), background var(--transition), color var(--transition), transform var(--transition), box-shadow var(--transition);
   letter-spacing: -0.01em;
   box-shadow:
-    rgba(237, 228, 206, 0.04) 0px 0px 20px 0px inset,
-    rgba(212, 132, 90, 0.06)  0px 4px 20px 0px;
+    rgba(255, 255, 255, 0.04) 0px 0px 20px 0px inset,
+    rgba(91, 143, 249, 0.06)  0px 4px 20px 0px;
 }
 
 .suggestion-btn:hover {
-  border-color: rgba(212, 132, 90, 0.40);
-  background: rgba(212, 132, 90, 0.06);
+  border-color: rgba(91, 143, 249, 0.40);
+  background: rgba(91, 143, 249, 0.06);
   color: var(--text);
   transform: translateX(3px);
   box-shadow:
-    rgba(237, 228, 206, 0.25) 0px 0px 24px 0px inset,
-    rgba(212, 132, 90, 0.20)  0px 4px 28px 0px,
-    rgba(212, 132, 90, 0.35)  0px 0px 0px 1px;
+    rgba(255, 255, 255, 0.25) 0px 0px 24px 0px inset,
+    rgba(91, 143, 249, 0.20)  0px 4px 28px 0px,
+    rgba(91, 143, 249, 0.35)  0px 0px 0px 1px;
 }
 
 .suggestion-btn::before {
@@ -1572,8 +1568,8 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: rgba(212, 132, 90, 0.10);   /* warm sienna tint — clearly visible */
-  border: 1px solid rgba(212, 132, 90, 0.30);
+  background: rgba(91, 143, 249, 0.10);   /* warm sienna tint — clearly visible */
+  border: 1px solid rgba(91, 143, 249, 0.30);
   border-radius: var(--radius-full);
   padding: 3px 9px;
   font-size: 11px;
@@ -1653,9 +1649,9 @@ textarea:focus-visible {
   padding: 7px 12px;
   background: rgba(26,23,20,0.85);
   border: 1px solid var(--border-strong);
-  border-left: 2px solid rgba(212, 132, 90, 0.55);
+  border-left: 2px solid rgba(91, 143, 249, 0.55);
   border-radius: var(--radius);
-  box-shadow: 0 1px 0 rgba(237,228,206,0.04), 0 2px 10px rgba(0,0,0,0.20);
+  box-shadow: 0 1px 0 rgba(255, 255, 255,0.04), 0 2px 10px rgba(0,0,0,0.20);
 }
 .pipeline-stage {
   display: inline-flex;
@@ -1676,7 +1672,7 @@ textarea:focus-visible {
 }
 
 .mode-hint {
-  background: rgba(212,132,90,0.07);
+  background: rgba(91, 143, 249,0.07);
   border: 1px solid var(--accent-border);
   border-left: 3px solid var(--accent);
   border-radius: var(--radius-md);
@@ -1686,7 +1682,7 @@ textarea:focus-visible {
   margin-bottom: 14px;
   padding: 11px 15px;
   text-align: left;
-  box-shadow: 0 2px 12px rgba(212,132,90,0.08);
+  box-shadow: 0 2px 12px rgba(91, 143, 249,0.08);
 }
 .mode-hint strong { color: var(--accent-soft); }
 
@@ -1748,7 +1744,7 @@ textarea:focus-visible {
   align-items: center;
   gap: 5px;
   background: none;
-  border: 1px solid rgba(237,228,206,0.10);
+  border: 1px solid rgba(255, 255, 255,0.10);
   border-radius: var(--radius-sm);
   padding: 2px 7px 2px 6px;
   cursor: pointer;
@@ -1762,8 +1758,8 @@ textarea:focus-visible {
 }
 .model-selector-btn:hover {
   color: var(--text-2);
-  border-color: rgba(237,228,206,0.20);
-  background: rgba(237,228,206,0.04);
+  border-color: rgba(255, 255, 255,0.20);
+  background: rgba(255, 255, 255,0.04);
 }
 
 .model-selector-name {
@@ -1810,7 +1806,7 @@ textarea:focus-visible {
   border-radius: var(--radius);
   box-shadow:
     0 -4px 24px rgba(0,0,8,0.55),
-    0 0 0 1px rgba(237,228,206,0.06);
+    0 0 0 1px rgba(255, 255, 255,0.06);
   z-index: 200;
   overflow: hidden;
   padding: 4px;
@@ -1829,10 +1825,10 @@ textarea:focus-visible {
   transition: background var(--transition);
 }
 .model-menu-item:hover:not(:disabled) {
-  background: rgba(237,228,206,0.06);
+  background: rgba(255, 255, 255,0.06);
 }
 .model-menu-item.active {
-  background: rgba(212,132,90,0.10);
+  background: rgba(91, 143, 249,0.10);
 }
 .model-menu-item.unavailable {
   opacity: 0.45;
@@ -1886,7 +1882,7 @@ textarea:focus-visible {
    ══════════════════════════════════════════════════════════ */
 .spinner {
   width: 14px; height: 14px;
-  border: 2px solid rgba(237,228,206,0.08);
+  border: 2px solid rgba(255, 255, 255,0.08);
   border-top-color: var(--accent-light);
   border-radius: 50%;
   animation: spin 0.75s linear infinite;
@@ -1902,7 +1898,7 @@ textarea:focus-visible {
   margin-left: 2px;
   vertical-align: text-bottom;
   animation: blink 1s step-end infinite;
-  box-shadow: 0 0 8px rgba(212, 132, 90, 0.8);
+  box-shadow: 0 0 8px rgba(91, 143, 249, 0.8);
 }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
@@ -2018,7 +2014,7 @@ textarea:focus-visible {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(212,132,90,0.04) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(91, 143, 249,0.04) 0%, transparent 70%),
     var(--bg);
 }
 
@@ -2046,7 +2042,7 @@ textarea:focus-visible {
   z-index: 100;
   min-width: 210px;
   max-width: 290px;
-  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(212,132,90,0.1);
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(91, 143, 249,0.1);
   animation: tooltip-in 0.12s ease-out both;
   backdrop-filter: blur(12px);
 }
@@ -2081,8 +2077,8 @@ textarea:focus-visible {
 
 .graph-tooltip-ask {
   pointer-events: all;
-  background: linear-gradient(135deg, #A84030, #D4845A);
-  border: 1px solid rgba(212,132,90,0.5);
+  background: linear-gradient(135deg, #3D6EE8, #7DABFF);
+  border: 1px solid rgba(91, 143, 249,0.5);
   border-radius: var(--radius);
   color: #fff;
   cursor: pointer;
@@ -2093,7 +2089,7 @@ textarea:focus-visible {
   transition: opacity var(--transition), transform var(--transition);
   width: 100%;
   letter-spacing: -0.01em;
-  box-shadow: 0 2px 8px rgba(212,132,90,0.3);
+  box-shadow: 0 2px 8px rgba(91, 143, 249,0.3);
 }
 .graph-tooltip-ask:hover { opacity: 0.88; transform: translateY(-1px); }
 
@@ -2130,18 +2126,18 @@ textarea:focus-visible {
   font-family: var(--mono);
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(135deg, var(--accent) 0%, #C4603A 100%);
-  border: 1px solid rgba(212,132,90,0.5);
+  background: linear-gradient(135deg, var(--accent) 0%, #5B8FF9 100%);
+  border: 1px solid rgba(91, 143, 249,0.5);
   border-radius: 6px;
   padding: 5px 12px;
   cursor: pointer;
   letter-spacing: 0.02em;
-  box-shadow: 0 1px 6px rgba(212,132,90,0.25), inset 0 1px 0 rgba(255,255,255,0.10);
+  box-shadow: 0 1px 6px rgba(91, 143, 249,0.25), inset 0 1px 0 rgba(255,255,255,0.10);
   transition: background var(--transition), box-shadow var(--transition), transform 80ms ease;
 }
 .diagram-ask-btn:hover {
-  background: linear-gradient(135deg, #E09A72 0%, var(--accent) 100%);
-  box-shadow: 0 2px 12px rgba(212,132,90,0.40), inset 0 1px 0 rgba(255,255,255,0.12);
+  background: linear-gradient(135deg, #A8C5FF 0%, var(--accent) 100%);
+  box-shadow: 0 2px 12px rgba(91, 143, 249,0.40), inset 0 1px 0 rgba(255,255,255,0.12);
   transform: translateY(-1px);
 }
 .diagram-ask-btn:active { transform: translateY(0); }
@@ -2189,13 +2185,13 @@ textarea:focus-visible {
 }
 
 .diagram-type-btn:hover {
-  background: rgba(237,228,206,0.04);
+  background: rgba(255, 255, 255,0.04);
   border-color: var(--accent-border);
 }
 .diagram-type-btn.active {
-  background: rgba(212,132,90,0.12);
-  border-color: rgba(212,132,90,0.45);
-  box-shadow: 0 4px 20px rgba(212,132,90,0.08), inset 0 0 0 0 transparent;
+  background: rgba(91, 143, 249,0.12);
+  border-color: rgba(91, 143, 249,0.45);
+  box-shadow: 0 4px 20px rgba(91, 143, 249,0.08), inset 0 0 0 0 transparent;
 }
 .diagram-type-btn.active::before { opacity: 1; }
 
@@ -2339,7 +2335,7 @@ textarea:focus-visible {
   height: 10px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 8px rgba(212,132,90,0.5);
+  box-shadow: 0 0 8px rgba(91, 143, 249,0.5);
   flex-shrink: 0;
 }
 
@@ -2377,7 +2373,7 @@ textarea:focus-visible {
   top: 6px;
   bottom: 12px;
   width: 2px;
-  background: linear-gradient(to bottom, var(--accent-border), rgba(212,132,90,0.08));
+  background: linear-gradient(to bottom, var(--accent-border), rgba(91, 143, 249,0.08));
   pointer-events: none;
 }
 
@@ -2423,7 +2419,7 @@ textarea:focus-visible {
 .agent-step.pending .agent-step-dot {
   background: var(--accent);
   border-color: var(--accent-light);
-  box-shadow: 0 0 6px rgba(212,132,90,0.6);
+  box-shadow: 0 0 6px rgba(91, 143, 249,0.6);
 }
 
 .agent-step-arrow {
@@ -2446,7 +2442,7 @@ textarea:focus-visible {
 }
 .agent-step.pending .agent-step-body {
   border-color: var(--accent-border);
-  background: rgba(212,132,90,0.04);
+  background: rgba(91, 143, 249,0.04);
 }
 .agent-step.done .agent-step-body { opacity: 0.8; }
 .agent-step.collapsed .agent-step-body { opacity: 0.55; transition: opacity var(--transition), border-color var(--transition); }
@@ -2512,7 +2508,7 @@ textarea:focus-visible {
 }
 
 .agent-step-expand {
-  background: rgba(212,132,90,0.08);
+  background: rgba(91, 143, 249,0.08);
   border: 1px solid var(--accent-border);
   border-radius: 4px;
   color: var(--accent-soft);
@@ -2528,7 +2524,7 @@ textarea:focus-visible {
 }
 .agent-step-expand:hover {
   opacity: 1;
-  background: rgba(212,132,90,0.18);
+  background: rgba(91, 143, 249,0.18);
 }
 
 /* Agent thought bubble — reasoning text emitted before a tool call.
@@ -2640,9 +2636,9 @@ textarea:focus-visible {
 
 .ingest-step.active {
   color: var(--text);
-  background: rgba(212,132,90,0.08);
+  background: rgba(91, 143, 249,0.08);
   border: 1px solid var(--accent-border);
-  box-shadow: inset 3px 0 0 var(--accent), 0 2px 8px rgba(212,132,90,0.10);
+  box-shadow: inset 3px 0 0 var(--accent), 0 2px 8px rgba(91, 143, 249,0.10);
 }
 
 .ingest-step.done { color: var(--faint); }
@@ -2678,7 +2674,7 @@ textarea:focus-visible {
   color: var(--faint);
   font-family: var(--mono);
   pointer-events: none;
-  background: rgba(237,228,206,0.04);
+  background: rgba(255, 255, 255,0.04);
   border: 1px solid var(--border);
   padding: 2px 7px;
   border-radius: var(--radius-sm);
@@ -2693,11 +2689,11 @@ textarea:focus-visible {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   /* warm parchment tint — no cold white */
-  background: rgba(237, 228, 206, 0.12);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 3px;
   transition: background var(--transition);
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(237, 228, 206, 0.25); }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
 
 /* ══════════════════════════════════════════════════════════
    MCP SERVER STATUS PANEL
@@ -2709,10 +2705,10 @@ textarea:focus-visible {
   border-radius: var(--radius-md);
   overflow: clip;   /* clips to border-radius visually; does NOT suppress child scrolling */
   font-size: 12px;
-  background: rgba(237,228,206,0.025);
+  background: rgba(255, 255, 255,0.025);
   flex-shrink: 0;   /* never shrink — always visible */
   /* Top stripe signals "status panel" */
-  box-shadow: inset 0 1px 0 rgba(212,132,90,0.18), 0 2px 8px rgba(0,0,0,0.25);
+  box-shadow: inset 0 1px 0 rgba(91, 143, 249,0.18), 0 2px 8px rgba(0,0,0,0.25);
 }
 
 .mcp-panel-header {
@@ -2730,7 +2726,7 @@ textarea:focus-visible {
   font-size: 12px;
   transition: background var(--transition);
 }
-.mcp-panel-header:hover { background: rgba(237,228,206,0.04); }
+.mcp-panel-header:hover { background: rgba(255, 255, 255,0.04); }
 
 .mcp-dot {
   width: 8px;
@@ -2803,7 +2799,7 @@ textarea:focus-visible {
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-md);
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(212,132,90,0.10);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(91, 143, 249,0.10);
   z-index: 100;
   backdrop-filter: blur(16px);
 }
@@ -3029,7 +3025,7 @@ textarea:focus-visible {
 
 .session-item:hover {
   background: var(--surface-2);
-  border-left-color: rgba(212, 132, 90, 0.4);
+  border-left-color: rgba(91, 143, 249, 0.4);
 }
 .session-item.active {
   background: var(--accent-dim);
@@ -3176,7 +3172,7 @@ textarea:focus-visible {
 .session-search {
   width: 100%;
   padding: 5px 10px;
-  background: rgba(237,228,206,0.04);
+  background: rgba(255, 255, 255,0.04);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-2);
@@ -3189,7 +3185,7 @@ textarea:focus-visible {
 .session-search::placeholder { color: var(--faint); }
 .session-search:focus {
   border-color: var(--accent-border);
-  background: rgba(212, 132, 90, 0.06);
+  background: rgba(91, 143, 249, 0.06);
 }
 
 /* Inline title edit input — takes the place of the session-btn */
@@ -3197,7 +3193,7 @@ textarea:focus-visible {
   flex: 1;
   min-width: 0;
   padding: 6px 8px;
-  background: rgba(212, 132, 90, 0.10);
+  background: rgba(91, 143, 249, 0.10);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius);
   color: var(--text);
@@ -3474,8 +3470,8 @@ textarea:focus-visible {
 }
 
 .suggest-footer-btn {
-  background: rgba(237, 228, 206, 0.04);
-  border: 1px solid rgba(237, 228, 206, 0.09);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
   color: var(--muted);
   font-size: 12px;
   font-weight: 500;
@@ -3509,7 +3505,7 @@ textarea:focus-visible {
   gap: 8px;
   padding: 7px 14px;
   margin: 10px 24px;
-  background: rgba(212, 132, 90, 0.08);
+  background: rgba(91, 143, 249, 0.08);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius);
   font-size: 12px;
@@ -3541,7 +3537,7 @@ textarea:focus-visible {
   gap: 5px;
   margin-top: 10px;
   padding: 6px 14px;
-  background: rgba(212, 132, 90, 0.10);
+  background: rgba(91, 143, 249, 0.10);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-full);
   color: var(--accent-soft);
@@ -3553,7 +3549,7 @@ textarea:focus-visible {
   letter-spacing: -0.01em;
 }
 .diagram-this-btn:hover {
-  background: rgba(212, 132, 90, 0.20);
+  background: rgba(91, 143, 249, 0.20);
   color: var(--text);
   border-color: var(--accent);
 }
@@ -3594,7 +3590,7 @@ textarea:focus-visible {
 /* Summary header */
 .ec-header {
   padding: 12px 16px 10px;
-  border-bottom: 1px solid rgba(237,228,206,0.06);
+  border-bottom: 1px solid rgba(255, 255, 255,0.06);
   flex-shrink: 0;
   display: flex;
   align-items: baseline;
@@ -3637,8 +3633,8 @@ textarea:focus-visible {
   cursor: grab;
   position: relative;
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(212, 132, 90, 0.05) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 30%, rgba(212, 132, 90, 0.02) 0%, transparent 50%);
+    radial-gradient(ellipse at 20% 50%, rgba(91, 143, 249, 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 30%, rgba(91, 143, 249, 0.02) 0%, transparent 50%);
 }
 
 .ec-canvas-wrapper:active {
@@ -3656,7 +3652,7 @@ textarea:focus-visible {
 .ec-card {
   /* Warm charcoal card — no cold indigo; one step above canvas bg */
   background: rgba(33, 30, 26, 0.96);
-  border: 1px solid rgba(237,228,206,0.09);
+  border: 1px solid rgba(255, 255, 255,0.09);
   border-radius: 10px;
   padding: 13px 14px 11px;
   cursor: pointer;
@@ -3668,7 +3664,7 @@ textarea:focus-visible {
 }
 
 .ec-card:hover {
-  border-color: rgba(212,132,90,0.45);
+  border-color: rgba(91, 143, 249,0.45);
 }
 
 .ec-card.ec-dimmed {
@@ -3687,8 +3683,8 @@ textarea:focus-visible {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: rgba(212,132,90,0.18);
-  border: 1px solid rgba(212,132,90,0.4);
+  background: rgba(91, 143, 249,0.18);
+  border: 1px solid rgba(91, 143, 249,0.4);
   color: #EDBA9A;
   font-size: 10px;
   font-weight: 700;
@@ -3739,7 +3735,7 @@ textarea:focus-visible {
 /* File pill */
 .ec-file {
   font-size: 10.5px;
-  color: rgba(212,132,90,0.65);
+  color: rgba(91, 143, 249,0.65);
   font-family: var(--mono);
   margin-top: 3px;
   display: flex;
@@ -3754,7 +3750,7 @@ textarea:focus-visible {
 .ec-expanded {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid rgba(237,228,206,0.06);
+  border-top: 1px solid rgba(255, 255, 255,0.06);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3775,8 +3771,8 @@ textarea:focus-visible {
 
 .ec-item {
   font-size: 10px;
-  background: rgba(237,228,206,0.05);
-  border: 1px solid rgba(237,228,206,0.1);
+  background: rgba(255, 255, 255,0.05);
+  border: 1px solid rgba(255, 255, 255,0.1);
   border-radius: 4px;
   padding: 2px 7px;
   color: #EDBA9A;
@@ -3787,9 +3783,9 @@ textarea:focus-visible {
 .ec-ask {
   margin-top: 9px;
   background: transparent;
-  border: 1px solid rgba(212,132,90,0.28);
+  border: 1px solid rgba(91, 143, 249,0.28);
   border-radius: 5px;
-  color: rgba(212,132,90,0.8);
+  color: rgba(91, 143, 249,0.8);
   font-size: 11px;
   padding: 5px 10px;
   cursor: pointer;
@@ -3799,8 +3795,8 @@ textarea:focus-visible {
 }
 
 .ec-ask:hover {
-  background: rgba(212,132,90,0.10);
-  border-color: rgba(212,132,90,0.55);
+  background: rgba(91, 143, 249,0.10);
+  border-color: rgba(91, 143, 249,0.55);
   color: #EDBA9A;
 }
 
@@ -3810,7 +3806,7 @@ textarea:focus-visible {
   align-items: center;
   gap: 14px;
   padding: 7px 16px;
-  border-top: 1px solid rgba(237,228,206,0.05);
+  border-top: 1px solid rgba(255, 255, 255,0.05);
   flex-shrink: 0;
   flex-wrap: wrap;
 }
@@ -3875,7 +3871,7 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   /* Suppress the large glow from .sidebar-brand-icon in collapsed state */
-  box-shadow: 0 0 0 1px rgba(212, 132, 90, 0.3);
+  box-shadow: 0 0 0 1px rgba(91, 143, 249, 0.3);
 }
 
 .sidebar-collapsed-item {
@@ -3908,7 +3904,7 @@ textarea:focus-visible {
   width: 34px;
   height: 34px;
   background: none;
-  border: 1px solid rgba(237,228,206,0.1);
+  border: 1px solid rgba(255, 255, 255,0.1);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -3918,7 +3914,7 @@ textarea:focus-visible {
   transition: border-color 0.15s, color 0.15s;
 }
 .sidebar-collapsed-expand:hover {
-  border-color: rgba(237, 228, 206, 0.30);
+  border-color: rgba(255, 255, 255, 0.30);
   color: var(--text);
 }
 
@@ -3926,7 +3922,7 @@ textarea:focus-visible {
 .sidebar-collapse-btn {
   margin-left: auto;
   background: none;
-  border: 1px solid rgba(237,228,206,0.1);
+  border: 1px solid rgba(255, 255, 255,0.1);
   border-radius: 6px;
   width: 28px;
   height: 28px;
@@ -3939,7 +3935,7 @@ textarea:focus-visible {
   transition: border-color 0.15s, color 0.15s;
 }
 .sidebar-collapse-btn:hover {
-  border-color: rgba(237, 228, 206, 0.30);
+  border-color: rgba(255, 255, 255, 0.30);
   color: var(--text);
 }
 
