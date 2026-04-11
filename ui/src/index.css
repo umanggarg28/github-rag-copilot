@@ -1543,16 +1543,12 @@ textarea:focus-visible {
   margin-bottom: 18px;
 }
 
-/* Staggered entrance — each card slides up with a short delay */
+/* Staggered entrance — delay set inline via animationDelay style prop in App.jsx
+   so index-based order is always guaranteed correct */
 @keyframes suggestionIn {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.suggestions .suggestion-btn:nth-child(1) { animation-delay: 80ms; }
-.suggestions .suggestion-btn:nth-child(2) { animation-delay: 160ms; }
-.suggestions .suggestion-btn:nth-child(3) { animation-delay: 400ms; }
-.suggestions .suggestion-btn:nth-child(4) { animation-delay: 320ms; }
-.suggestions .suggestion-btn:nth-child(5) { animation-delay: 400ms; }
 
 .suggestion-btn {
   display: flex;

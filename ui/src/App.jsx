@@ -740,10 +740,11 @@ export default function App() {
                         { icon: "entry", title: "Entry points",       body: "Find all main entry points across repos" },
                         { icon: "config",  title: "Configuration",    body: "How do these repos handle env & config?" },
                         { icon: "pattern", title: "Design patterns",  body: "Common abstractions across all repos" },
-                      ].map(({ icon, title, body }) => {
+                      ].map(({ icon, title, body }, i) => {
                         const q = `${title}: ${body}`;
                         return (
                           <button key={title} className="suggestion-btn"
+                            style={{ animationDelay: `${80 + i * 80}ms` }}
                             onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
                             <span className="suggestion-icon">{ICONS[icon]}</span>
                             <span className="suggestion-content">
@@ -816,10 +817,11 @@ export default function App() {
                             { icon: "diagram",      title: "Generate a diagram",      body: "Visual map of the main components" },
                             { icon: "shield",       title: "Error handling",          body: "How edge cases are managed across the codebase" },
                             { icon: "flow",         title: "Data flow",               body: "How data moves from input to final result" },
-                          ].map(({ icon, title, body }) => {
+                          ].map(({ icon, title, body }, i) => {
                             const q = `${title}: ${body}`;
                             return (
                               <button key={title} className="suggestion-btn"
+                                style={{ animationDelay: `${80 + i * 80}ms` }}
                                 onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
                                 <span className="suggestion-icon">{ICONS[icon]}</span>
                                 <span className="suggestion-content">
@@ -844,10 +846,11 @@ export default function App() {
                             { icon: "classes",      title: "Key classes",           body: "What each major class does" },
                             { icon: "flow",         title: "Data processing",       body: "How data is transformed through the system" },
                             { icon: "package",      title: "Dependencies",          body: "External libraries and how they're used" },
-                          ].map(({ icon, title, body }) => {
+                          ].map(({ icon, title, body }, i) => {
                             const q = `${title}: ${body}`;
                             return (
                               <button key={title} className="suggestion-btn"
+                                style={{ animationDelay: `${80 + i * 80}ms` }}
                                 onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
                                 <span className="suggestion-icon">{ICONS[icon]}</span>
                                 <span className="suggestion-content">
