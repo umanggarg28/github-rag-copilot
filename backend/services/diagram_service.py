@@ -141,7 +141,7 @@ WHAT MAKES A GOOD CONCEPT (prefer these):
   ✓ An abstraction layer that unlocks reuse or extensibility
 
 WHAT TO SKIP (avoid these):
-  ✗ Integration glue — thin wrappers that just wire two libraries together (e.g. an HTTP client wrapper, a protocol adapter)
+  ✗ Integration glue — thin wrappers that just wire two libraries together (e.g. a client wrapper, a protocol adapter, a config loader)
   ✗ Config / schema files that only define data shapes but contain no interesting logic
   ✗ Utility modules with no algorithmic content
   ✗ Anything whose removal wouldn't change how the core algorithm works
