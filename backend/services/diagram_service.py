@@ -134,19 +134,23 @@ Surface the concepts that unlock understanding of this specific codebase. Use do
 
 Always pick concepts that a developer must understand in order — from foundation to full picture.
 
-WHAT MAKES A GOOD CONCEPT (prefer these):
-  ✓ A core data structure or algorithm the whole codebase is built around
-  ✓ A key design pattern that explains WHY the code is structured this way
-  ✓ A step in the main processing pipeline that transforms data in an interesting way
-  ✓ An abstraction layer that unlocks reuse or extensibility
+CONCEPT SELECTION — apply these tests in order:
 
-WHAT TO SKIP (avoid these):
-  ✗ Integration glue — thin wrappers that just wire two libraries together (e.g. a client wrapper, a protocol adapter, a config loader)
-  ✗ Config / schema files that only define data shapes but contain no interesting logic
-  ✗ Utility modules with no algorithmic content
-  ✗ Anything whose removal wouldn't change how the core algorithm works
+  TEST 1 — ALGORITHMIC VALUE: Does this concept contain a non-trivial algorithm or design decision?
+    PASS: a chunking strategy, a search algorithm, a training loop, a parsing technique
+    FAIL: a config loader, a data schema with no logic, a thin client wrapper, a protocol adapter
 
-If a concept is just "we use library X to do Y", it's glue — skip it and pick the component that uses the result.
+  TEST 2 — TRANSFERABILITY: Could a developer extract the technique and use it in their own project?
+    PASS: "use AST boundaries instead of character windows for chunking" — directly applicable elsewhere
+    FAIL: "this app uses library X to call API Y" — wiring specific to this app, not a reusable pattern
+
+  TEST 3 — PRIMARY PURPOSE: Is this part of the repo's CORE function, not a secondary feature?
+    PASS: the main processing pipeline, the key algorithm, the central data transformation
+    FAIL: an auxiliary tool, a visualization feature, an admin utility that isn't the point of the repo
+
+Only include a concept if it passes ALL THREE tests. If a file is just wiring two other concepts together, skip it and let the edge between those concepts imply the connection.
+
+ENTRY POINT RULE: The concept with reading_order=1 must have real algorithmic content — not just data shape definitions (Pydantic models, TypeScript interfaces, config structs). If the only file with no dependencies is a schema file, pick the NEXT most foundational file that has actual logic.
 
 Return ONLY this JSON structure (no markdown, no extra text):
 {{
