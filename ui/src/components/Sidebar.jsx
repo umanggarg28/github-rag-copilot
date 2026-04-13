@@ -105,7 +105,7 @@ function stalenessLevel(isoTimestamp) {
   return "stale";                  // definitely stale
 }
 
-export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange, sessions, currentSessionId, onLoadSession, onDeleteSession, onRenameSession, isOpen, onClose, collapsed, onToggleCollapse }) {
+export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange, sessions, currentSessionId, onLoadSession, onDeleteSession, onRenameSession, isOpen, onClose, collapsed, onToggleCollapse, onGenerateReadme }) {
   const [url, setUrl]                   = useState("");
   const [status, setStatus]             = useState(null); // {type, text}
   const [loading, setLoading]           = useState(false);
@@ -486,6 +486,21 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
                     </div>
                   </div>
                   <div className="repo-item-actions">
+                    {/* README generator — subtle hover-only action */}
+                    {onGenerateReadme && (
+                      <button
+                        className="repo-readme-btn"
+                        onClick={(e) => { e.stopPropagation(); onGenerateReadme(r.slug); }}
+                        title="Generate README"
+                        aria-label={`Generate README for ${r.slug}`}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true">
+                          <rect x="2" y="1" width="9" height="13" rx="1"/>
+                          <path d="M5 5h4M5 7h4M5 9h2"/>
+                          <path d="M9 1v3h3"/>
+                        </svg>
+                      </button>
+                    )}
                     {/* Re-index button — one click re-ingests from scratch */}
                     <button
                       className={`repo-reindex${isReindexingThis ? " spinning" : ""}`}

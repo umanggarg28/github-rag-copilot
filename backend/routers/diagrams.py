@@ -15,10 +15,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from backend.dependencies import get_diagram_service, get_distinct_id, ph_capture
+from backend.dependencies import get_diagram_service, get_readme_service, get_distinct_id, ph_capture
 from backend.services.diagram_service import DiagramService
+from backend.services.readme_service import ReadmeService
 
-router = APIRouter(tags=["diagram"])
+router = APIRouter(tags=["diagram", "readme"])
 
 
 @router.get("/repos/{owner}/{name}/tour")
@@ -146,6 +147,58 @@ async def stream_diagram(
             if event.get("stage") == "done":
                 ph_capture(distinct_id, "diagram_generated", {
                     "repo": repo, "diagram_type": type, "from_cache": not force,
+                })
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        _event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/repos/{owner}/{name}/readme/stream")
+async def stream_readme(
+    owner:        str,
+    name:         str,
+    http_request: Request,
+    readme_svc:   Annotated[ReadmeService, Depends(get_readme_service)],
+    force:        bool = Query(False, description="Bypass cache and regenerate"),
+):
+    """
+    Stream README generation as SSE.
+
+    Events: { "stage": "loading|generating|done|error", "progress": 0.0-1.0 }
+    Final:  { "stage": "done", "progress": 1.0, "content": "<markdown>", "from_cache": bool }
+    """
+    repo        = f"{owner}/{name}"
+    distinct_id = get_distinct_id(http_request)
+
+    async def _event_stream():
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            try:
+                for event in readme_svc.build_readme_stream(repo, force=force):
+                    loop.call_soon_threadsafe(queue.put_nowait, event)
+            except Exception as e:
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    {"stage": "error", "progress": 1.0, "error": str(e)},
+                )
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        asyncio.get_running_loop().run_in_executor(None, _run)
+
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            if event.get("stage") == "done":
+                ph_capture(distinct_id, "readme_generated", {
+                    "repo": repo, "from_cache": event.get("from_cache", False),
                 })
             yield f"data: {json.dumps(event)}\n\n"
 

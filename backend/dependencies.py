@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from backend.services.agent import AgentService
     from backend.services.diagram_service import DiagramService
     from backend.services.repo_map_service import RepoMapService
+    from backend.services.readme_service import ReadmeService
     from backend.mcp_client import MCPClient
     from retrieval.retrieval import RetrievalService
 
@@ -46,6 +47,7 @@ class _Services:
     agent:      "AgentService | None"      = None
     diagram:    "DiagramService | None"    = None
     repo_map:   "RepoMapService | None"    = None
+    readme:     "ReadmeService | None"     = None
     mcp_client: "MCPClient | None"         = None
 
 services = _Services()
@@ -77,6 +79,11 @@ def get_diagram_service() -> "DiagramService":
     if services.diagram is None:
         raise RuntimeError("DiagramService not initialised")
     return services.diagram
+
+def get_readme_service() -> "ReadmeService":
+    if services.readme is None:
+        raise RuntimeError("ReadmeService not initialised")
+    return services.readme
 
 def get_agent_service() -> "AgentService":
     if services.agent is None:

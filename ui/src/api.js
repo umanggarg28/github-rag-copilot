@@ -170,6 +170,59 @@ export function streamDiagram(slug, type = "architecture", { onProgress, onDone,
   return () => controller.abort();
 }
 
+/**
+ * Stream README generation with live progress events.
+ *
+ * onProgress({ stage, progress, message })
+ * onDone({ content, from_cache })
+ * onError(msg)
+ *
+ * Returns a cancel() function.
+ */
+export function streamReadme(slug, { onProgress, onDone, onError, force = false }) {
+  const [owner, name] = slug.split("/");
+  const controller = new AbortController();
+  const url = `${BASE}/repos/${owner}/${name}/readme/stream${force ? "?force=true" : ""}`;
+
+  fetch(url, { signal: controller.signal, headers: phHeaders() })
+    .then(async (res) => {
+      if (!res.ok) { onError?.(`Server error ${res.status}`); return; }
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let   buffer  = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop();
+
+        for (const part of parts) {
+          if (!part.trim()) continue;
+          const line = part.split("\n").find(l => l.startsWith("data: "));
+          if (!line) continue;
+          const event = JSON.parse(line.slice(6));
+
+          if (event.stage === "done") {
+            onDone?.({ content: event.content, from_cache: event.from_cache });
+          } else if (event.stage === "error") {
+            onError?.(event.error || "Failed to generate README");
+          } else {
+            onProgress?.(event);
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== "AbortError") onError?.(err.message || "Connection lost");
+    });
+
+  return () => controller.abort();
+}
+
 export async function fetchMcpPrompt(name, args = {}) {
   const res = await fetch(
     `${BASE}/mcp-prompt?name=${encodeURIComponent(name)}&arguments=${encodeURIComponent(JSON.stringify(args))}`

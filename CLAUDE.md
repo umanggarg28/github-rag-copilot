@@ -145,6 +145,13 @@ Set all env vars in HF Space → Settings → Variables (not in the Dockerfile �
 
 ---
 
+## Browser Automation (Playwright)
+- Prefer `browser_take_screenshot` over `browser_snapshot` for visual checks — snapshots return the full accessibility tree and are very token-heavy.
+- Use `browser_evaluate` for targeted data extraction instead of snapshotting the whole page.
+- Only use `browser_snapshot` when you specifically need the DOM/accessibility structure.
+
+---
+
 ## Slash Commands Available
 
 - `/ingest-repo` — ingest a GitHub repository by URL

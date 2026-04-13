@@ -560,14 +560,17 @@ textarea:focus-visible {
 }
 
 .repo-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   cursor: pointer;
   color: var(--muted);
   font-size: 14px;
-  padding: 5px 7px;
-  min-width: 26px;
-  min-height: 26px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
   transition: color var(--transition), background var(--transition);
@@ -3286,14 +3289,37 @@ textarea:focus-visible {
 }
 
 /* Re-index button ⟳ */
+/* README icon — same hover-reveal pattern as reindex/delete */
+.repo-readme-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  transition: color var(--transition), background var(--transition);
+}
+.repo-readme-btn:hover { color: var(--accent-soft); background: var(--accent-dim); }
+
 .repo-reindex {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   cursor: pointer;
   color: var(--muted);
   font-size: 15px;
   line-height: 1;
-  padding: 3px 6px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
   transition: color var(--transition), background var(--transition), transform 400ms linear;
@@ -4130,4 +4156,547 @@ textarea:focus-visible {
 
 .diagram-canvas {
   min-height: 500px;
+}
+
+
+/* ── README View ─────────────────────────────────────────────────────────── */
+/* Fills the main pane exactly like DiagramView — no modal, no overlay */
+
+.readme-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.readme-view-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-shrink: 0;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.readme-view-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.readme-view-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* README action bar buttons — same visual system as clear-btn / header actions */
+.readme-bar-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: var(--sans);
+  font-weight: 500;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+  white-space: nowrap;
+}
+.readme-bar-btn:hover {
+  color: var(--text);
+  background: var(--surface-4);
+  border-color: var(--accent-border);
+}
+
+.readme-view-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.readme-view-body {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+/* Prose column — GitHub/Linear-style: clean, constrained, no visual tricks */
+.readme-content {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 44px clamp(24px, 6%, 72px) 72px;
+  font-size: 14.5px;
+  line-height: 1.78;
+  color: var(--text-2);
+}
+
+/* H1 — document heading, not a hero banner.
+   GitHub renders it at ~28px clean white; we match that discipline. */
+.readme-content h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  margin: 0 0 6px;
+  color: var(--text);
+}
+
+/* Thin accent rule beneath the title — the one visual signature */
+.readme-content h1::after {
+  content: '';
+  display: block;
+  margin-top: 14px;
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(to right, var(--accent-border), transparent 60%);
+}
+
+/* Lead paragraph immediately after H1 — slightly larger, acts as subtitle */
+.readme-content h1 + p {
+  font-size: 15.5px;
+  line-height: 1.65;
+  color: var(--text-2);
+  margin: 16px 0 44px;
+  font-weight: 400;
+}
+
+/* H2 — small-caps section label with glowing dot + fading rule */
+.readme-content h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 48px 0 18px;
+  padding: 0;
+  border: none;
+}
+
+.readme-content h2::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow), 0 0 4px var(--accent);
+  flex-shrink: 0;
+}
+
+.readme-content h2::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--border-strong), transparent);
+}
+
+/* H3 */
+.readme-content h3 {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 24px 0 8px;
+  letter-spacing: -0.01em;
+}
+
+/* Paragraphs */
+.readme-content p { margin: 0 0 14px; }
+
+/* Lists — blueprint dots instead of browser bullets */
+.readme-content ul {
+  margin: 0 0 16px;
+  padding-left: 0;
+  list-style: none;
+}
+.readme-content ol { margin: 0 0 16px; padding-left: 22px; }
+.readme-content li {
+  margin-bottom: 7px;
+  padding-left: 18px;
+  position: relative;
+}
+.readme-content ul > li::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 10px;
+  width: 4px;
+  height: 4px;
+  background: var(--accent);
+  border-radius: 50%;
+  opacity: 0.6;
+}
+
+/* Inline code — looks like code, not a button.
+   Surface-4 bg + subtle border is how GitHub/Notion style it. */
+.readme-content code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--text-2);
+}
+
+/* Standalone pre blocks (not inside TerminalBlock) — fallback only */
+.readme-content > pre {
+  background: #050510;
+  border: 1px solid var(--border-strong);
+  border-top: 1.5px solid var(--accent-border);
+  border-radius: var(--radius);
+  padding: 18px;
+  overflow-x: auto;
+  margin: 16px 0;
+}
+.readme-content > pre code {
+  background: none; border: none; padding: 0;
+  font-size: 12.5px; color: var(--text-2); line-height: 1.65;
+}
+
+/* Horizontal rule — gradient fade instead of hard line */
+.readme-content hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--accent-border), transparent);
+  margin: 40px 0;
+}
+
+/* Strong */
+.readme-content strong { color: var(--accent-lavender); font-weight: 600; }
+
+/* Links */
+.readme-content a { color: var(--accent-soft); text-decoration: none; }
+.readme-content a:hover { color: var(--accent-light); text-decoration: underline; }
+
+/* Blockquotes */
+.readme-content blockquote {
+  border-left: 2px solid var(--accent-border);
+  margin: 16px 0;
+  padding: 4px 0 4px 16px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ── Terminal chrome for fenced code blocks ─────────────────────────────── */
+/* macOS-style window: traffic-light dots + language badge + dark body      */
+
+.readme-terminal {
+  margin: 20px 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  box-shadow:
+    0 12px 40px rgba(0,0,0,0.6),
+    inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.readme-terminal-bar {
+  display: flex;
+  align-items: center;
+  padding: 9px 14px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid var(--border);
+  gap: 6px;
+}
+
+/* Traffic-light dots — authentic macOS feel */
+.readme-terminal-dots {
+  display: flex;
+  gap: 6px;
+}
+.readme-terminal-dots span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.readme-terminal-dots span:nth-child(1) { background: #FF5F57; }
+.readme-terminal-dots span:nth-child(2) { background: #FEBC2E; }
+.readme-terminal-dots span:nth-child(3) { background: #28C840; }
+
+.readme-terminal-lang {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+
+/* Pre inside the terminal — no extra chrome, just content */
+.readme-terminal-pre {
+  margin: 0;
+  padding: 18px;
+  background: #050510;
+  border: none;
+  border-radius: 0;
+  overflow-x: auto;
+}
+.readme-terminal-pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.65;
+}
+
+/* Quality tip strip — one-liner between action bar and content */
+.readme-quality-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  line-height: 1.5;
+}
+
+.readme-quality-note code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  background: var(--surface-4);
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--text-2);
+}
+
+/* Preview/Markdown toggle reuses the app-wide .view-toggle / .view-btn system */
+
+/* Raw markdown source panel — monospace, line-height matches code blocks */
+.readme-raw {
+  margin: 0;
+  padding: 32px clamp(24px, 8%, 120px);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: hidden;
+  tab-size: 2;
+}
+
+.readme-view-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  min-height: 300px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.readme-view-placeholder-icon {
+  margin-bottom: 4px;
+}
+
+/* ── README Modal (unused, kept for reference) ───────────────────────────── */
+
+.readme-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.readme-panel {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 760px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.readme-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.readme-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.readme-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.readme-repo {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readme-cache-badge {
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--muted);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.readme-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.readme-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.readme-action-btn:hover {
+  background: var(--surface-4);
+  border-color: var(--accent-border);
+  color: var(--accent-soft);
+}
+
+.readme-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.readme-close-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Thin accent progress bar below the header */
+.readme-progress-wrap {
+  height: 2px;
+  background: var(--surface-3);
+  flex-shrink: 0;
+}
+.readme-progress-bar {
+  height: 100%;
+  background: var(--accent-soft);
+  border-radius: 1px;
+  transition: width 0.4s ease;
+}
+
+.readme-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 32px;
+  min-height: 0;
+}
+
+.readme-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 40px 0;
+  justify-content: center;
+}
+
+.readme-error {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--text-2);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* README trigger button in header */
+.readme-trigger-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.readme-trigger-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--accent-border);
+  color: var(--accent-soft);
+}
+
+@media (max-width: 768px) {
+  .readme-panel  { max-height: 94vh; }
+  .readme-body   { padding: 20px 18px; }
+  .readme-action-btn span { display: none; } /* icon-only on mobile */
 }
