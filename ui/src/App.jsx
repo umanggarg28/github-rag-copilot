@@ -499,8 +499,10 @@ export default function App() {
             prev.map((m) => {
               if (m.id !== assistantId) return m;
               const calls = [...m.toolCalls];
-              // Find last call for this tool (most recent) and fill its output
-              for (let i = calls.length - 1; i >= 0; i--) {
+              // Find the first (oldest) unfilled slot for this tool — results arrive
+              // in the same order as calls were emitted, so FIFO matching is correct.
+              // Scanning backwards was wrong: parallel same-name calls got swapped.
+              for (let i = 0; i < calls.length; i++) {
                 if (calls[i].tool === tool && !calls[i].output) {
                   calls[i] = { ...calls[i], output };
                   break;
