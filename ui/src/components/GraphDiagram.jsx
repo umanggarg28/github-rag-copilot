@@ -273,7 +273,8 @@ export default function GraphDiagram({ data, onNodeSelect, onEdgeSelect, onAskAb
       return;
     }
     const { width, height } = wrapRef.current.getBoundingClientRect();
-    const scale = 0.85;
+    // Smaller initial scale on mobile so the diagram fits without needing to zoom out
+    const scale = width < 768 ? 0.5 : 0.85;
     // Offset so the scaled canvas sits in the centre of the wrapper
     const cx = (width  - canvasW * scale) / 2;
     const cy = (height - canvasH * scale) / 2;

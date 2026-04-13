@@ -3020,9 +3020,29 @@ textarea:focus-visible {
   /* Allow onboarding content to scroll if it overflows on short screens */
   .empty-state { justify-content: flex-start; padding-top: 32px; overflow-y: auto; }
 
-  /* Diagram type bar: allow horizontal scroll rather than wrapping/overflowing */
-  .diagram-type-bar { overflow-x: auto; padding: 10px 16px; gap: 6px; -webkit-overflow-scrolling: touch; }
-  .diagram-type-btn { min-width: 72px; flex-shrink: 0; }
+  /* ── Diagram header ── */
+  /* Title ("Explore — owner/repo") takes too much width — context is clear from tabs */
+  .diagram-title { display: none; }
+  .diagram-header { padding: 10px 14px; }
+  /* Shrink action buttons to icon+symbol only — hide the text labels */
+  .diagram-retry-btn { font-size: 11px; padding: 5px 8px; }
+  .diagram-ask-btn   { font-size: 10px; padding: 5px 8px; }
+
+  /* ── Tab bar ── */
+  /* Horizontal scroll so tabs never wrap or overflow */
+  .diagram-type-bar { overflow-x: auto; padding: 8px 14px; gap: 6px; -webkit-overflow-scrolling: touch; }
+  /* Switch each tab from column (icon / label / desc) to row (icon + label) */
+  .diagram-type-btn {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    min-width: unset;
+    flex-shrink: 0;
+  }
+  /* Hide the subtitle description line — label alone is enough on mobile */
+  .diagram-type-desc { display: none; }
+  .diagram-type-icon { margin-bottom: 0; }
 
   /* Source card header: let filepath truncate early so the row doesn't overflow */
   .source-github-link { max-width: 120px; }

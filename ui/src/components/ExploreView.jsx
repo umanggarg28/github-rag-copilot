@@ -222,7 +222,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   const [error, setError]       = useState(null);
   const [selectedId, setSelected] = useState(null);
   const [hoveredId, setHovered]   = useState(null);
-  const [xform, setXform]       = useState({ x: 0, y: 0, scale: 0.85 });
+  const [xform, setXform]       = useState({ x: 0, y: 0, scale: window.innerWidth < 768 ? 0.5 : 0.85 });
   const dragging = useRef(false);
   const drag0    = useRef({});
   const wrapRef  = useRef(null);
@@ -257,7 +257,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     setError(null);
     setData(null);
     setSelected(null);
-    setXform({ x: 0, y: 0, scale: 0.85 });
+    setXform({ x: 0, y: 0, scale: window.innerWidth < 768 ? 0.5 : 0.85 });
     const cancel = streamTour(repo, {
       force,
       onProgress: (ev) => setStage(ev),
