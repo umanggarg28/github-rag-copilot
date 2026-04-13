@@ -104,9 +104,10 @@ _ENRICH_SYSTEM = (
 )
 
 _TOUR_SYSTEM = (
-    "You are an expert software architect explaining modern codebases to curious developers. "
-    "You are especially skilled at identifying how RAG pipelines, agent loops, tool definitions, "
-    "MCP servers, embedding models, vector stores, and LLM integrations fit together in real code. "
+    "You are an expert software architect explaining codebases to curious developers. "
+    "Your job is to identify the 6-8 core concepts that unlock understanding of any codebase — "
+    "the foundational data structures, key algorithms, and architectural patterns that everything else builds on. "
+    "You are skilled at reading real source code and extracting the 'aha moments' that make a design click. "
     "Return ONLY valid JSON — no markdown fences, no explanation, just the JSON object."
 )
 
@@ -120,10 +121,18 @@ what you might guess from the function name alone.
 {chunk_summary}
 
 Generate a JSON "concept map" — 6-8 key concepts that explain how this codebase is structured and why.
-If it's an agentic or RAG codebase, surface: the retrieval pipeline, agent loop, tool dispatch, MCP integration,
-embedding step, vector store, context assembly, LLM call.
-If it's an ML training codebase, surface: the forward pass, loss function, backward pass, optimizer step, data pipeline.
-For any other codebase, surface the most important architectural concepts a developer needs to understand it.
+
+Surface the concepts that unlock understanding of this specific codebase. Use domain knowledge to pick the right framing:
+- ML training codebase → forward pass, loss function, backward pass, optimizer step, data pipeline
+- RAG / AI agent codebase → retrieval pipeline, context assembly, agent loop, tool dispatch, LLM call
+- Web framework or API → routing, middleware, request lifecycle, data models, auth, persistence
+- Compiler / interpreter → lexer, parser, AST, IR, code generation, symbol table
+- Game engine → game loop, entity-component system, rendering pipeline, physics, input handling
+- Database / storage engine → query planner, storage layout, index structure, transaction log, cache
+- CLI tool or DevOps → config parsing, command dispatch, execution engine, output formatting
+- Any other codebase → the core data structure it operates on, the main algorithm, and the key abstraction layers
+
+Always pick concepts that a developer must understand in order — from foundation to full picture.
 
 Return ONLY this JSON structure (no markdown, no extra text):
 {{
