@@ -118,6 +118,9 @@ export default function ReadmeView({ repo, contextualAt, onClose }) {
               cached
             </span>
           )}
+          {contextualAt && status === "done" && (
+            <span className="repo-contextual" title={`Contextual retrieval applied — re-indexed ${contextualAt}`}>✦</span>
+          )}
           {isLoading && (
             <span className="readme-view-status">
               <span className="spinner" style={{ width: 10, height: 10 }} />
