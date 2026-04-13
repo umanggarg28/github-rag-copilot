@@ -807,7 +807,7 @@ export default function App() {
                         { icon: "explore", title: "Explore the structure", body: "Concept map of key components and how they connect." },
                       ].map(({ icon, title, body }, i) => (
                         <div key={title} className="suggestion-btn"
-                          style={{ animationDelay: `${80 + i * 90}ms`, cursor: "default" }}>
+                          style={{ animationDelay: `${150 + i * 180}ms`, cursor: "default" }}>
                           <span className="suggestion-icon">{ICONS[icon]}</span>
                           <span className="suggestion-content">
                             <span className="suggestion-title">{title}</span>
