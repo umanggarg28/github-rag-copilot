@@ -31,6 +31,7 @@ from backend.services.generation import GenerationService
 from backend.services.agent import AgentService
 from backend.services.diagram_service import DiagramService
 from backend.services.repo_map_service import RepoMapService
+from backend.services.readme_service import ReadmeService
 from retrieval.retrieval import RetrievalService, Reranker
 from ingestion.qdrant_store import QdrantStore
 from ingestion.embedder import Embedder
@@ -70,6 +71,7 @@ async def lifespan(app: FastAPI):
     )
     services.diagram    = DiagramService(_qdrant_store, services.generation)
     services.repo_map   = RepoMapService(_qdrant_store)
+    services.readme     = ReadmeService(services.repo_map, services.generation)
 
     init_mcp_services(services.retrieval, _qdrant_store)
 

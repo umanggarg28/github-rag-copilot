@@ -665,10 +665,11 @@ class AgentService:
             mcp_tools = await self.mcp.list_tools()
             messages  = self._build_initial_messages(question, repo_filter, history)
 
-            # Clear session notes from any previous run so this conversation starts fresh.
-            # Note: we import here to avoid circular imports at module load time.
+            # Clear in-memory notes and pre-load any persisted notes for this repo.
+            # Passing repo_filter lets clear_notes() hydrate working memory from
+            # Qdrant so the agent has cross-session recall from the first iteration.
             from backend.mcp_server import clear_notes
-            clear_notes()
+            clear_notes(repo=repo_filter)
 
             # Loop detection: skip duplicate tool calls in the stream path too.
             seen_calls: set[tuple] = set()

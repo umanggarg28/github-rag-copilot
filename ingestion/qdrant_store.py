@@ -451,6 +451,87 @@ class QdrantStore:
         )
         return before
 
+    # ── Persistent agent notes ────────────────────────────────────────────────
+    # Agent notes are stored in a sidecar collection ("<collection>_notes").
+    # Each note is a point whose ID is a deterministic hash of (repo, key),
+    # so upserting the same key simply overwrites the previous value.
+    #
+    # Why a separate collection?
+    #   Notes don't need vectors — they're looked up by exact (repo, key) match,
+    #   not by similarity. A sidecar collection keeps them out of the code-search
+    #   index so they can never pollute retrieval results.
+    #   We store a dummy 1-dim zero vector to satisfy Qdrant's schema requirement.
+
+    @property
+    def _notes_collection(self) -> str:
+        return f"{self.collection}_notes"
+
+    def _ensure_notes_collection(self) -> None:
+        """Create the notes sidecar collection if it doesn't exist (idempotent)."""
+        existing = [c.name for c in self.client.get_collections().collections]
+        if self._notes_collection not in existing:
+            self.client.create_collection(
+                collection_name=self._notes_collection,
+                vectors_config=VectorParams(size=1, distance=Distance.DOT),
+            )
+            # Index repo + key for efficient filtering
+            for field in ["repo", "key"]:
+                try:
+                    self.client.create_payload_index(
+                        collection_name=self._notes_collection,
+                        field_name=field,
+                        field_schema=PayloadSchemaType.KEYWORD,
+                    )
+                except Exception:
+                    pass
+
+    def save_note(self, repo: str, key: str, value: str) -> None:
+        """
+        Persist an agent note for a repo (upsert by key).
+
+        The point ID is a deterministic hash of (repo, key) so re-saving
+        the same key overwrites the previous value without creating duplicates.
+        """
+        self._ensure_notes_collection()
+        note_id = hashlib.md5(f"{repo}::{key}".encode()).hexdigest()
+        import datetime
+        self.client.upsert(
+            collection_name=self._notes_collection,
+            points=[PointStruct(
+                id=note_id,
+                vector=[0.0],  # dummy — notes are retrieved by filter, not similarity
+                payload={
+                    "repo":       repo,
+                    "key":        key,
+                    "value":      value,
+                    "updated_at": datetime.datetime.utcnow().isoformat(),
+                },
+            )],
+        )
+
+    def load_notes(self, repo: str) -> dict[str, str]:
+        """
+        Load all persisted notes for a repo. Returns {key: value} dict.
+
+        Called at the start of each agent run to pre-populate the in-memory
+        working memory, so the agent can recall facts from previous sessions.
+        """
+        self._ensure_notes_collection()
+        results, _ = self.client.scroll(
+            collection_name=self._notes_collection,
+            scroll_filter=Filter(must=[
+                FieldCondition(key="repo", match=MatchValue(value=repo))
+            ]),
+            limit=200,
+            with_payload=["key", "value"],
+            with_vectors=False,
+        )
+        return {
+            p.payload["key"]: p.payload["value"]
+            for p in results
+            if p.payload and "key" in p.payload and "value" in p.payload
+        }
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

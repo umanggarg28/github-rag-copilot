@@ -90,20 +90,44 @@ _retrieval = None  # RetrievalService — set by init_services()
 _store = None      # QdrantStore       — set by init_services()
 
 # ── Session working memory ─────────────────────────────────────────────────────
-# Simple key→value store the agent can write to during a single stream() run.
-# The agent uses note() to record discovered facts (entry points, key classes, etc.)
-# and recall_notes() to read them back — avoiding redundant re-searches.
+# Two-layer memory: in-process dict for fast same-session access, Qdrant for
+# cross-session persistence.
 #
-# This is a module-level dict (shared across the process) with a clear_notes()
-# function called by AgentService.stream() at the start of each new query.
-# For a single-user local server this is correct.  For multi-user production,
-# replace with a per-request context variable (contextvars.ContextVar).
+# On each new query, clear_notes(repo) is called:
+#   1. Clears the in-memory dict
+#   2. Loads any previously persisted notes for this repo from Qdrant
+#      so the agent can recall facts from prior sessions immediately
+#
+# note() writes to both layers.  recall_notes() reads only the in-memory dict
+# (already warm from Qdrant load) — no per-call Qdrant round-trip.
+#
+# _current_repo tracks which repo's notes are loaded so note() knows where
+# to persist without changing the tool's public interface.
 _session_notes: dict[str, str] = {}
+_current_repo:  str | None     = None
 
 
-def clear_notes() -> None:
-    """Reset the working memory at the start of each new agent run."""
+def clear_notes(repo: str | None = None) -> None:
+    """
+    Reset working memory and pre-load persisted notes for the given repo.
+
+    Called by AgentService.stream() at the start of every new query.
+    If repo is provided and a QdrantStore is available, existing notes
+    for that repo are loaded so the agent has cross-session recall.
+    """
+    global _current_repo
     _session_notes.clear()
+    _current_repo = repo
+
+    # Pre-load persisted notes from Qdrant — agent can use recall_notes()
+    # immediately without any extra round-trips.
+    if repo and _store is not None:
+        try:
+            persisted = _store.load_notes(repo)
+            _session_notes.update(persisted)
+        except Exception as e:
+            # Non-fatal: degraded to in-memory only if Qdrant is unavailable
+            print(f"[notes] Could not load persisted notes for {repo}: {e}")
 
 
 def init_services(retrieval_service, qdrant_store):
@@ -465,6 +489,15 @@ def note(key: str, value: str) -> str:
         value: The fact itself — be specific: include file, line, and what it does
     """
     _session_notes[key] = value
+
+    # Write-through to Qdrant for cross-session persistence.
+    # Non-fatal: if Qdrant is unavailable, the note lives in-memory for this session.
+    if _current_repo and _store is not None:
+        try:
+            _store.save_note(_current_repo, key, value)
+        except Exception as e:
+            print(f"[notes] Could not persist note '{key}': {e}")
+
     return f"✓ Noted: {key} = {value}"
 
 

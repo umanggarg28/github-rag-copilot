@@ -3,6 +3,7 @@ import posthog from "posthog-js";
 import Sidebar from "./components/Sidebar";
 import Message from "./components/Message";
 import DiagramView from "./components/DiagramView";
+import ReadmeView from "./components/ReadmeView";
 import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpPrompt, fetchAgentModels } from "./api";
 
 // ── Suggestion card icons ────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ export default function App() {
   const prevRepoRef  = useRef(null); // track previous repo before switching
   const messagesRef  = useRef([]);   // always-fresh messages ref to avoid stale closures
   const sessionIdRef = useRef(null); // ID of the current open session
+  const [showReadme, setShowReadme]   = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('ghrc_sidebarCollapsed') === 'true'
@@ -191,6 +193,7 @@ export default function App() {
     setMessages(session.messages);
     setLastSources([]);
     setView("chat");
+    setShowReadme(false);
     // Scroll to the last message after the messages render
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "instant" }), 50);
   }
@@ -643,7 +646,7 @@ export default function App() {
         repos={repos}
         reposLoading={reposLoading}
         activeRepo={activeRepo}
-        onSelectRepo={(repo) => { setActiveRepo(repo); posthog.capture("repo_selected", { repo }); }}
+        onSelectRepo={(repo) => { setActiveRepo(repo); setShowReadme(false); posthog.capture("repo_selected", { repo }); }}
         onReposChange={loadRepos}
         mode={mode}
         onModeChange={setMode}
@@ -658,6 +661,7 @@ export default function App() {
         onClose={() => setSidebarOpen(false)}
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebarCollapse}
+        onGenerateReadme={(repo) => { setActiveRepo(repo); setShowReadme(true); posthog.capture("readme_opened", { repo }); }}
       />
 
       <div className="main">
@@ -701,12 +705,12 @@ export default function App() {
             {activeRepo && activeRepo !== "all" && (
               <div className="view-toggle">
                 <button
-                  className={`view-btn ${view === "chat" ? "active" : ""}`}
-                  onClick={() => setView("chat")}
+                  className={`view-btn ${view === "chat" && !showReadme ? "active" : ""}`}
+                  onClick={() => { setView("chat"); setShowReadme(false); }}
                 >Chat</button>
                 <button
-                  className={`view-btn ${view === "graph" ? "active" : ""}`}
-                  onClick={() => { setView("graph"); posthog.capture("diagram_view_opened", { repo: activeRepo }); }}
+                  className={`view-btn ${view === "graph" && !showReadme ? "active" : ""}`}
+                  onClick={() => { setView("graph"); setShowReadme(false); posthog.capture("diagram_view_opened", { repo: activeRepo }); }}
                 >Diagram <span style={{ fontSize: 8, verticalAlign: "middle", color: "var(--accent-soft)", marginLeft: 2 }}>●</span></button>
               </div>
             )}
@@ -720,8 +724,16 @@ export default function App() {
           </div>
         </div>
 
+        {/* ── README view ── */}
+        {showReadme && activeRepo && activeRepo !== "all" && (
+          <ReadmeView
+            repo={activeRepo}
+            onClose={() => setShowReadme(false)}
+          />
+        )}
+
         {/* ── Diagram view ── */}
-        {view === "graph" && activeRepo && (
+        {!showReadme && view === "graph" && activeRepo && (
           <DiagramView
             repo={activeRepo}
             focusFiles={focusFiles}
@@ -735,7 +747,7 @@ export default function App() {
         )}
 
         {/* ── Chat view ── */}
-        {view === "chat" && (
+        {!showReadme && view === "chat" && (
           <>
             {messages.length === 0 ? (
               <div className="empty-state">
@@ -1014,6 +1026,7 @@ export default function App() {
           </>
         )}
       </div>
+
     </div>
   );
 }
