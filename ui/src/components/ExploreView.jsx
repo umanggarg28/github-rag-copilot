@@ -311,6 +311,59 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   // before reattaching, so there's no double-registration risk.
   }, [!!data]);
 
+  // Touch pan (1 finger) + pinch-to-zoom (2 fingers) — same logic as GraphDiagram
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    let lastTouch = null;
+    let lastPinch = null;
+    function pinchDist(t) { return Math.hypot(t[1].clientX - t[0].clientX, t[1].clientY - t[0].clientY); }
+    function pinchMid(t, rect) {
+      return { x: (t[0].clientX + t[1].clientX) / 2 - rect.left,
+               y: (t[0].clientY + t[1].clientY) / 2 - rect.top };
+    }
+    function onTouchStart(e) {
+      if (e.touches.length === 1) {
+        lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        lastPinch = null;
+      } else if (e.touches.length === 2) {
+        const t = [...e.touches];
+        lastPinch = { dist: pinchDist(t), mid: pinchMid(t, el.getBoundingClientRect()) };
+        lastTouch = null;
+      }
+    }
+    function onTouchMove(e) {
+      e.preventDefault();
+      if (e.touches.length === 1 && lastTouch) {
+        const dx = e.touches[0].clientX - lastTouch.x;
+        const dy = e.touches[0].clientY - lastTouch.y;
+        lastTouch = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        setXform(t => ({ ...t, x: t.x + dx, y: t.y + dy }));
+      } else if (e.touches.length === 2 && lastPinch) {
+        const t   = [...e.touches];
+        const rect = el.getBoundingClientRect();
+        const d   = pinchDist(t);
+        const mid = pinchMid(t, rect);
+        const f   = d / lastPinch.dist;
+        lastPinch = { dist: d, mid };
+        setXform(s => {
+          const newScale = Math.min(Math.max(s.scale * f, 0.3), 3);
+          const ratio = newScale / s.scale;
+          return { x: mid.x - (mid.x - s.x) * ratio, y: mid.y - (mid.y - s.y) * ratio, scale: newScale };
+        });
+      }
+    }
+    function onTouchEnd() { lastTouch = null; lastPinch = null; }
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove",  onTouchMove,  { passive: false });
+    el.addEventListener("touchend",   onTouchEnd);
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove",  onTouchMove);
+      el.removeEventListener("touchend",   onTouchEnd);
+    };
+  }, [!!data]);
+
   // ── Pan handlers ──────────────────────────────────────────────────────────
   // We attach mousemove/mouseup to the DOCUMENT rather than the wrapper div.
   //
