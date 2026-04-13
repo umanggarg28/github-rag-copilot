@@ -128,7 +128,7 @@ For any other codebase, surface the most important architectural concepts a deve
 Return ONLY this JSON structure (no markdown, no extra text):
 {{
   "summary": "2-sentence plain-English overview: what this repo does and what pattern it demonstrates",
-  "entry_point": "the single most important file to open first (just filename, e.g. 'engine.py')",
+  "entry_point": "the most FOUNDATIONAL file for a new reader — the file that defines the core data structure or central abstraction that all other concepts build on top of. Choose the simplest, most primitive piece, NOT the most complex or feature-rich file. A student with zero context must be able to start here and understand everything else afterward. (just filename, e.g. 'engine.py')",
   "concepts": [
     {{
       "id": 0,
@@ -147,12 +147,12 @@ Return ONLY this JSON structure (no markdown, no extra text):
 
 Rules:
 - Exactly 6-8 concepts — pick the most essential, skip utilities and tests
-- depends_on: list of concept ids this concept builds on (empty list [] for foundations)
-- reading_order: 1-indexed — only ONE concept should have reading_order=1 (the true entry point)
-- depends_on: list of concept ids this concept builds on (empty list [] for foundations)
+- depends_on: list of concept ids this concept builds on (empty [] for foundational concepts with no prerequisites)
 - reading_order: 1-indexed integer — order a student should read to build mental model from scratch
+- CRITICAL: reading_order=1 MUST be the concept whose depends_on is [] AND whose file matches entry_point — the simplest foundation, not the most complex file
+- CRITICAL: entry_point and reading_order=1 MUST agree — the concept with reading_order=1 must have its file match entry_point
 - The concepts must form a DAG — no circular dependencies
-- Descriptions must explain WHY this component exists in an AI system, not just what it does
+- Descriptions must explain WHY this component exists and the key design insight, not just what it does
 - key_items: 2-4 actual method or function names found in the indexed code above
 - type must be exactly one of: class, function, module, algorithm
 """

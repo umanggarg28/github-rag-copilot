@@ -479,9 +479,6 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
       ])
     : null;
 
-  // The entry point file tells us which concept is the "Start here" one
-  const entryFile = data.entry_point?.split("/").pop() ?? "";
-
   return (
     <div className="ec-container">
       {/* ── Summary header ── */}
@@ -562,11 +559,10 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
           {concepts.map(c => {
             const pos = positions[c.id];
             if (!pos) return null;
-            // Only the lowest reading-order concept from the entry file gets "Start here".
-            // Without this, every chunk from engine.py shows the badge.
-            const entryMatches = concepts.filter(x => entryFile && x.file?.endsWith(entryFile));
-            const minEntryOrder = entryMatches.length ? Math.min(...entryMatches.map(x => x.reading_order)) : null;
-            const isEntry = !!(entryFile && c.file?.endsWith(entryFile) && c.reading_order === minEntryOrder);
+            // reading_order=1 is always the foundational "Start here" concept.
+            // We ignore entry_point for this badge — the LLM sometimes sets entry_point
+            // to the most complex file rather than the most foundational one.
+            const isEntry = c.reading_order === 1;
             return (
               <ConceptCard
                 key={c.id}
