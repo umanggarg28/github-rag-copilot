@@ -273,7 +273,7 @@ Building Cartographer required implementing and integrating:
 
 **Agentic systems** — ReAct loop design, MCP protocol, tool schema definition, working memory, parallel async tool execution, streaming thought traces
 
-**Production backend** — FastAPI async architecture, SSE streaming, multi-provider LLM fallback, rate limit handling, Docker containerisation, environment-based config
+**Production backend** — FastAPI async architecture with domain-separated routers (`ingestion`, `query`, `agent`, `diagrams`, `mcp_routes`), SSE streaming, multi-provider LLM fallback, rate limit handling, Docker containerisation, environment-based config
 
 **Frontend engineering** — Real-time SSE token streaming, localStorage session persistence, D3 force-directed graphs, Mermaid diagram rendering, component-level state management
 
