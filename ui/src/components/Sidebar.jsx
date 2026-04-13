@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { deleteRepo, fetchMcpStatus, ingestRepo } from "../api";
+import { BASE, deleteRepo, fetchMcpStatus, ingestRepo } from "../api";
 
 function ContextualTip() {
   const [open, setOpen] = useState(false);
@@ -135,7 +135,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     // through fetching → filtering → chunking → embedding → storing → done.
     // EventSource handles reconnection automatically on network blips, so we
     // explicitly close it once we receive "done" or "error" to prevent that.
-    const streamUrl = `http://localhost:8000/ingest/stream?repo=${encodeURIComponent(url.trim())}`;
+    const streamUrl = `${BASE}/ingest/stream?repo=${encodeURIComponent(url.trim())}`;
     const es = new EventSource(streamUrl);
 
     es.onmessage = (e) => {

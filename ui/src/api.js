@@ -1,6 +1,6 @@
 // In development: http://localhost:8000
 // In production:  set VITE_API_URL in Vercel environment variables
-const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+export const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 /**
  * Returns the PostHog distinct ID header if posthog-js is loaded.
