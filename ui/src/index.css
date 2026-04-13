@@ -145,7 +145,7 @@ body {
     radial-gradient(ellipse 65% 55% at -5% 0%,   rgba(20, 60, 160, 0.30) 0%, transparent 65%),
     radial-gradient(ellipse 45% 40% at 105% 100%, rgba(10, 30, 90,  0.18) 0%, transparent 60%),
     radial-gradient(ellipse 30% 25% at 50% 0%,   rgba(91, 143, 249, 0.05) 0%, transparent 50%);
-  animation: page-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: page-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 /* Signature dot grid — blueprint-tinted, masked to center, creates spatial texture.
@@ -746,13 +746,12 @@ textarea:focus-visible {
 .message {
   display: flex;
   flex-direction: column;
-  animation: msgIn 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: message-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
   gap: 8px;
-  animation: message-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes message-in {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -1356,7 +1355,7 @@ textarea:focus-visible {
   to   { opacity: 1; transform: translateY(0); }
 }
 .onboarding-header {
-  animation: onboardIn 580ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: onboardIn 750ms cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: 0ms;
 }
 .onboarding-steps .onboarding-step:nth-child(2) { animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both; }
@@ -1533,7 +1532,7 @@ textarea:focus-visible {
 /* Suggest state */
 .suggest-state { max-width: 620px; width: 100%; text-align: center; padding-top: 16px; padding-bottom: 24px; }
 .suggest-state h2 {
-  animation: onboardIn 580ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: onboardIn 750ms cubic-bezier(0.16, 1, 0.3, 1) both;
   font-size: 48px;
   font-weight: 300;
   font-family: "Anthropic Serif", Georgia, serif;
@@ -1544,7 +1543,7 @@ textarea:focus-visible {
   text-shadow: 0 0 80px rgba(91,143,249,0.20);
 }
 .suggest-state > p {
-  animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 80ms both;
+  animation: onboardIn 700ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
   font-size: 13.5px;
   color: var(--text-2);
   margin-bottom: 20px;
@@ -4478,6 +4477,12 @@ textarea:focus-visible {
   padding: 1px 4px;
   border-radius: 3px;
   color: var(--text-2);
+}
+
+/* In the README action bar the toggle is smaller — tone down the active glow */
+.readme-view-bar .view-btn.active {
+  background: rgba(255,255,255,0.07);
+  box-shadow: none;
 }
 
 /* Preview/Markdown toggle reuses the app-wide .view-toggle / .view-btn system */

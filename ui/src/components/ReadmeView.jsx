@@ -42,7 +42,7 @@ const STAGE_LABELS = {
   generating: "Generating README…",
 };
 
-export default function ReadmeView({ repo, onClose }) {
+export default function ReadmeView({ repo, contextualAt, onClose }) {
   const [status,    setStatus]    = useState("idle");
   const [progress,  setProgress]  = useState(0);
   const [message,   setMessage]   = useState("");
@@ -184,8 +184,8 @@ export default function ReadmeView({ repo, onClose }) {
         </div>
       )}
 
-      {/* Quality tip — shown once content is ready */}
-      {status === "done" && (
+      {/* Quality tip — only shown when contextual retrieval hasn't been applied yet */}
+      {status === "done" && !contextualAt && (
         <div className="readme-quality-note">
           <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.5 }}>
             <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 3.25a.75.75 0 110 1.5.75.75 0 010-1.5zM7.25 7h1.5v4.5h-1.5V7z"/>

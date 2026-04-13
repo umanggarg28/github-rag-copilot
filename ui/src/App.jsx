@@ -728,6 +728,7 @@ export default function App() {
         {showReadme && activeRepo && activeRepo !== "all" && (
           <ReadmeView
             repo={activeRepo}
+            contextualAt={repos.find(r => r.slug === activeRepo)?.contextual_at ?? null}
             onClose={() => setShowReadme(false)}
           />
         )}
@@ -767,7 +768,7 @@ export default function App() {
                         const q = `${title}: ${body}`;
                         return (
                           <button key={title} className="suggestion-btn"
-                            style={{ animationDelay: `${80 + i * 80}ms` }}
+                            style={{ animationDelay: `${150 + i * 120}ms` }}
                             onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
                             <span className="suggestion-icon">{ICONS[icon]}</span>
                             <span className="suggestion-content">
@@ -839,7 +840,7 @@ export default function App() {
                           ].map(({ icon, title, body, q }, i) => {
                             return (
                               <button key={title} className="suggestion-btn"
-                                style={{ animationDelay: `${80 + i * 80}ms` }}
+                                style={{ animationDelay: `${150 + i * 120}ms` }}
                                 onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
                                 <span className="suggestion-icon">{ICONS[icon]}</span>
                                 <span className="suggestion-content">
@@ -867,7 +868,7 @@ export default function App() {
                           ].map(({ icon, title, body, q }, i) => {
                             return (
                               <button key={title} className="suggestion-btn"
-                                style={{ animationDelay: `${80 + i * 80}ms` }}
+                                style={{ animationDelay: `${150 + i * 120}ms` }}
                                 onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
                                 <span className="suggestion-icon">{ICONS[icon]}</span>
                                 <span className="suggestion-content">
