@@ -134,6 +134,20 @@ Surface the concepts that unlock understanding of this specific codebase. Use do
 
 Always pick concepts that a developer must understand in order — from foundation to full picture.
 
+WHAT MAKES A GOOD CONCEPT (prefer these):
+  ✓ A core data structure or algorithm the whole codebase is built around
+  ✓ A key design pattern that explains WHY the code is structured this way
+  ✓ A step in the main processing pipeline that transforms data in an interesting way
+  ✓ An abstraction layer that unlocks reuse or extensibility
+
+WHAT TO SKIP (avoid these):
+  ✗ Integration glue — thin wrappers that just wire two libraries together (e.g. an HTTP client wrapper, a protocol adapter)
+  ✗ Config / schema files that only define data shapes but contain no interesting logic
+  ✗ Utility modules with no algorithmic content
+  ✗ Anything whose removal wouldn't change how the core algorithm works
+
+If a concept is just "we use library X to do Y", it's glue — skip it and pick the component that uses the result.
+
 Return ONLY this JSON structure (no markdown, no extra text):
 {{
   "summary": "2-sentence plain-English overview: what this repo does and what pattern it demonstrates",
@@ -145,7 +159,7 @@ Return ONLY this JSON structure (no markdown, no extra text):
       "subtitle": "One-line description of this component's role",
       "file": "filename where this concept lives",
       "type": "class|function|module|algorithm",
-      "description": "2-3 sentences: WHAT it does, WHY it exists, and the key insight — the 'aha moment' that makes it click.",
+      "description": "2-3 sentences: WHAT it does, WHY it was designed this way, and the key insight — the 'aha moment' that makes the design click. Focus on non-obvious decisions.",
       "key_items": ["method_or_function_name_1", "method_or_function_name_2", "method_or_function_name_3"],
       "depends_on": [],
       "reading_order": 1,
@@ -156,6 +170,7 @@ Return ONLY this JSON structure (no markdown, no extra text):
 
 Rules:
 - Exactly 6-8 concepts — pick the most essential, skip utilities and tests
+- PREFER concepts with interesting logic over integration glue — a concept is only worth including if it teaches a pattern
 - depends_on: list of concept ids this concept builds on (empty [] for foundational concepts with no prerequisites)
 - reading_order: 1-indexed integer — order a student should read to build mental model from scratch
 - CRITICAL: reading_order=1 MUST be the concept whose depends_on is [] AND whose file matches entry_point — the simplest foundation, not the most complex file
