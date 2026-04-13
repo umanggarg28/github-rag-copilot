@@ -11,7 +11,7 @@ pinned: false
 
 **A production-grade RAG system that maps any GitHub repository — built from scratch, without LangChain or LlamaIndex.**
 
-Index any public repo and ask natural-language questions about its code. Cartographer retrieves the exact functions and classes relevant to your question, explains them with source citations, and can autonomously investigate complex questions across multiple files using an agent with 10 specialised tools.
+Index any public repo and ask natural-language questions about its code. Cartographer retrieves the exact functions and classes relevant to your question, explains them with source citations, and can autonomously investigate complex questions across multiple files using an agent with 10 specialised tools. It can also generate a full README for any indexed repo on demand.
 
 **Live:** [cartographer-app.vercel.app](https://cartographer-app.vercel.app) · **Backend:** [HuggingFace Spaces](https://huggingface.co/spaces/umanggarg/cartographer)
 
@@ -115,7 +115,7 @@ This means every tool works with any MCP-compatible client, not just our agent.
 | `recall_notes` | Retrieve all stored notes — enables cross-iteration reasoning |
 | `draw_diagram` | Generate a Mermaid diagram (flowchart, class, sequence) and stream it to the UI |
 
-**Working memory** (`note`/`recall_notes`) lets the agent accumulate findings across iterations — it doesn't have to re-discover facts it already found. This significantly improves coherence on long investigations.
+**Working memory** (`note`/`recall_notes`) lets the agent accumulate findings across iterations — it doesn't have to re-discover facts it already found. Notes are now **persistent across server restarts** — stored in a Qdrant sidecar collection and loaded at session start. This significantly improves coherence on long investigations.
 
 **Parallel tool execution** — when the agent needs information from multiple independent sources, it fires them concurrently via `asyncio.gather`, not sequentially. This halves wall-clock time for multi-step investigations.
 
@@ -169,6 +169,12 @@ Every badge is interactive — hover shows the full explanation of each stage.
 ### Query Classification
 
 Queries are classified before retrieval: `implementation` / `architecture` / `debugging` / `comparison`. The classification adjusts the system prompt and retrieval strategy. Shown in the UI as a subtle mode tag on each response.
+
+### README Generator
+
+For any indexed repository, Cartographer can generate a complete, structured README on demand. Triggered via a hover-reveal document icon on sidebar repo items. The LLM is grounded in the repo map (AST metadata — class names, file layout, entry points) rather than raw source, keeping the prompt compact while producing accurate output. Results are cached to disk; the Regenerate button forces a fresh generation.
+
+Quality improves when the repo is indexed with contextual retrieval enabled (`CONTEXTUAL_TOP_N > 0`) — the quality tip is shown inline in the view.
 
 ### Contextual Retrieval Re-indexing
 
