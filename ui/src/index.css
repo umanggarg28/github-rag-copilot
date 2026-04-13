@@ -1358,9 +1358,9 @@ textarea:focus-visible {
   animation: onboardIn 580ms cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: 0ms;
 }
-.onboarding-steps .onboarding-step:nth-child(2) { animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both; }
-.onboarding-steps .onboarding-step:nth-child(3) { animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 210ms both; }
-.onboarding-steps .onboarding-step:nth-child(4) { animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both; }
+.onboarding-steps .onboarding-step:nth-child(2) { animation: onboardIn 800ms cubic-bezier(0.16, 1, 0.3, 1) 180ms both; }
+.onboarding-steps .onboarding-step:nth-child(3) { animation: onboardIn 800ms cubic-bezier(0.16, 1, 0.3, 1) 320ms both; }
+.onboarding-steps .onboarding-step:nth-child(4) { animation: onboardIn 800ms cubic-bezier(0.16, 1, 0.3, 1) 460ms both; }
 
 /* Header for onboarding section */
 .onboarding-header {
@@ -1399,7 +1399,8 @@ textarea:focus-visible {
   font-weight: 300;
   font-family: "Anthropic Serif", Georgia, serif;
   letter-spacing: -0.040em;
-  line-height: 1.0;
+  line-height: 1.08;
+  padding-bottom: 0.05em;   /* stops descenders (g, y, p) clipping at line-height edges */
   margin-bottom: 10px;
   color: #FFFFFF;
 }
