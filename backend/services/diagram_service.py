@@ -533,7 +533,7 @@ class DiagramService:
         # temperature=0.0 — tour must be factual and consistent across regenerations.
         # json_mode=True — forces JSON output on OpenAI-compatible providers so we
         # never have to strip markdown fences or rescue half-parsed responses.
-        raw = self._gen.generate(_TOUR_SYSTEM, prompt, temperature=0.0, json_mode=True)
+        raw = self._gen.generate(_TOUR_SYSTEM, prompt, temperature=0.0, json_mode=True, max_tokens=4096)
 
         try:
             tour = _parse_json(raw)
@@ -633,7 +633,7 @@ class DiagramService:
         prompt = _TOUR_PROMPT.format(repo=repo, chunk_summary=chunk_summary)
 
         yield {"stage": "generating", "progress": 0.55, "message": "Generating concept tour with AI…"}
-        raw = self._gen.generate(_TOUR_SYSTEM, prompt, temperature=0.0, json_mode=True)
+        raw = self._gen.generate(_TOUR_SYSTEM, prompt, temperature=0.0, json_mode=True, max_tokens=4096)
 
         yield {"stage": "parsing", "progress": 0.90, "message": "Finalizing…"}
         try:
