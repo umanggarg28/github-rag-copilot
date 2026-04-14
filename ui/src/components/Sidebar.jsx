@@ -116,6 +116,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
   const [isIngesting, setIsIngesting]   = useState(false);
   const [reindexing, setReindexing]     = useState(null);  // slug currently re-indexing
   const [reindexDone, setReindexDone]   = useState({});    // slug → bool (just finished)
+  const [reindexPct,  setReindexPct]    = useState({});    // slug → 0-100 progress %
   const [sessionSearch, setSessionSearch] = useState("");  // filter text for sessions list
 
   // Load MCP status once on mount
@@ -187,23 +188,50 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     }
   }
 
-  async function handleReindex(e, slug) {
+  function handleReindex(e, slug) {
     e.stopPropagation();
     if (reindexing) return;
     setReindexing(slug);
     setReindexDone(prev => ({ ...prev, [slug]: false }));
-    try {
-      // force=true deletes and re-ingests from scratch so the index is fully fresh
-      await ingestRepo(`https://github.com/${slug}`, true);
-      setReindexDone(prev => ({ ...prev, [slug]: true }));
-      onReposChange();
-      // Clear the "Re-indexed" badge after 3s
-      setTimeout(() => setReindexDone(prev => { const n = {...prev}; delete n[slug]; return n; }), 3000);
-    } catch (err) {
-      setStatus({ type: "error", text: `Re-index failed: ${err.message}` });
-    } finally {
+    setReindexPct(prev => ({ ...prev, [slug]: 5 }));
+
+    // Map ingestion steps to approximate % complete so the bar fills meaningfully.
+    // Embedding is the longest step (~60% of total time), so it gets the most range.
+    const STEP_PCT = { fetching: 10, filtering: 22, chunking: 38, embedding: 75, storing: 90, done: 100 };
+
+    // Use EventSource (GET SSE) instead of a POST fetch so the connection never
+    // times out — large repos take several minutes to re-embed. The backend sends
+    // keepalive pings every 15s to prevent proxy idle-disconnect.
+    const es = new EventSource(`${BASE}/ingest/stream?repo=${encodeURIComponent(`https://github.com/${slug}`)}&force=true`);
+
+    es.onmessage = (ev) => {
+      const event = JSON.parse(ev.data);
+      const pct = STEP_PCT[event.step] ?? null;
+      if (pct !== null) setReindexPct(prev => ({ ...prev, [slug]: pct }));
+
+      if (event.step === "done") {
+        es.close();
+        setReindexing(null);
+        setReindexDone(prev => ({ ...prev, [slug]: true }));
+        onReposChange();
+        setTimeout(() => {
+          setReindexDone(prev => { const n = {...prev}; delete n[slug]; return n; });
+          setReindexPct(prev => { const n = {...prev}; delete n[slug]; return n; });
+        }, 3000);
+      } else if (event.step === "error") {
+        es.close();
+        setReindexing(null);
+        setReindexPct(prev => { const n = {...prev}; delete n[slug]; return n; });
+        setStatus({ type: "error", text: `Re-index failed: ${event.detail}` });
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
       setReindexing(null);
-    }
+      setReindexPct(prev => { const n = {...prev}; delete n[slug]; return n; });
+      setStatus({ type: "error", text: "Re-index failed: connection lost" });
+    };
   }
 
   const SEARCH_MODE_TITLES = {
@@ -454,11 +482,13 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
               const staleness = stalenessLevel(r.indexed_at);
               const isReindexingThis = reindexing === r.slug;
               const justDone = reindexDone[r.slug];
+              const pct = reindexPct[r.slug] ?? null;
               return (
                 <div
                   key={r.slug}
                   className={`repo-item ${activeRepo === r.slug ? "active" : ""}`}
                   onClick={() => onSelectRepo(activeRepo === r.slug ? null : r.slug)}
+                  style={{ position: "relative", overflow: "hidden" }}
                 >
                   <div className="repo-item-main">
                     {/* GitHub mark — reinforces these are GitHub repos without taking space */}
@@ -532,6 +562,12 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
                       >×</button>
                     )}
                   </div>
+                  {/* Progress bar — shown while re-indexing, fills from left to right */}
+                  {pct !== null && (
+                    <div className="repo-reindex-progress">
+                      <div className="repo-reindex-progress-bar" style={{ width: `${pct}%` }} />
+                    </div>
+                  )}
                 </div>
               );
             })}

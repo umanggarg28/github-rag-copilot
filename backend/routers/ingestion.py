@@ -73,12 +73,14 @@ async def ingest_repo(
 
 
 @router.get("/ingest/stream")
-async def ingest_stream(repo: str, request: Request):
+async def ingest_stream(repo: str, request: Request, force: bool = False):
     """
     Stream ingestion progress as Server-Sent Events (SSE).
 
     Each event: { "step": "fetching|filtering|chunking|embedding|storing|done|error",
                   "detail": "human-readable message" }
+
+    force=true deletes and re-ingests from scratch (used by the re-index button).
     """
     check_rate_limit(request)
 
@@ -90,12 +92,15 @@ async def ingest_stream(repo: str, request: Request):
 
     async def _run():
         try:
-            await asyncio.to_thread(services.ingestion.ingest, repo, False, _progress)
+            await asyncio.to_thread(services.ingestion.ingest, repo, force, _progress)
             if services.diagram:
                 services.diagram.invalidate(repo)
             if services.repo_map:
                 services.repo_map.invalidate(repo)
-            repo_indexed_at[repo] = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(timezone.utc).isoformat()
+            repo_indexed_at[repo] = now
+            if force:
+                repo_contextual_at[repo] = now
         except Exception as e:
             loop.call_soon_threadsafe(queue.put_nowait, {"step": "error", "detail": str(e)})
         finally:

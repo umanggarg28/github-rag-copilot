@@ -3335,6 +3335,23 @@ textarea:focus-visible {
   to   { transform: rotate(360deg); }
 }
 
+/* Re-index progress bar — sits flush at the bottom of the repo card */
+.repo-reindex-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--surface-4);
+}
+.repo-reindex-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 0 1px 1px 0;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 6px var(--accent);
+}
+
 /* ══════════════════════════════════════════════════════════
    FEATURE 3: SESSION SEARCH + EDITABLE TITLE
    ══════════════════════════════════════════════════════════ */
