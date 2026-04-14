@@ -276,8 +276,8 @@ class GenerationService:
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
-            self._model  = "gemma-4-31b-it"
-            print("Generation: using Gemma 4 31B (gemma-4-31b-it) via Google Gemini API")
+            self._model  = "gemini-2.5-flash"
+            print("Generation: using Gemini 2.5 Flash via Google Gemini API")
             return "gemini"
         elif settings.cerebras_api_key:
             from openai import OpenAI
@@ -339,7 +339,7 @@ class GenerationService:
             )
             self._model   = "llama3.3-70b"
             self.provider = "cerebras"
-            print("Generation: Gemma 4 limit hit — switched to Cerebras (llama-3.3-70b)")
+            print("Generation: Gemini 2.5 Flash limit hit — switched to Cerebras (llama3.3-70b)")
             return True
         if self.provider in ("gemini", "cerebras") and settings.anthropic_api_key:
             import anthropic
@@ -439,7 +439,7 @@ class GenerationService:
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
-            self._model   = "gemma-4-31b-it"
+            self._model   = "gemini-2.5-flash"
             self.provider = "gemini"
 
     def generate(self, system: str, prompt: str, temperature: float = 0.2, json_mode: bool = False, max_tokens: int = 2048) -> str:
