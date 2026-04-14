@@ -239,7 +239,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
         setTimeout(() => {
           setReindexDone(prev => { const n = {...prev}; delete n[slug]; return n; });
           setReindexPct(prev => { const n = {...prev}; delete n[slug]; return n; });
-        }, 3000);
+        }, 8000); // matches reindex-done-fade animation duration
       } else if (event.step === "error") {
         closeEs();
         setReindexing(null);
@@ -594,10 +594,14 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
                       >×</button>
                     )}
                   </div>
-                  {/* Progress bar — shown while re-indexing, fills from left to right */}
-                  {pct !== null && (
+                  {/* Progress bar — shown while re-indexing, then holds at 100% and
+                      glows for 8s after completion before fading out */}
+                  {(pct !== null || justDone) && (
                     <div className="repo-reindex-progress">
-                      <div className="repo-reindex-progress-bar" style={{ width: `${pct}%` }} />
+                      <div
+                        className={`repo-reindex-progress-bar${justDone ? " done" : ""}`}
+                        style={{ width: justDone ? "100%" : `${pct}%` }}
+                      />
                     </div>
                   )}
                 </div>

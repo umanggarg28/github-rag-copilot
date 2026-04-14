@@ -3394,6 +3394,21 @@ textarea:focus-visible {
   0%   { background-position: 200% center; }
   100% { background-position: -200% center; }
 }
+/* When re-index completes: bar stays at 100% and slowly exhales its glow
+   over 8s before fading out. Matches the reindexDone timeout in Sidebar.jsx.
+   The glow intensity peaks early (pulse) then drifts to nothing — like a
+   heartbeat flatlining gracefully. */
+.repo-reindex-progress-bar.done {
+  animation: reindex-done-fade 8s ease-out forwards;
+  background: var(--accent);
+  background-image: none; /* stop shimmer */
+}
+@keyframes reindex-done-fade {
+  0%   { opacity: 1; box-shadow: 0 0 10px 2px var(--accent), 0 0 20px var(--accent-glow); }
+  15%  { opacity: 1; box-shadow: 0 0 14px 3px var(--accent), 0 0 28px var(--accent-glow); }
+  60%  { opacity: 0.6; box-shadow: 0 0 6px var(--accent); }
+  100% { opacity: 0;   box-shadow: none; }
+}
 
 /* ══════════════════════════════════════════════════════════
    FEATURE 3: SESSION SEARCH + EDITABLE TITLE
