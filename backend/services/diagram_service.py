@@ -122,9 +122,9 @@ what you might guess from the function name alone.
 
 Generate a JSON "concept map" — 6-8 key concepts that explain how this codebase is structured and why.
 
-Surface the concepts that unlock understanding of this specific codebase. Use domain knowledge to pick the right framing:
+Surface the concepts that unlock understanding of this specific codebase. Use domain knowledge to pick the right framing — these are examples of the KIND of concepts to look for, not a checklist to copy:
 - ML training codebase → forward pass, loss function, backward pass, optimizer step, data pipeline
-- RAG / AI agent codebase → retrieval pipeline, context assembly, agent loop, tool dispatch, LLM call
+- RAG / search codebase → chunking strategy, embedding pipeline, vector storage, retrieval scoring, context assembly
 - Web framework or API → routing, middleware, request lifecycle, data models, auth, persistence
 - Compiler / interpreter → lexer, parser, AST, IR, code generation, symbol table
 - Game engine → game loop, entity-component system, rendering pipeline, physics, input handling
@@ -134,7 +134,7 @@ Surface the concepts that unlock understanding of this specific codebase. Use do
 
 Always pick concepts that a developer must understand in order — from foundation to full picture.
 
-CONCEPT SELECTION — apply these tests in order:
+CONCEPT SELECTION — apply these three tests. A concept must pass ALL THREE or it is excluded.
 
   TEST 1 — ALGORITHMIC VALUE: Does this concept contain a non-trivial algorithm or design decision?
     PASS: a chunking strategy, a search algorithm, a training loop, a parsing technique
@@ -142,13 +142,17 @@ CONCEPT SELECTION — apply these tests in order:
 
   TEST 2 — TRANSFERABILITY: Could a developer extract the technique and use it in their own project?
     PASS: "use AST boundaries instead of character windows for chunking" — directly applicable elsewhere
-    FAIL: "this app uses library X to call API Y" — wiring specific to this app, not a reusable pattern
+    FAIL: "this app uses protocol X to connect to service Y" — integration wiring specific to this app
+    NOTE: MCP adapters, REST clients, WebSocket handlers, and similar protocol layers always fail this test.
+          They are plumbing, not reusable patterns. Skip them even if the file has substantial code.
 
-  TEST 3 — PRIMARY PURPOSE: Is this part of the repo's CORE function, not a secondary feature?
+  TEST 3 — PRIMARY PURPOSE: Is this central to the repo's CORE function, not a secondary feature?
     PASS: the main processing pipeline, the key algorithm, the central data transformation
-    FAIL: an auxiliary tool, a visualization feature, an admin utility that isn't the point of the repo
+    FAIL: an agent wrapper, an admin utility, a visualisation tool, or ANY feature that lives on top
+          of the core system. If this entire subsystem were deleted, would the repo's main purpose
+          still work? If yes, it fails Test 3.
 
-Only include a concept if it passes ALL THREE tests. If a file is just wiring two other concepts together, skip it and let the edge between those concepts imply the connection.
+If a file is just wiring two other concepts together, skip it and let the edge between those concepts imply the connection.
 
 ENTRY POINT RULE: The concept with reading_order=1 must have real algorithmic content — not just data shape definitions (Pydantic models, TypeScript interfaces, config structs). If the only file with no dependencies is a schema file, pick the NEXT most foundational file that has actual logic.
 
