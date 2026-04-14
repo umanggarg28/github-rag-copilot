@@ -578,6 +578,25 @@ textarea:focus-visible {
 }
 .repo-delete:hover { color: var(--red); background: var(--red-dim); }
 
+/* Confirm-delete inline buttons (Delete / Cancel) */
+.repo-confirm-yes,
+.repo-confirm-no {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  transition: color var(--transition), background var(--transition);
+  white-space: nowrap;
+}
+.repo-confirm-yes { color: var(--red); }
+.repo-confirm-yes:hover { background: var(--red-dim); }
+.repo-confirm-no  { color: var(--muted); }
+.repo-confirm-no:hover  { color: var(--text); background: var(--surface-3); }
+
 /* ── Mode pills — Raycast-style dark track container with springy active state ─ */
 .mode-pills {
   display: inline-flex;

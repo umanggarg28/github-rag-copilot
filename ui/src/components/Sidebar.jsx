@@ -568,14 +568,13 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
                       ⟳
                     </button>
                     {confirming === r.slug ? (
-                      <span style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0 }}>
+                      <span style={{ display: "flex", gap: 2, alignItems: "center", flexShrink: 0 }}>
                         <button
-                          className="repo-delete"
-                          style={{ color: "var(--red)", fontWeight: 600, fontSize: 11 }}
+                          className="repo-confirm-yes"
                           onClick={(e) => { e.stopPropagation(); handleDelete(e, r.slug); setConfirming(null); }}
                         >Delete</button>
                         <button
-                          className="repo-delete"
+                          className="repo-confirm-no"
                           onClick={(e) => { e.stopPropagation(); setConfirming(null); }}
                         >Cancel</button>
                       </span>
