@@ -639,6 +639,7 @@ class DiagramService:
         try:
             tour = _parse_json(raw)
         except ValueError:
+            print(f"DiagramService: failed to parse tour JSON (stream):\n{raw[:600]}")
             yield {"stage": "error", "progress": 1.0, "error": "Could not parse tour from LLM response. Try regenerating."}
             return
 

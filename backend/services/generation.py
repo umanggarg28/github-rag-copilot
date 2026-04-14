@@ -491,7 +491,7 @@ class GenerationService:
         messages = [{"role": "user", "content": prompt}]
         params   = {"temperature": temperature, "max_tokens": max_tokens, "json_mode": json_mode}
         try:
-            if self.provider in ("cerebras", "groq", "gemini", "openrouter"):
+            if self.provider in ("cerebras", "groq", "gemini", "openrouter", "sambanova", "mistral"):
                 return self._groq_complete(system, messages, params)
             else:
                 return self._anthropic_complete(system, messages, params)
@@ -499,7 +499,7 @@ class GenerationService:
             if _is_exhausted(e) and self._try_fallback():
                 self._in_fallback = True
                 try:
-                    return self.generate(system, prompt, temperature, json_mode)
+                    return self.generate(system, prompt, temperature, json_mode, max_tokens)
                 finally:
                     self._in_fallback = False
             raise
