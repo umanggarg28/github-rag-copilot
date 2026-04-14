@@ -202,8 +202,15 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     // Use EventSource (GET SSE) instead of a POST fetch so the connection never
     // times out — large repos take several minutes to re-embed. The backend sends
     // keepalive pings every 15s to prevent proxy idle-disconnect.
+    //
+    // IMPORTANT: EventSource auto-reconnects when the server closes the stream.
+    // We must call es.close() as soon as we receive any terminal event (done/error)
+    // to prevent it from replaying the force=true re-index a second time.
     const es = new EventSource(`${BASE}/ingest/stream?repo=${encodeURIComponent(`https://github.com/${slug}`)}&force=true`);
     let completed = false; // true once "done" event received
+    let closed    = false; // guard against double-close / double-onerror
+
+    const closeEs = () => { if (!closed) { closed = true; es.close(); } };
 
     es.onmessage = (ev) => {
       const event = JSON.parse(ev.data);
@@ -225,7 +232,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
 
       if (event.step === "done") {
         completed = true;
-        es.close();
+        closeEs();
         setReindexing(null);
         setReindexDone(prev => ({ ...prev, [slug]: true }));
         onReposChange();
@@ -234,7 +241,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
           setReindexPct(prev => { const n = {...prev}; delete n[slug]; return n; });
         }, 3000);
       } else if (event.step === "error") {
-        es.close();
+        closeEs();
         setReindexing(null);
         setReindexPct(prev => { const n = {...prev}; delete n[slug]; return n; });
         setStatus({ type: "error", text: `Re-index failed: ${event.detail}` });
@@ -242,19 +249,12 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     };
 
     es.onerror = () => {
-      // Guard: EventSource auto-reconnects on close, which fires onerror again.
-      // es.close() prevents the reconnect but this handler may still fire once
-      // more — checking readyState=2 (CLOSED) avoids double-handling.
-      if (es.readyState === EventSource.CLOSED) return;
-      es.close();
+      if (closed) return; // already handled — prevent double-fire
+      closeEs();
       setReindexing(null);
       setReindexPct(prev => { const n = {...prev}; delete n[slug]; return n; });
-      // Always refresh repos — the backend may have finished even if the
-      // connection dropped (e.g. proxy timeout right as "done" was sent).
       onReposChange();
       if (!completed) {
-        // Only show an error if we never received the "done" event.
-        // If we did, this onerror is just the normal stream-close signal.
         setStatus({ type: "error", text: "Re-index may have completed — connection dropped at the end. Check the chunk count." });
       }
     };

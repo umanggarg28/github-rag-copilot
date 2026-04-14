@@ -68,6 +68,22 @@ INCLUDED_EXTENSIONS = {
     ".html", ".jinja", ".jinja2",
 }
 
+# ── Path patterns to always exclude ──────────────────────────────────────────
+# These are path prefixes/substrings for directories that contain generated
+# artifacts rather than source code, regardless of what repo is being indexed.
+# Checked against the full relative path so "backend/diagrams/foo.json" matches.
+EXCLUDED_PATH_PATTERNS = (
+    # Common generated-artifact directories
+    "diagrams/",       # cached diagram/tour JSON (regenerated on demand)
+    "repo_maps/",      # cached repo map JSON (regenerated on demand)
+    "readmes/",        # cached generated READMEs (regenerated on demand)
+    ".cache/",         # any generic cache directory
+    "snapshots/",      # model/checkpoint snapshots
+    "checkpoints/",    # ML training checkpoints
+    "migrations/",     # DB migration files (schema noise, not code logic)
+)
+
+
 # ── Specific filenames to always exclude ─────────────────────────────────────
 # These are auto-generated or noisy even if they have an included extension.
 EXCLUDED_FILENAMES = {
@@ -115,6 +131,13 @@ def should_index(path: str) -> bool:
       5. Otherwise → True
     """
     p = Path(path)
+
+    # Check against excluded path patterns (generated-artifact directories).
+    # Use forward slashes for consistency across platforms.
+    normalized = path.replace("\\", "/")
+    for pattern in EXCLUDED_PATH_PATTERNS:
+        if pattern in normalized:
+            return False
 
     # Check every component (handles "a/node_modules/b.js")
     for part in p.parts[:-1]:   # exclude filename itself
