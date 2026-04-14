@@ -90,8 +90,15 @@ function expansionOffsets(selectedId, concepts, basePositions) {
   return offsets;
 }
 
-// ── Layout: topological column assignment ─────────────────────────────────────
+// ── Layout: topological column assignment with overflow wrapping ───────────────
 // Returns { [conceptId]: { x, y } } in canvas coordinates.
+//
+// The LLM sometimes produces shallow dependency graphs (many nodes at depth 0),
+// which naively stacks all root concepts into one tall column. We cap each
+// column at MAX_PER_COL items and push overflow into the next available column,
+// keeping the visual width reasonable and the graph readable.
+const MAX_PER_COL = 3;
+
 function computeLayout(concepts) {
   if (!concepts.length) return {};
 
@@ -106,22 +113,52 @@ function computeLayout(concepts) {
   }
   concepts.forEach(c => depth(c.id));
 
-  // Step 2: group by column, sort within column by reading_order
-  const cols = {};
+  // Step 2: group by depth-column, sort within column by reading_order
+  const depthCols = {};
   concepts.forEach(c => {
     const col = depthCache[c.id] ?? 0;
-    if (!cols[col]) cols[col] = [];
-    cols[col].push(c);
+    if (!depthCols[col]) depthCols[col] = [];
+    depthCols[col].push(c);
   });
-  Object.values(cols).forEach(arr =>
+  Object.values(depthCols).forEach(arr =>
     arr.sort((a, b) => (a.reading_order ?? 99) - (b.reading_order ?? 99))
   );
 
-  // Step 3: assign pixel positions — center each column vertically
-  const maxColH = Math.max(...Object.values(cols).map(a => a.length)) * (CARD_H + ROW_GAP);
+  // Step 3: assign visual columns, capping at MAX_PER_COL items per column.
+  // Each depth level starts in its own column. If a depth has more than MAX_PER_COL
+  // nodes, overflow spills into the next column. The following depth level then
+  // starts in the column after the last one used by the previous depth.
+  const colAssign = {};
+  let nextCol = 0;
+
+  const sortedDepths = Object.keys(depthCols).map(Number).sort((a, b) => a - b);
+  sortedDepths.forEach(d => {
+    const nodes = depthCols[d];
+    let col = nextCol;
+    let count = 0;
+    nodes.forEach(node => {
+      if (count >= MAX_PER_COL) { col++; count = 0; }
+      colAssign[node.id] = col;
+      count++;
+    });
+    nextCol = col + 1;  // next depth starts after the last column used here
+  });
+
+  // Step 4: assign pixel positions — group by visual column, center each vertically
+  const visualCols = {};
+  concepts.forEach(c => {
+    const vc = colAssign[c.id] ?? 0;
+    if (!visualCols[vc]) visualCols[vc] = [];
+    visualCols[vc].push(c);
+  });
+  Object.values(visualCols).forEach(arr =>
+    arr.sort((a, b) => (a.reading_order ?? 99) - (b.reading_order ?? 99))
+  );
+
+  const maxColH = Math.max(...Object.values(visualCols).map(a => a.length)) * (CARD_H + ROW_GAP);
   const positions = {};
-  Object.entries(cols).forEach(([col, nodes]) => {
-    const x = Number(col) * (CARD_W + COL_GAP) + 48;
+  Object.entries(visualCols).forEach(([vc, nodes]) => {
+    const x = Number(vc) * (CARD_W + COL_GAP) + 48;
     const colH = nodes.length * (CARD_H + ROW_GAP) - ROW_GAP;
     const startY = (maxColH - colH) / 2 + 48;
     nodes.forEach((node, row) => {
