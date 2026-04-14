@@ -275,7 +275,6 @@ class GenerationService:
             self._client = OpenAI(
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                timeout=45,
             )
             self._model  = "gemma-4-31b-it"
             print("Generation: using Gemma 4 31B (gemma-4-31b-it) via Google Gemini API")
@@ -285,7 +284,6 @@ class GenerationService:
             self._client = OpenAI(
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
-                timeout=45,
             )
             # llama-3.3-70b produces dramatically better context sentences than
             # llama3.1-8b for structured tasks like "describe what this chunk does in
@@ -338,7 +336,6 @@ class GenerationService:
             self._client  = OpenAI(
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
-                timeout=45,
             )
             self._model   = "llama3.3-70b"
             self.provider = "cerebras"
@@ -441,7 +438,6 @@ class GenerationService:
             self._client  = OpenAI(
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                timeout=45,
             )
             self._model   = "gemma-4-31b-it"
             self.provider = "gemini"
