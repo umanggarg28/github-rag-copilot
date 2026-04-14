@@ -76,7 +76,6 @@ EXCLUDED_PATH_PATTERNS = (
     # Common generated-artifact directories
     "diagrams/",       # cached diagram/tour JSON (regenerated on demand)
     "repo_maps/",      # cached repo map JSON (regenerated on demand)
-    "readmes/",        # cached generated READMEs (regenerated on demand)
     ".cache/",         # any generic cache directory
     "snapshots/",      # model/checkpoint snapshots
     "checkpoints/",    # ML training checkpoints
