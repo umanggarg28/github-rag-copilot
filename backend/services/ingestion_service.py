@@ -21,6 +21,7 @@ Why a service class instead of a function?
 
 from pathlib import Path
 from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import sys
 
@@ -323,18 +324,14 @@ def _add_context(
             result[i] = dict(result[i])
             result[i]["contextual_at"] = contextual_at
 
-    _REPORT_EVERY = 20  # emit a progress event every N chunks to avoid SSE flood
-
-    for done, (idx, _chunk) in enumerate(ranked[:limit], start=1):
-        # Use result[idx] (which already has contextual_at stamped) as the base
-        chunk      = result[idx]
+    # Worker function for a single chunk — called from multiple threads.
+    # Returns (idx, updated_chunk) or (idx, None) on failure.
+    def _enrich_one(idx: int, chunk: dict) -> tuple[int, dict | None]:
         filepath   = chunk.get("filepath", "")
         chunk_text = chunk.get("text", "")
-        doc_text   = file_content_map.get(filepath, "")[:6000]   # truncate large files
-
+        doc_text   = file_content_map.get(filepath, "")[:6000]
         if not chunk_text or not doc_text:
-            continue
-
+            return idx, None
         prompt = (
             f"File: {filepath}\n\n"
             f"File content (truncated):\n{doc_text}\n\n"
@@ -342,18 +339,32 @@ def _add_context(
             "Write ONE sentence describing what this chunk does and its role in the file."
         )
         try:
-            context_sentence = gen.generate(_CONTEXT_SYSTEM, prompt, temperature=0.0).strip()
-            updated                    = dict(chunk)
-            updated["raw_text"]        = chunk_text   # original code kept for display
-            updated["text"]            = f"{context_sentence}\n\n{chunk_text}"
+            sentence = gen.generate(_CONTEXT_SYSTEM, prompt, temperature=0.0).strip()
+            updated              = dict(chunk)
+            updated["raw_text"]  = chunk_text
+            updated["text"]      = f"{sentence}\n\n{chunk_text}"
             updated["_contextualised"] = True
-            result[idx] = updated
+            return idx, updated
         except Exception as e:
             print(f"  Context skipped for {filepath}:{chunk.get('name', '?')} — {e}")
-            # Leave result[idx] unchanged — graceful fallback to raw chunk
+            return idx, None
 
-        # Report progress every N chunks so the UI bar advances visibly
-        if progress and (done % _REPORT_EVERY == 0 or done == limit):
-            progress(done, limit)
+    # Run up to 8 LLM calls concurrently — safe for Gemini/Cerebras free-tier
+    # rate limits while cutting wall-clock time by ~8x versus sequential.
+    _WORKERS     = 8
+    _REPORT_EVERY = 20
+    to_enrich = [(idx, result[idx]) for idx, _ in ranked[:limit]]
+
+    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+        futures = {pool.submit(_enrich_one, idx, chunk): i
+                   for i, (idx, chunk) in enumerate(to_enrich)}
+        done_count = 0
+        for future in as_completed(futures):
+            idx, updated = future.result()
+            done_count += 1
+            if updated is not None:
+                result[idx] = updated
+            if progress and (done_count % _REPORT_EVERY == 0 or done_count == limit):
+                progress(done_count, limit)
 
     return result

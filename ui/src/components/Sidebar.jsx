@@ -242,6 +242,10 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     };
 
     es.onerror = () => {
+      // Guard: EventSource auto-reconnects on close, which fires onerror again.
+      // es.close() prevents the reconnect but this handler may still fire once
+      // more — checking readyState=2 (CLOSED) avoids double-handling.
+      if (es.readyState === EventSource.CLOSED) return;
       es.close();
       setReindexing(null);
       setReindexPct(prev => { const n = {...prev}; delete n[slug]; return n; });
