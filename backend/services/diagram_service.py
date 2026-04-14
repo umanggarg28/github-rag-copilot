@@ -261,7 +261,7 @@ Return ONLY this JSON (no markdown, no extra text):
 
 Rules:
 - 3-5 actors maximum (components or classes)
-- 8-14 messages total showing the complete main operation (e.g. forward+backward pass, or request→response)
+- 8-14 messages total showing the complete main operation from entry point to final output
 - Every actor in messages must be listed in actors array
 - Use real method names from the indexed code
 - type: "call" for invocations, "return" for responses, "create" for instantiation
@@ -281,7 +281,7 @@ Return ONLY this JSON (no markdown, no extra text):
       "id": "short_unique_id",
       "label": "Data State Label",
       "type": "input|transform|output",
-      "description": "What the data looks like here: shape, type, or value (e.g. 'float x', 'tensor [B,T,C]', 'loss scalar')",
+      "description": "What the data looks like here: its type, structure, or semantic meaning at this stage of the pipeline",
       "items": ["operation_name"]
     }}
   ],

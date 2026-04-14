@@ -125,7 +125,7 @@ Generate the README with these sections IN ORDER. Use the exact headings shown:
 # {name}
 
 [One punchy sentence describing what the project does and who it's for.
-No "This is a..." — start with what it does. E.g. "A minimal autograd engine..." ]
+No "This is a..." — start with what it does. Lead with the action: what it builds, parses, runs, searches, or transforms.]
 
 ## What it does
 
