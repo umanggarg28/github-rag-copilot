@@ -18,6 +18,8 @@ class Settings:
     groq_api_key: str         = os.getenv("GROQ_API_KEY", "")         # free: https://console.groq.com
     gemini_api_key: str       = os.getenv("GEMINI_API_KEY", "")       # free: https://aistudio.google.com
     openrouter_api_key: str   = os.getenv("OPENROUTER_API_KEY", "")   # free: https://openrouter.ai
+    sambanova_api_key: str    = os.getenv("SAMBANOVA_API_KEY", "")    # free: https://cloud.sambanova.ai (405B llama, 200K tok/day)
+    mistral_api_key: str      = os.getenv("MISTRAL_API_KEY", "")      # free: https://console.mistral.ai (1B tok/month)
     anthropic_api_key: str    = os.getenv("ANTHROPIC_API_KEY", "")    # paid fallback
 
     # ── Vector DB ─────────────────────────────────────────────────────────────

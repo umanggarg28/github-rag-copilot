@@ -285,17 +285,21 @@ class GenerationService:
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
             )
-            # llama-3.3-70b produces dramatically better context sentences than
-            # llama3.1-8b for structured tasks like "describe what this chunk does in
-            # one sentence". Both are on Cerebras free tier.
             self._model  = "llama3.3-70b"
-            print("Generation: using Cerebras (llama-3.3-70b) — fast free tier")
+            print("Generation: using Cerebras (llama3.3-70b) — fast free tier")
             return "cerebras"
+        elif settings.sambanova_api_key:
+            from openai import OpenAI
+            self._client = OpenAI(
+                api_key=settings.sambanova_api_key,
+                base_url="https://api.sambanova.ai/v1",
+            )
+            # Llama 3.1 405B — largest model available on any free tier.
+            # SambaNova runs it on custom RDU hardware at ~1400 tok/s.
+            self._model  = "Meta-Llama-3.1-405B-Instruct"
+            print("Generation: using SambaNova (Llama 3.1 405B) — free tier")
+            return "sambanova"
         elif settings.anthropic_api_key:
-            # Anthropic claude-haiku before OpenRouter/Groq for quality tasks:
-            # haiku-4-5 supports prompt caching (file content cached across chunk
-            # enrichment calls) and is more precise at structured single-sentence
-            # generation than qwen3-coder or llama-3.3-70b on free tiers.
             import anthropic
             self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             self._model  = "claude-haiku-4-5-20251001"
@@ -306,6 +310,16 @@ class GenerationService:
             self._model  = _OPENROUTER_MODEL
             print(f"Generation: using OpenRouter ({self._model})")
             return "openrouter"
+        elif settings.mistral_api_key:
+            from openai import OpenAI
+            self._client = OpenAI(
+                api_key=settings.mistral_api_key,
+                base_url="https://api.mistral.ai/v1",
+            )
+            # mistral-small-latest: free tier, 1B tok/month, strong at structured output.
+            self._model  = "mistral-small-latest"
+            print("Generation: using Mistral (mistral-small-latest) — free tier")
+            return "mistral"
         elif settings.groq_api_key:
             from groq import Groq
             self._client = Groq(api_key=settings.groq_api_key)
@@ -314,7 +328,8 @@ class GenerationService:
             return "groq"
         else:
             raise ValueError(
-                "No LLM API key found. Set CEREBRAS_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY in .env"
+                "No LLM API key found. Set GEMINI_API_KEY, CEREBRAS_API_KEY, SAMBANOVA_API_KEY, "
+                "MISTRAL_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, or ANTHROPIC_API_KEY in .env"
             )
 
     def _try_fallback(self) -> bool:
@@ -327,34 +342,45 @@ class GenerationService:
 
         Priority: gemini (Gemma 4) → cerebras → openrouter → groq → anthropic
         """
-        # Fallback chain: gemini → cerebras → anthropic → openrouter → groq
-        # Anthropic is placed before OpenRouter/Groq because claude-haiku-4-5
-        # produces higher quality structured output (context sentences, JSON) and
-        # supports prompt caching — more efficient for enrichment-heavy workloads.
+        # Fallback chain: gemini → cerebras → sambanova → anthropic → openrouter → mistral → groq
+        _all = ("gemini", "cerebras", "sambanova", "anthropic", "openrouter", "mistral", "groq")
+        _after = lambda p: _all[_all.index(p) + 1:] if p in _all else _all  # noqa: E731
+
         if self.provider == "gemini" and settings.cerebras_api_key:
             from openai import OpenAI
-            self._client  = OpenAI(
-                api_key=settings.cerebras_api_key,
-                base_url="https://api.cerebras.ai/v1",
-            )
+            self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1")
             self._model   = "llama3.3-70b"
             self.provider = "cerebras"
-            print("Generation: Gemini 2.5 Flash limit hit — switched to Cerebras (llama3.3-70b)")
+            print("Generation: Gemini limit hit — switched to Cerebras (llama3.3-70b)")
             return True
-        if self.provider in ("gemini", "cerebras") and settings.anthropic_api_key:
+        if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
+            from openai import OpenAI
+            self._client  = OpenAI(api_key=settings.sambanova_api_key, base_url="https://api.sambanova.ai/v1")
+            self._model   = "Meta-Llama-3.1-405B-Instruct"
+            self.provider = "sambanova"
+            print("Generation: switched to SambaNova (Llama 3.1 405B)")
+            return True
+        if self.provider in _all[:_all.index("anthropic")] and settings.anthropic_api_key:
             import anthropic
             self._client  = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             self._model   = "claude-haiku-4-5-20251001"
             self.provider = "anthropic"
             print("Generation: switched to Anthropic (claude-haiku-4-5)")
             return True
-        if self.provider in ("gemini", "cerebras", "anthropic") and settings.openrouter_api_key:
+        if self.provider in _all[:_all.index("openrouter")] and settings.openrouter_api_key:
             self._client  = _openrouter_client(settings.openrouter_api_key)
             self._model   = _OPENROUTER_MODEL
             self.provider = "openrouter"
             print(f"Generation: switched to OpenRouter ({_OPENROUTER_MODEL})")
             return True
-        if self.provider in ("gemini", "cerebras", "anthropic", "openrouter") and settings.groq_api_key:
+        if self.provider in _all[:_all.index("mistral")] and settings.mistral_api_key:
+            from openai import OpenAI
+            self._client  = OpenAI(api_key=settings.mistral_api_key, base_url="https://api.mistral.ai/v1")
+            self._model   = "mistral-small-latest"
+            self.provider = "mistral"
+            print("Generation: switched to Mistral (mistral-small-latest)")
+            return True
+        if self.provider in _all[:_all.index("groq")] and settings.groq_api_key:
             from groq import Groq
             self._client  = Groq(api_key=settings.groq_api_key)
             self._model   = "llama-3.3-70b-versatile"

@@ -113,10 +113,12 @@ QDRANT_URL=          # Qdrant Cloud cluster URL
 QDRANT_API_KEY=      # Qdrant Cloud API key
 QDRANT_COLLECTION=   # Default: github_repos_nomic (create a new one if you change dims)
 
-# LLM (at least one required)
-CEREBRAS_API_KEY=    # Free at https://cloud.cerebras.ai — llama-3.3-70b, 1M tok/day, 2600 tok/s (FASTEST)
-GROQ_API_KEY=        # Free at https://console.groq.com
-GEMINI_API_KEY=      # Free at https://aistudio.google.com
+# LLM (at least one required) — provider priority: Gemini → Cerebras → SambaNova → Anthropic → OpenRouter → Mistral → Groq
+GEMINI_API_KEY=      # Free at https://aistudio.google.com — gemini-2.5-flash (PRIMARY, best quality)
+CEREBRAS_API_KEY=    # Free at https://cloud.cerebras.ai — llama3.3-70b, 1M tok/day, 2600 tok/s (FASTEST)
+SAMBANOVA_API_KEY=   # Free at https://cloud.sambanova.ai — Llama 3.1 405B, 200K tok/day (LARGEST FREE MODEL)
+MISTRAL_API_KEY=     # Free at https://console.mistral.ai — mistral-small-latest, 1B tok/month
+GROQ_API_KEY=        # Free at https://console.groq.com — llama-3.3-70b-versatile, 100K tok/day
 OPENROUTER_API_KEY=  # Free tier at https://openrouter.ai
 ANTHROPIC_API_KEY=   # Optional paid fallback
 
