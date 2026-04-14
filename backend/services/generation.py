@@ -236,13 +236,22 @@ def classify_query(question: str) -> str:
 
 class GenerationService:
     """
-    Wraps Groq and Anthropic clients. Chooses provider based on available API keys.
+    Wraps multiple LLM providers. Chooses the best available free provider on init,
+    then falls back through the chain if rate limits or quota errors are hit.
+
+    Priority: Gemini (gemma-4-31b-it) → Cerebras (llama-3.3-70b) → Anthropic (haiku)
+              → OpenRouter (qwen3-coder) → Groq (llama-3.3-70b-versatile)
+
+    Free providers (Gemini, Cerebras, OpenRouter, Groq) come first.
+    Anthropic is kept as a paid fallback — only used if all free providers fail.
+
+    One shared instance handles all tasks: Q&A streaming, diagram generation,
+    README generation, and contextual enrichment. Gemini gemma-4-31b-it is the
+    strongest free model available and handles all task types well.
 
     Usage:
       gen = GenerationService()
       answer = gen.answer(question, context, query_type)
-
-      # Or streaming:
       for token in gen.stream(question, context, query_type):
           print(token, end="", flush=True)
     """
@@ -251,16 +260,9 @@ class GenerationService:
         self.provider = self._init_provider()
 
     def _init_provider(self) -> str:
-        """Pick a provider in priority order: Gemini → Cerebras → Anthropic → OpenRouter → Groq.
+        """Pick the best available provider.
 
-          1. Gemini API (gemma-4-31b-it)   — best quality, 128K ctx, free via Google AI Studio
-          2. Cerebras (llama-3.3-70b)      — fast free tier, good quality
-          3. Anthropic (claude-haiku-4-5)  — precise structured output + prompt caching
-          4. OpenRouter (qwen3-coder:free) — coding quality, free tier
-          5. Groq (llama-3.3-70b-versatile)— generous free tier
-
-        Cerebras, Gemini, and OpenRouter use OpenAI-compatible endpoints so they share
-        the same _groq_complete / _groq_stream code paths.
+        Priority: Gemini → Cerebras → Anthropic haiku → OpenRouter → Groq
         """
         if settings.gemini_api_key:
             from openai import OpenAI
