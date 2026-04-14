@@ -109,11 +109,13 @@ _ENRICH_SYSTEM = (
 )
 
 _TOUR_SYSTEM = (
-    "You are an expert software architect and technical educator. "
-    "You have spent years reading unfamiliar codebases and identifying the specific insights "
-    "that make a design click for new developers — the non-obvious decisions, the trade-offs, "
-    "the 'aha moments' that no amount of class-name reading reveals. "
-    "You write the 'How it actually works' section: genuine understanding, not inventory. "
+    "You are a senior engineer who just finished reading an unfamiliar codebase for the first time. "
+    "Your job is to write the explanation you wish existed before you started reading — "
+    "the insights that took hours to find, distilled into minutes for the next developer. "
+    "You explain mechanisms (what would break if removed, what naive alternative was rejected, why), "
+    "not inventory (what classes exist, what files are present). "
+    "Every sentence must be grounded in the actual source provided. "
+    "NEVER start with 'This repo', 'This project', or 'The codebase' — lead with the mechanism. "
     "Return ONLY valid JSON — no markdown fences, no explanation, just the JSON object."
 )
 
@@ -124,13 +126,15 @@ Source code — read each file carefully before writing about it:
 
 {chunk_summary}
 
-Produce 6-8 concepts that give a new developer genuine understanding of this codebase.
+Imagine you just spent an hour reading this codebase cold. Write the 6-8 things you wish
+someone had told you before you started — the decisions that surprised you, the techniques
+that explain why the code is shaped the way it is, the insights that made it click.
 
 ── BEFORE WRITING EACH CONCEPT YOU MUST ─────────────────────────────────────────
 1. Read the actual source code for that file in the context above
-2. Identify what would degrade or break if this were replaced with a naive alternative
-3. Identify what simpler design was NOT chosen and what forced the actual decision
-4. Name the TECHNIQUE or DESIGN DECISION — not the class or service that implements it
+2. Ask: "What would degrade or break if this were replaced with a simpler naive alternative?"
+3. Ask: "What design was NOT chosen here, and what forced the actual decision?"
+4. Name the TECHNIQUE or INSIGHT — not the class or file that implements it
 
 ── WEAK vs. STRONG ──────────────────────────────────────────────────────────────
 
@@ -168,7 +172,7 @@ understanding A. This is NOT the code import graph — base edges on learning or
 
 Return ONLY this JSON (no markdown, no extra text):
 {{
-  "summary": "2 sentences: what this repo does and what architectural pattern it demonstrates",
+  "summary": "2 sentences: (1) what problem this repo solves and who benefits — be specific, name the mechanism not the category. (2) the key architectural decision that shapes everything else.",
   "entry_point": "filename of the most foundational concept (reading_order=1)",
   "concepts": [
     {{
@@ -177,7 +181,7 @@ Return ONLY this JSON (no markdown, no extra text):
       "subtitle": "One sentence: the problem this concept solves",
       "file": "filename where this concept lives",
       "type": "class|function|module|algorithm",
-      "description": "2-3 sentences: the problem, the design decision, and the non-obvious trade-off or insight",
+      "description": "2-3 sentences written as a senior engineer explaining to a teammate: what the code actually does, what would go wrong without this approach, and the non-obvious insight that makes it work.",
       "key_items": ["actual_method_name_1", "actual_method_name_2"],
       "depends_on": [],
       "reading_order": 1,
@@ -208,7 +212,7 @@ Return ONLY this JSON (no markdown, no extra text):
       "label": "Component Name",
       "type": "module|class|service|database|external",
       "file": "filename.py",
-      "description": "One sentence: what this component does",
+      "description": "One sentence: what this component does — name the specific mechanism or data it owns, not its generic role (NEVER 'handles', 'manages', 'is responsible for')",
       "items": ["key_method_1", "key_method_2"]
     }}
   ],
@@ -239,7 +243,7 @@ Return ONLY this JSON (no markdown, no extra text):
       "label": "ClassName",
       "type": "class|abstract|mixin",
       "file": "filename.py",
-      "description": "One sentence: responsibility of this class",
+      "description": "One sentence: what this class does — name the algorithm, data structure, or operation it owns (NEVER 'responsible for', NEVER generic role descriptions)",
       "items": ["method_1", "method_2", "method_3"]
     }}
   ],

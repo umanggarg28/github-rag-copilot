@@ -352,7 +352,7 @@ def _add_context(
             f"File: {filepath}\n\n"
             f"File content (truncated):\n{doc_text}\n\n"
             f"Chunk to describe:\n{chunk_text[:800]}\n\n"
-            "Write ONE sentence describing what this chunk does and its role in the file."
+            "Write ONE sentence describing what this chunk does and its role in the system."
         )
         try:
             sentence = gen.generate(_CONTEXT_SYSTEM, prompt, temperature=0.0).strip()

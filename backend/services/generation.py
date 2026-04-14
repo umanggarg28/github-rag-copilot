@@ -279,6 +279,16 @@ class GenerationService:
             self._model  = "gemini-2.5-flash"
             print("Generation: using Gemini 2.5 Flash via Google Gemini API")
             return "gemini"
+        elif settings.sambanova_api_key:
+            from openai import OpenAI
+            self._client = OpenAI(
+                api_key=settings.sambanova_api_key,
+                base_url="https://api.sambanova.ai/v1",
+            )
+            # Llama 3.1 405B — largest model on any free tier, best quality after Gemini.
+            self._model  = "Meta-Llama-3.1-405B-Instruct"
+            print("Generation: using SambaNova (Llama 3.1 405B) — free tier")
+            return "sambanova"
         elif settings.cerebras_api_key:
             from openai import OpenAI
             self._client = OpenAI(
@@ -288,17 +298,6 @@ class GenerationService:
             self._model  = "llama3.3-70b"
             print("Generation: using Cerebras (llama3.3-70b) — fast free tier")
             return "cerebras"
-        elif settings.sambanova_api_key:
-            from openai import OpenAI
-            self._client = OpenAI(
-                api_key=settings.sambanova_api_key,
-                base_url="https://api.sambanova.ai/v1",
-            )
-            # Llama 3.1 405B — largest model available on any free tier.
-            # SambaNova runs it on custom RDU hardware at ~1400 tok/s.
-            self._model  = "Meta-Llama-3.1-405B-Instruct"
-            print("Generation: using SambaNova (Llama 3.1 405B) — free tier")
-            return "sambanova"
         elif settings.anthropic_api_key:
             import anthropic
             self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
@@ -342,8 +341,9 @@ class GenerationService:
 
         Priority: gemini (Gemma 4) → cerebras → openrouter → groq → anthropic
         """
-        # Fallback chain: gemini → cerebras → sambanova → anthropic → openrouter → mistral → groq
-        _all = ("gemini", "cerebras", "sambanova", "anthropic", "openrouter", "mistral", "groq")
+        # Fallback chain ordered by quality: best models first.
+        # SambaNova 405B > Cerebras 70B in raw capability, so it comes first.
+        _all = ("gemini", "sambanova", "cerebras", "anthropic", "openrouter", "mistral", "groq")
         _after = lambda p: _all[_all.index(p) + 1:] if p in _all else _all  # noqa: E731
 
         if self.provider == "gemini" and settings.cerebras_api_key:
