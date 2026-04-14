@@ -93,68 +93,78 @@ def _parse_json(raw: str) -> dict:
 
 
 _DIAGRAM_SYSTEM = (
-    "You are an expert software architect analysing codebases. "
+    "You are an expert software architect who maps the structure of real production codebases. "
+    "Your diagrams are grounded entirely in what the source code actually contains. "
+    "NEVER invent component names, method names, or relationships not present in the source. "
+    "NEVER guess — if a relationship is not visible in the code provided, omit it. "
     "Return ONLY valid JSON — no markdown fences, no explanation, just the JSON object."
 )
 
 _ENRICH_SYSTEM = (
-    "You are an expert software architect. Given a list of real code components "
-    "extracted by static analysis, write a short description for each one. "
+    "You are an expert software architect writing component descriptions grounded in real source code. "
+    "For each component, describe what it DOES and WHY it exists — not just what it is called. "
+    "NEVER write 'The class responsible for X' — describe the mechanism or design decision instead. "
+    "NEVER invent behaviour not visible in the provided source snippets. "
     "Return ONLY valid JSON — no markdown fences, no explanation."
 )
 
 _TOUR_SYSTEM = (
-    "You are a senior engineer writing the 'How it actually works' section of the best README "
-    "this codebase will ever have — not 'What classes exist', but the genuine insights, trade-offs, "
-    "and design decisions that make this system tick. "
+    "You are an expert software architect and technical educator. "
+    "You have spent years reading unfamiliar codebases and identifying the specific insights "
+    "that make a design click for new developers — the non-obvious decisions, the trade-offs, "
+    "the 'aha moments' that no amount of class-name reading reveals. "
+    "You write the 'How it actually works' section: genuine understanding, not inventory. "
     "Return ONLY valid JSON — no markdown fences, no explanation, just the JSON object."
 )
 
 _TOUR_PROMPT = """\
 Repository: {repo}
 
-Source code (read carefully — your output must reflect what the code actually does):
+Source code — read each file carefully before writing about it:
 
 {chunk_summary}
 
-Identify 6-8 core concepts that give a new developer genuine understanding of this codebase.
+Produce 6-8 concepts that give a new developer genuine understanding of this codebase.
 
-── QUALITY BAR ──────────────────────────────────────────────────────────────────
+── BEFORE WRITING EACH CONCEPT YOU MUST ─────────────────────────────────────────
+1. Read the actual source code for that file in the context above
+2. Identify what would degrade or break if this were replaced with a naive alternative
+3. Identify what simpler design was NOT chosen and what forced the actual decision
+4. Name the TECHNIQUE or DESIGN DECISION — not the class or service that implements it
 
-BAD concept (do NOT produce this):
+── WEAK vs. STRONG ──────────────────────────────────────────────────────────────
+
+WEAK (never produce this):
   name: "Vector Store"
-  description: "The class responsible for storing and retrieving vectors from the database."
-  Why it fails: names an implementation artifact. Any project using a vector DB would have
-  this class. The developer learns nothing they could not have guessed from the name alone.
+  description: "The class responsible for storing and retrieving vectors."
+  Why weak: names an artifact. Any vector-DB project has this. Zero insight.
 
-GOOD concept (produce this):
+STRONG (produce this):
   name: "Hybrid Retrieval Scoring"
-  description: "Pure semantic (dense) search degrades on rare tokens like error codes and
-  function names. This system combines dense ANN vectors with sparse BM25 term frequencies
-  so exact-match queries still surface the right result. The two scores are fused with
-  Reciprocal Rank Fusion — a parameter-free method that outperforms weighted sums."
-  Why it works: names a technique, states the problem it solves, names the key trade-off.
+  description: "Pure semantic search fails on rare tokens like function names and error codes.
+  Dense ANN vectors are fused with sparse BM25 term frequencies via Reciprocal Rank Fusion —
+  a parameter-free combiner that outperforms tuned weighted sums and eliminates the top
+  failure mode of single-modality retrieval."
+  Why strong: names the technique, states the failure mode it prevents, explains the choice.
 
-Self-check: if your concept name is the same as a class or file name in the source, you
-have named an artifact. Ask instead — what is the TECHNIQUE or DESIGN DECISION this embodies?
+── NEVER ────────────────────────────────────────────────────────────────────────
 
-── REASONING CHAIN ──────────────────────────────────────────────────────────────
+NEVER write a concept name that matches a class name, file name, or service name in the
+source. That is an inventory entry, not a concept.
 
-Before writing each concept, work through these in your head:
-  1. What would break or degrade if this code were deleted or replaced with a naive alternative?
-  2. What simpler design was NOT chosen here, and what constraint forced the actual choice?
-  3. What must a developer already understand before this concept makes sense?
+NEVER begin a description with "The class responsible for" or "The module that handles" —
+these describe existence, not design decisions.
 
-Only after answering these should you write the name and description.
+NEVER include secondary features — agents, admin tools, protocol adapters, streaming
+bridges — that could be removed without breaking the repo's primary purpose.
+
+NEVER place more than 2 concepts at depends_on=[]. If you do, you have listed parallel
+features. A real learning progression has at least 3 depth levels.
 
 ── DEPENDENCY ORDER ─────────────────────────────────────────────────────────────
 
-depends_on means CONCEPTUAL prerequisite — a developer cannot understand B without first
-understanding A. This is NOT the code import graph.
-
-A healthy learning DAG for 6-8 concepts has at least 3 depth levels.
-If more than 2 concepts have depends_on=[], stop and reconsider — you have likely listed
-parallel implementation details instead of a genuine learning progression from simple to complex.
+depends_on = conceptual prerequisite: a developer cannot understand B without first
+understanding A. This is NOT the code import graph — base edges on learning order only.
 
 Return ONLY this JSON (no markdown, no extra text):
 {{
@@ -163,11 +173,11 @@ Return ONLY this JSON (no markdown, no extra text):
   "concepts": [
     {{
       "id": 0,
-      "name": "Technique or design decision (2-4 words) — NOT a class name",
-      "subtitle": "One line: the problem this concept solves",
+      "name": "Technique or design decision (2-4 words)",
+      "subtitle": "One sentence: the problem this concept solves",
       "file": "filename where this concept lives",
       "type": "class|function|module|algorithm",
-      "description": "2-3 sentences: the problem, the design decision made, and the non-obvious trade-off or insight",
+      "description": "2-3 sentences: the problem, the design decision, and the non-obvious trade-off or insight",
       "key_items": ["actual_method_name_1", "actual_method_name_2"],
       "depends_on": [],
       "reading_order": 1,
@@ -178,9 +188,8 @@ Return ONLY this JSON (no markdown, no extra text):
 
 Rules:
 - 6-8 concepts total
-- reading_order=1 is the foundation: depends_on=[], file matches entry_point
-- entry_point and reading_order=1 MUST reference the same file
-- key_items: 2-4 actual method/function names from the source above (not invented)
+- reading_order=1: depends_on=[], file matches entry_point — same file, always
+- key_items: 2-4 actual method/function names from the source above, never invented
 - type: exactly one of class, function, module, algorithm
 """
 

@@ -103,11 +103,14 @@ class ReadmeService:
             lang_line = ", ".join(parts)
 
         system = (
-            "You are a technical writer creating README.md files for open-source projects. "
-            "Write in clear, direct prose. Be concise — every section should earn its place. "
-            "Use GitHub-flavored markdown. Never pad with filler phrases like 'This project aims to' "
-            "or 'This is a powerful tool'. Start each section with the most important information. "
-            "Base everything strictly on the repo map provided — do not invent features."
+            "You are an expert technical writer who creates README files for open-source projects. "
+            "Your READMEs are known for being direct, accurate, and immediately useful — "
+            "a developer reads them once and knows exactly what the project does and how to use it. "
+            "NEVER pad with filler: 'This project aims to', 'This is a powerful tool', 'leverages', 'robust'. "
+            "NEVER invent features, classes, or behaviours not present in the repo map provided. "
+            "NEVER write a generic description that could apply to any project in the same category. "
+            "Every sentence must be specific to THIS repository. "
+            "Use GitHub-flavored markdown. Start each section with the most important information."
         )
 
         prompt = f"""Generate a complete, high-quality README.md for the GitHub repository `{repo}`.

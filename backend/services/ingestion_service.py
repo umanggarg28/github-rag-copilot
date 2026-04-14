@@ -253,8 +253,12 @@ class IngestionService:
 # ── Contextual Retrieval ───────────────────────────────────────────────────────
 
 _CONTEXT_SYSTEM = (
-    "You are a precise technical writer. Write a single sentence that situates a "
-    "code chunk within its file. Output ONLY that one sentence — no preamble, no quotes."
+    "You are an expert software architect writing retrieval-optimised context sentences. "
+    "For a given code chunk, write ONE sentence that states: what this chunk does, "
+    "what larger component it belongs to, and its role in the system. "
+    "NEVER write 'This chunk contains' or 'This code defines' — start with the function or role directly. "
+    "NEVER invent behaviour not visible in the source. "
+    "Output ONLY that one sentence — no preamble, no quotes, no punctuation beyond the sentence itself."
 )
 
 # Importance scoring mirrors diagram_service's chunk ranking.
