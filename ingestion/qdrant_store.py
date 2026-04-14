@@ -166,9 +166,9 @@ class QdrantStore:
                 return ts
         return None
 
-    def upsert_chunks(self, chunks: list[dict], dense_vectors: list[list[float]]):
+    def upsert_chunks(self, chunks: list[dict], dense_vectors: list[list[float]]) -> list[str]:
         """
-        Store chunks and their embeddings in Qdrant.
+        Store chunks and their embeddings in Qdrant. Returns the list of point IDs written.
 
         Upsert = insert or update. If a point with the same ID already exists,
         it's overwritten. This means re-ingesting a repo is safe — no duplicates.
@@ -180,13 +180,18 @@ class QdrantStore:
         Sparse vectors (BM25) are computed from the text on Qdrant's side.
         We pass the tokens (words) and their term frequencies.
         Qdrant uses these to build the sparse vector internally.
+
+        We return the written IDs so the caller can delete stale points
+        (chunks that existed before re-index but no longer appear in the source).
         """
         if len(chunks) != len(dense_vectors):
             raise ValueError(f"Chunks ({len(chunks)}) and vectors ({len(dense_vectors)}) must match")
 
         points = []
+        written_ids: list[str] = []
         for chunk, dense_vec in zip(chunks, dense_vectors):
             point_id = _stable_id(chunk)
+            written_ids.append(point_id)
 
             # Build sparse vector (BM25) from the chunk text
             sparse_vec = _text_to_sparse(chunk["text"])
@@ -237,6 +242,7 @@ class QdrantStore:
             self.client.upsert(collection_name=self.collection, points=batch)
 
         print(f"  Upserted {len(points)} points to Qdrant")
+        return written_ids
 
     def count(self, repo: Optional[str] = None) -> int:
         """Return total number of stored chunks, optionally filtered by repo."""
@@ -439,6 +445,59 @@ class QdrantStore:
                 break
 
         return found
+
+    def delete_stale_chunks(self, repo: str, keep_ids: set[str]) -> int:
+        """
+        Delete chunks for a repo whose IDs are NOT in keep_ids.
+
+        Called after a force re-index completes. Because we now upsert first and
+        delete stale chunks last (blue-green strategy), the repo stays visible with
+        old (stale) data throughout the entire re-index, and only disappears briefly
+        during this final cleanup step — not for the 5-10 minutes of contextual retrieval.
+
+        Why not just delete everything upfront?
+          With free-tier LLM APIs, contextual enrichment can take 5-10 minutes.
+          If we delete old chunks first, the repo has 0 chunks for that entire window —
+          it disappears from the sidebar and any queries during that time return nothing.
+          Upserting first means old chunks remain queryable until the new ones are ready.
+
+        Returns the number of stale points deleted.
+        """
+        from qdrant_client.models import PointIdsList
+
+        # Scroll to collect all current IDs for this repo
+        old_ids: list[str] = []
+        offset = None
+        filt = Filter(must=[FieldCondition(key="repo", match=MatchValue(value=repo))])
+        while True:
+            points, offset = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=filt,
+                limit=1000,
+                offset=offset,
+                with_payload=False,
+                with_vectors=False,
+            )
+            for p in points:
+                old_ids.append(str(p.id))
+            if offset is None:
+                break
+
+        # Stale = in old index but not in new set
+        stale = [id_ for id_ in old_ids if id_ not in keep_ids]
+        if not stale:
+            return 0
+
+        # Delete in batches — Qdrant recommends ≤500 IDs per request
+        batch_size = 500
+        for i in range(0, len(stale), batch_size):
+            self.client.delete(
+                collection_name=self.collection,
+                points_selector=PointIdsList(points=stale[i : i + batch_size]),
+            )
+
+        print(f"  Deleted {len(stale)} stale points for {repo}")
+        return len(stale)
 
     def delete_repo(self, repo: str) -> int:
         """Delete all chunks for a repo. Returns number of points deleted."""

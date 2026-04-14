@@ -251,13 +251,13 @@ class GenerationService:
         self.provider = self._init_provider()
 
     def _init_provider(self) -> str:
-        """Pick a provider in priority order: Gemini (Gemma 4) → Cerebras → OpenRouter → Groq → Anthropic.
+        """Pick a provider in priority order: Gemini → Cerebras → Anthropic → OpenRouter → Groq.
 
-          1. Gemini API (gemma-4-31b-it) — best quality, 128K ctx, free via Google AI Studio
-          2. Cerebras (llama3.1-8b) — fast free tier, fallback when Gemma 4 is exhausted
-          3. OpenRouter (qwen3-coder) — coding quality, free tier
-          4. Groq (Llama 3.3 70B)    — generous free tier, good quality
-          5. Anthropic (claude-haiku) — paid fallback
+          1. Gemini API (gemma-4-31b-it)   — best quality, 128K ctx, free via Google AI Studio
+          2. Cerebras (llama-3.3-70b)      — fast free tier, good quality
+          3. Anthropic (claude-haiku-4-5)  — precise structured output + prompt caching
+          4. OpenRouter (qwen3-coder:free) — coding quality, free tier
+          5. Groq (llama-3.3-70b-versatile)— generous free tier
 
         Cerebras, Gemini, and OpenRouter use OpenAI-compatible endpoints so they share
         the same _groq_complete / _groq_stream code paths.
@@ -277,9 +277,22 @@ class GenerationService:
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
             )
-            self._model  = "llama3.1-8b"
-            print("Generation: using Cerebras (llama3.1-8b) — fast free tier")
+            # llama-3.3-70b produces dramatically better context sentences than
+            # llama3.1-8b for structured tasks like "describe what this chunk does in
+            # one sentence". Both are on Cerebras free tier.
+            self._model  = "llama-3.3-70b"
+            print("Generation: using Cerebras (llama-3.3-70b) — fast free tier")
             return "cerebras"
+        elif settings.anthropic_api_key:
+            # Anthropic claude-haiku before OpenRouter/Groq for quality tasks:
+            # haiku-4-5 supports prompt caching (file content cached across chunk
+            # enrichment calls) and is more precise at structured single-sentence
+            # generation than qwen3-coder or llama-3.3-70b on free tiers.
+            import anthropic
+            self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+            self._model  = "claude-haiku-4-5-20251001"
+            print(f"Generation: using Anthropic ({self._model})")
+            return "anthropic"
         elif settings.openrouter_api_key:
             self._client = _openrouter_client(settings.openrouter_api_key)
             self._model  = _OPENROUTER_MODEL
@@ -291,12 +304,6 @@ class GenerationService:
             self._model  = "llama-3.3-70b-versatile"
             print(f"Generation: using Groq ({self._model})")
             return "groq"
-        elif settings.anthropic_api_key:
-            import anthropic
-            self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-            self._model  = "claude-haiku-4-5-20251001"
-            print(f"Generation: using Anthropic ({self._model})")
-            return "anthropic"
         else:
             raise ValueError(
                 "No LLM API key found. Set CEREBRAS_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY in .env"
@@ -312,35 +319,39 @@ class GenerationService:
 
         Priority: gemini (Gemma 4) → cerebras → openrouter → groq → anthropic
         """
+        # Fallback chain: gemini → cerebras → anthropic → openrouter → groq
+        # Anthropic is placed before OpenRouter/Groq because claude-haiku-4-5
+        # produces higher quality structured output (context sentences, JSON) and
+        # supports prompt caching — more efficient for enrichment-heavy workloads.
         if self.provider == "gemini" and settings.cerebras_api_key:
             from openai import OpenAI
             self._client  = OpenAI(
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
             )
-            self._model   = "llama3.1-8b"
+            self._model   = "llama-3.3-70b"
             self.provider = "cerebras"
-            print("Generation: Gemma 4 limit hit — switched to Cerebras (llama3.1-8b)")
+            print("Generation: Gemma 4 limit hit — switched to Cerebras (llama-3.3-70b)")
             return True
-        if self.provider in ("gemini", "cerebras") and settings.openrouter_api_key:
+        if self.provider in ("gemini", "cerebras") and settings.anthropic_api_key:
+            import anthropic
+            self._client  = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+            self._model   = "claude-haiku-4-5-20251001"
+            self.provider = "anthropic"
+            print("Generation: switched to Anthropic (claude-haiku-4-5)")
+            return True
+        if self.provider in ("gemini", "cerebras", "anthropic") and settings.openrouter_api_key:
             self._client  = _openrouter_client(settings.openrouter_api_key)
             self._model   = _OPENROUTER_MODEL
             self.provider = "openrouter"
             print(f"Generation: switched to OpenRouter ({_OPENROUTER_MODEL})")
             return True
-        if self.provider in ("gemini", "cerebras", "openrouter") and settings.groq_api_key:
+        if self.provider in ("gemini", "cerebras", "anthropic", "openrouter") and settings.groq_api_key:
             from groq import Groq
             self._client  = Groq(api_key=settings.groq_api_key)
             self._model   = "llama-3.3-70b-versatile"
             self.provider = "groq"
             print("Generation: switched to Groq (llama-3.3-70b-versatile)")
-            return True
-        if self.provider in ("gemini", "cerebras", "openrouter", "groq") and settings.anthropic_api_key:
-            import anthropic
-            self._client  = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-            self._model   = "claude-haiku-4-5-20251001"
-            self.provider = "anthropic"
-            print("Generation: switched to Anthropic (claude-haiku-4-5) as final fallback")
             return True
         return False
 

@@ -74,14 +74,14 @@ class IngestionService:
             if progress is not None:
                 progress(step, detail)
 
-        # ── Step 1: Parse URL & optionally clear old data ─────────────────────
+        # ── Step 1: Parse URL ─────────────────────────────────────────────────
+        # We no longer delete upfront on force=True. Instead we upsert new chunks
+        # first and delete stale ones afterwards (blue-green strategy). This keeps
+        # the repo visible in the sidebar throughout the re-index — critical when
+        # contextual enrichment takes 5-10 minutes on free-tier LLM APIs.
         owner, name = parse_github_url(repo_url)
         repo_slug   = f"{owner}/{name}"
-        print(f"\n=== Ingesting {repo_slug} ===")
-
-        if force:
-            deleted = self.store.delete_repo(repo_slug)
-            print(f"  Deleted {deleted} existing chunks for {repo_slug}")
+        print(f"\n=== Ingesting {repo_slug} (force={force}) ===")
 
         # ── Step 2: Download repo (filtering happens inside fetch_repo_files) ────
         _emit("fetching", "Fetching file list from GitHub...")
@@ -200,10 +200,22 @@ class IngestionService:
             for c in chunks
         ]
 
-        # ── Step 7: Store ─────────────────────────────────────────────────────
+        # ── Step 7: Store, then sweep stale chunks ────────────────────────────
+        # Upsert new chunks first — at this point old chunks are still visible.
+        # Any chunk whose source code hasn't changed will be overwritten with an
+        # identical payload (same ID, stable per repo::filepath::start_line).
         _emit("storing", f"Storing {len(chunks)} chunks in Qdrant...")
         print("Storing in Qdrant...")
-        self.store.upsert_chunks(chunks, vectors)
+        written_ids = self.store.upsert_chunks(chunks, vectors)
+
+        # On a force re-index, delete chunks that no longer exist in the source.
+        # This handles deleted files and renamed functions — their old IDs won't
+        # appear in written_ids, so they get swept up here.
+        if force:
+            _emit("storing", "Removing stale chunks...")
+            stale = self.store.delete_stale_chunks(repo_slug, set(written_ids))
+            if stale:
+                print(f"  Swept {stale} stale chunks from previous index")
 
         total_stored = self.store.count(repo=repo_slug)
         message = (
@@ -349,9 +361,12 @@ def _add_context(
             print(f"  Context skipped for {filepath}:{chunk.get('name', '?')} — {e}")
             return idx, None
 
-    # Run up to 8 LLM calls concurrently — safe for Gemini/Cerebras free-tier
-    # rate limits while cutting wall-clock time by ~8x versus sequential.
-    _WORKERS     = 8
+    # Run up to 3 LLM calls concurrently. We tried 8 workers but all free-tier
+    # providers (Gemini 15 RPM, OpenRouter 8 RPM, Groq TPM) hit limits simultaneously,
+    # causing cascading 429s across every provider at once — slower than 3 workers.
+    # 3 workers gives ~3x speedup while keeping the per-minute request count
+    # low enough that the generation service's retry/fallback logic can breathe.
+    _WORKERS     = 3
     _REPORT_EVERY = 20
     to_enrich = [(idx, result[idx]) for idx, _ in ranked[:limit]]
 
