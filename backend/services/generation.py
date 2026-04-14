@@ -579,11 +579,21 @@ class GenerationService:
         )
         # Structured JSON output: instructs the model to emit ONLY a valid JSON
         # object. No markdown fences, no explanatory text — just the JSON.
-        # This is far more reliable than asking nicely in the system prompt.
-        if params.get("json_mode"):
+        # json_object response_format is reliable for Groq, Cerebras, Mistral, SambaNova.
+        # Gemini's OpenAI-compat endpoint does NOT reliably honour it — when set, Gemini
+        # truncates the output at ~100 tokens regardless of max_tokens (silent failure).
+        # For Gemini we rely solely on the system prompt instruction ("Return ONLY JSON").
+        if params.get("json_mode") and self.provider != "gemini":
             kwargs["response_format"] = {"type": "json_object"}
         response = self._client.chat.completions.create(**kwargs)
-        return response.choices[0].message.content or ""
+        choice = response.choices[0]
+        finish = choice.finish_reason
+        content = choice.message.content or ""
+        if finish == "length":
+            # Output was cut short by max_tokens. Log so we can tune the budget.
+            print(f"  [gen] finish_reason=length provider={self.provider} model={self._model} "
+                  f"max_tokens={params['max_tokens']} output_len={len(content)}")
+        return content
 
     def _groq_stream(self, system: str, messages: list[dict], params: dict) -> Iterator[str]:
         stream = self._client.chat.completions.create(
