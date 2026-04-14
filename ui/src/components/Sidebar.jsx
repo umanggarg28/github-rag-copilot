@@ -203,6 +203,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     // times out — large repos take several minutes to re-embed. The backend sends
     // keepalive pings every 15s to prevent proxy idle-disconnect.
     const es = new EventSource(`${BASE}/ingest/stream?repo=${encodeURIComponent(`https://github.com/${slug}`)}&force=true`);
+    let completed = false; // true once "done" event received
 
     es.onmessage = (ev) => {
       const event = JSON.parse(ev.data);
@@ -223,6 +224,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
       if (pct !== null) setReindexPct(prev => ({ ...prev, [slug]: pct }));
 
       if (event.step === "done") {
+        completed = true;
         es.close();
         setReindexing(null);
         setReindexDone(prev => ({ ...prev, [slug]: true }));
@@ -243,7 +245,14 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
       es.close();
       setReindexing(null);
       setReindexPct(prev => { const n = {...prev}; delete n[slug]; return n; });
-      setStatus({ type: "error", text: "Re-index failed: connection lost" });
+      // Always refresh repos — the backend may have finished even if the
+      // connection dropped (e.g. proxy timeout right as "done" was sent).
+      onReposChange();
+      if (!completed) {
+        // Only show an error if we never received the "done" event.
+        // If we did, this onerror is just the normal stream-close signal.
+        setStatus({ type: "error", text: "Re-index may have completed — connection dropped at the end. Check the chunk count." });
+      }
     };
   }
 
