@@ -554,11 +554,11 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
             aria-hidden="true"
           >
             <defs>
-              {/* Default arrowhead — warm sienna */}
+              {/* Default arrowhead */}
               <marker id="ec-arrow" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(91,143,249,0.35)" />
+                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(91,143,249,0.55)" />
               </marker>
-              {/* Highlighted arrowhead */}
+              {/* Highlighted arrowhead — brighter, with glow colour */}
               <marker id="ec-arrow-hi" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
                 <polygon points="0 0, 7 2.5, 0 5" fill="#7DABFF" />
               </marker>
@@ -570,20 +570,25 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
                 const to   = positions[c.id];
                 if (!from || !to) return null;
 
-                const isHi = connectedIds?.has(c.id) && connectedIds?.has(depId);
+                const isHi  = connectedIds?.has(c.id) && connectedIds?.has(depId);
                 const isDim = connectedIds && !isHi;
 
                 return (
                   <path
                     key={`${depId}→${c.id}`}
                     d={bezierPath(from, to)}
-                    stroke={isHi ? "#7DABFF" : "rgba(91,143,249,0.22)"}
-                    strokeWidth={isHi ? 2 : 1.5}
-                    strokeDasharray={isHi ? undefined : "none"}
+                    stroke={isHi ? "#7DABFF" : "rgba(91,143,249,0.45)"}
+                    strokeWidth={isHi ? 2.5 : 1.5}
+                    // dasharray 12 6: the marching-ant animation advances the offset by
+                    // one period (18px) per cycle, making the dashes appear to travel
+                    // from source to target — a directional flow cue without extra UI.
+                    strokeDasharray="12 6"
                     fill="none"
                     markerEnd={isHi ? "url(#ec-arrow-hi)" : "url(#ec-arrow)"}
                     style={{
-                      opacity: isDim ? 0.12 : 1,
+                      opacity: isDim ? 0.1 : 1,
+                      animation: "ec-flow 1.8s linear infinite",
+                      filter: isHi ? "drop-shadow(0 0 4px rgba(125,171,255,0.7))" : undefined,
                       transition: "opacity 0.15s, stroke 0.15s, stroke-width 0.15s",
                     }}
                   />

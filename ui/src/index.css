@@ -3419,6 +3419,14 @@ textarea:focus-visible {
   100% { opacity: 0;   box-shadow: none; }
 }
 
+/* ── Concept tour arrow flow animation ───────────────────────────────────── */
+/* stroke-dashoffset marching toward the target creates a directional "flow" cue.
+   dasharray=12 6 means 12px dash, 6px gap — the offset advances by one period (18px)
+   per cycle so the pattern appears to travel forward along the path. */
+@keyframes ec-flow {
+  to { stroke-dashoffset: -18; }
+}
+
 /* ══════════════════════════════════════════════════════════
    FEATURE 3: SESSION SEARCH + EDITABLE TITLE
    ══════════════════════════════════════════════════════════ */

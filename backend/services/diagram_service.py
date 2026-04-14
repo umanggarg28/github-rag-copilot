@@ -109,92 +109,104 @@ _ENRICH_SYSTEM = (
 )
 
 _TOUR_SYSTEM = (
-    "You are a senior engineer who just finished reading an unfamiliar codebase for the first time. "
-    "Your job is to write the explanation you wish existed before you started reading — "
-    "the insights that took hours to find, distilled into minutes for the next developer. "
-    "You explain mechanisms (what would break if removed, what naive alternative was rejected, why), "
-    "not inventory (what classes exist, what files are present). "
-    "Every sentence must be grounded in the actual source provided. "
-    "NEVER start with 'This repo', 'This project', or 'The codebase' — lead with the mechanism. "
+    "You are a senior engineer who just spent an hour reading an unfamiliar codebase for the first time. "
+    "You think in systems — you trace data flows before you read individual classes. "
+    "Your job is to write the guided tour you wished existed before you started: "
+    "not a list of components, but a learning path that builds understanding layer by layer. "
+    "Every sentence is grounded in the actual source provided. "
     "Return ONLY valid JSON — no markdown fences, no explanation, just the JSON object."
 )
 
 _TOUR_PROMPT = """\
 Repository: {repo}
 
-Source code — read each file carefully before writing about it:
+Source code — study the actual code before writing anything:
 
 {chunk_summary}
 
-Imagine you just spent an hour reading this codebase cold. Write the 6-8 things you wish
-someone had told you before you started — the decisions that surprised you, the techniques
-that explain why the code is shaped the way it is, the insights that made it click.
+── STEP 1: TRACE THE SYSTEM FLOW (do this mentally first, don't output it) ──────
 
-── BEFORE WRITING EACH CONCEPT YOU MUST ─────────────────────────────────────────
-1. Read the actual source code for that file in the context above
-2. Ask: "What would degrade or break if this were replaced with a simpler naive alternative?"
-3. Ask: "What design was NOT chosen here, and what forced the actual decision?"
-4. Name the TECHNIQUE or INSIGHT — not the class or file that implements it
+Before naming any concept, answer this question in your head:
+"If a user runs this repo right now, what is the sequence of files and functions
+that execute from their first action to their final output?"
 
-── WEAK vs. STRONG ──────────────────────────────────────────────────────────────
+Write that chain mentally: UserAction → file/function → file/function → ... → Output
 
-WEAK (never produce this):
+This chain IS the codebase. Every concept you write must explain one non-obvious
+part of this chain — not a component that sits beside it.
+
+── STEP 2: CONCEPT 0 IS THE PIPELINE (always, no exceptions) ────────────────────
+
+concept id=0 (reading_order=1, depends_on=[]) must describe the end-to-end flow
+you traced above — what happens step by step when the system does its main job.
+This is the map. Without it, every other concept is a room with no house around it.
+description should name the files/stages in the sequence and explain the key split
+(e.g. "index upfront, query later" or "embed, store, retrieve, generate").
+
+── STEP 3: EVERY OTHER CONCEPT MUST BUILD ON SOMETHING ─────────────────────────
+
+Concepts 1-7 each answer "why is this step in the pipeline done THIS way and not
+the naive way?" Each must have depends_on pointing to at least one earlier concept.
+If you cannot say "a developer can't understand B without first understanding A",
+the concepts should be merged.
+
+── WEAK vs STRONG ───────────────────────────────────────────────────────────────
+
+WEAK — names an artifact, zero insight:
   name: "Vector Store"
-  description: "The class responsible for storing and retrieving vectors."
-  Why weak: names an artifact. Any vector-DB project has this. Zero insight.
+  description: "Stores and retrieves vectors."
 
-STRONG (produce this):
-  name: "Hybrid Retrieval Scoring"
-  description: "Pure semantic search fails on rare tokens like function names and error codes.
-  Dense ANN vectors are fused with sparse BM25 term frequencies via Reciprocal Rank Fusion —
-  a parameter-free combiner that outperforms tuned weighted sums and eliminates the top
-  failure mode of single-modality retrieval."
-  Why strong: names the technique, states the failure mode it prevents, explains the choice.
+STRONG — names a decision, explains the tradeoff:
+  name: "Hybrid Dense+Sparse Retrieval"
+  description: "Semantic search alone misses rare tokens like function names.
+  Dense ANN vectors (meaning) are fused with BM25 sparse vectors (exact terms)
+  via Reciprocal Rank Fusion — a parameter-free combiner that beats any tuned
+  weighted sum and eliminates the single biggest RAG failure mode."
 
-── NEVER ────────────────────────────────────────────────────────────────────────
+── RULES ────────────────────────────────────────────────────────────────────────
 
-NEVER write a concept name that matches a class name, file name, or service name in the
-source. That is an inventory entry, not a concept.
-
-NEVER begin a description with "The class responsible for" or "The module that handles" —
-these describe existence, not design decisions.
-
-NEVER include secondary features — agents, admin tools, protocol adapters, streaming
-bridges — that could be removed without breaking the repo's primary purpose.
-
-NEVER place more than 2 concepts at depends_on=[]. If you do, you have listed parallel
-features. A real learning progression has at least 3 depth levels.
-
-── DEPENDENCY ORDER ─────────────────────────────────────────────────────────────
-
-depends_on = conceptual prerequisite: a developer cannot understand B without first
-understanding A. This is NOT the code import graph — base edges on learning order only.
+- concept name must be a TECHNIQUE or DECISION, never a class/file/service name
+- NEVER start a description with "The class responsible for" or "The module that"
+- key_items: real method/function names visible in the source above, never invented
+- At most 1 concept may have depends_on=[] (only concept 0)
 
 Return ONLY this JSON (no markdown, no extra text):
 {{
-  "summary": "2 sentences: (1) what problem this repo solves and who benefits — be specific, name the mechanism not the category. (2) the key architectural decision that shapes everything else.",
-  "entry_point": "filename of the most foundational concept (reading_order=1)",
+  "summary": "2 sentences: (1) what the user can DO with this repo and what mechanism makes it work — name the technique, not the category. (2) the single architectural decision that shapes everything else.",
+  "entry_point": "file path of the pipeline entry (concept id=0)",
   "concepts": [
     {{
       "id": 0,
-      "name": "Technique or design decision (2-4 words)",
-      "subtitle": "One sentence: the problem this concept solves",
-      "file": "filename where this concept lives",
-      "type": "class|function|module|algorithm",
-      "description": "2-3 sentences written as a senior engineer explaining to a teammate: what the code actually does, what would go wrong without this approach, and the non-obvious insight that makes it work.",
-      "key_items": ["actual_method_name_1", "actual_method_name_2"],
+      "name": "End-to-end pipeline name (3-5 words)",
+      "subtitle": "One sentence: what the full pipeline does for the user",
+      "file": "entry point file",
+      "type": "module",
+      "description": "2-3 sentences tracing the data flow: what enters, what stage transforms it and how, what the user gets out. Name the key files and the split that makes the architecture work.",
+      "key_items": ["function_name_1", "function_name_2"],
       "depends_on": [],
       "reading_order": 1,
-      "ask": "The question a curious developer would ask after reading this (How, Why, What, or Explain)"
+      "ask": "How does [key mechanism] actually work end to end?"
+    }},
+    {{
+      "id": 1,
+      "name": "Non-obvious technique name (2-4 words)",
+      "subtitle": "One sentence: the problem this solves in the pipeline",
+      "file": "file where this lives",
+      "type": "class|function|module|algorithm",
+      "description": "2-3 sentences: what the naive approach would do wrong, what this code does instead, and the non-obvious insight that makes it work.",
+      "key_items": ["actual_method_1", "actual_method_2"],
+      "depends_on": [0],
+      "reading_order": 2,
+      "ask": "Why was [naive approach] rejected in favour of this?"
     }}
   ]
 }}
 
 Rules:
 - 6-8 concepts total
-- reading_order=1: depends_on=[], file matches entry_point — same file, always
-- key_items: 2-4 actual method/function names from the source above, never invented
-- type: exactly one of class, function, module, algorithm
+- id=0 always: depends_on=[], type=module, reading_order=1, file=entry_point
+- ids 1-7: depends_on must be non-empty (no orphaned parallel nodes)
+- key_items: 2-4 real method/function names from the source, never invented
 """
 
 _JSON_PROMPTS = {
