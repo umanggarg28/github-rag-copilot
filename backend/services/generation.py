@@ -570,12 +570,27 @@ class GenerationService:
     # ── Groq / Gemini / OpenRouter implementation ─────────────────────────────
     # All three use the OpenAI SDK interface, so one implementation covers all.
 
+    # Hard output-token ceilings per provider. Each provider enforces its own
+    # limit server-side — exceeding it returns a 400 that _is_exhausted doesn't
+    # catch. We cap here so fallback providers silently use their actual limit
+    # rather than erroring out. Callers can request more; we deliver as much as
+    # the current provider allows.
+    _MAX_OUTPUT: dict[str, int] = {
+        "gemini":     65536,
+        "cerebras":   16384,
+        "sambanova":  4096,   # Llama 3.1 405B free tier
+        "openrouter": 8192,   # conservative; varies by routed model
+        "mistral":    32768,
+        "groq":       32768,
+    }
+
     def _groq_complete(self, system: str, messages: list[dict], params: dict) -> str:
+        max_out = min(params["max_tokens"], self._MAX_OUTPUT.get(self.provider, params["max_tokens"]))
         kwargs: dict = dict(
             model=self._model,
             messages=[{"role": "system", "content": system}] + messages,
             temperature=params["temperature"],
-            max_tokens=params["max_tokens"],
+            max_tokens=max_out,
         )
         # Structured JSON output: instructs the model to emit ONLY a valid JSON
         # object. No markdown fences, no explanatory text — just the JSON.
