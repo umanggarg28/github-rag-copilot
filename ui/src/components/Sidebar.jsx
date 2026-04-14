@@ -196,8 +196,8 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     setReindexPct(prev => ({ ...prev, [slug]: 5 }));
 
     // Map ingestion steps to approximate % complete so the bar fills meaningfully.
-    // Embedding is the longest step (~60% of total time), so it gets the most range.
-    const STEP_PCT = { fetching: 10, filtering: 22, chunking: 38, embedding: 75, storing: 90, done: 100 };
+    // "contextualizing" is dynamic — we compute it from the "X / Y" in the detail.
+    const STEP_PCT = { fetching: 10, filtering: 22, chunking: 38, embedding: 80, storing: 92, done: 100 };
 
     // Use EventSource (GET SSE) instead of a POST fetch so the connection never
     // times out — large repos take several minutes to re-embed. The backend sends
@@ -206,7 +206,20 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
 
     es.onmessage = (ev) => {
       const event = JSON.parse(ev.data);
-      const pct = STEP_PCT[event.step] ?? null;
+      let pct = STEP_PCT[event.step] ?? null;
+
+      // Contextualizing fires many times with "X / Y" in the detail.
+      // Map it to 38–78% range so the bar visibly advances during this long phase.
+      if (event.step === "contextualizing" && event.detail) {
+        const m = event.detail.match(/(\d+)\s*\/\s*(\d+)/);
+        if (m) {
+          const [done, total] = [parseInt(m[1]), parseInt(m[2])];
+          pct = Math.round(38 + (done / total) * 40);
+        } else {
+          pct = 40; // initial "contextualizing" event before first batch
+        }
+      }
+
       if (pct !== null) setReindexPct(prev => ({ ...prev, [slug]: pct }));
 
       if (event.step === "done") {

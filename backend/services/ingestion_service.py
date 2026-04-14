@@ -143,12 +143,21 @@ class IngestionService:
         # Only runs on force=True re-ingestion to avoid slowing down first-time indexing.
         if force and hasattr(self, '_gen') and self._gen is not None:
             top_n = settings.contextual_top_n  # 0 = all chunks
-            limit_str = f"all {len(chunks)}" if top_n == 0 else f"top {top_n}"
+            total_ctx = len(chunks) if top_n == 0 else min(top_n, len(chunks))
             _emit("contextualizing",
-                  f"Contextual retrieval: adding AI-generated descriptions to {limit_str} chunks…")
-            print(f"Contextual retrieval: enriching {limit_str} chunks with context...")
+                  f"Adding context to chunks… 0 / {total_ctx}")
+            print(f"Contextual retrieval: enriching {total_ctx} chunks with context...")
             now = datetime.now(timezone.utc).isoformat()
-            chunks = _add_context(chunks, file_dicts, self._gen, top_n=top_n, contextual_at=now)
+
+            # Emit progress every 20 chunks so the UI bar advances visibly
+            def _ctx_progress(done: int, total: int) -> None:
+                _emit("contextualizing", f"Adding context to chunks… {done} / {total}")
+
+            chunks = _add_context(
+                chunks, file_dicts, self._gen,
+                top_n=top_n, contextual_at=now,
+                progress=_ctx_progress,
+            )
             n_enriched = sum(1 for c in chunks if c.get('_contextualised'))
             print(f"  Context added to {n_enriched} chunks")
 
@@ -259,6 +268,7 @@ def _add_context(
     gen,
     top_n: int = 0,
     contextual_at: str = None,
+    progress: callable = None,
 ) -> list[dict]:
     """
     Contextual Retrieval: prepend a short LLM-generated context sentence to
@@ -313,7 +323,9 @@ def _add_context(
             result[i] = dict(result[i])
             result[i]["contextual_at"] = contextual_at
 
-    for idx, _chunk in ranked[:limit]:
+    _REPORT_EVERY = 20  # emit a progress event every N chunks to avoid SSE flood
+
+    for done, (idx, _chunk) in enumerate(ranked[:limit], start=1):
         # Use result[idx] (which already has contextual_at stamped) as the base
         chunk      = result[idx]
         filepath   = chunk.get("filepath", "")
@@ -339,5 +351,9 @@ def _add_context(
         except Exception as e:
             print(f"  Context skipped for {filepath}:{chunk.get('name', '?')} — {e}")
             # Leave result[idx] unchanged — graceful fallback to raw chunk
+
+        # Report progress every N chunks so the UI bar advances visibly
+        if progress and (done % _REPORT_EVERY == 0 or done == limit):
+            progress(done, limit)
 
     return result
