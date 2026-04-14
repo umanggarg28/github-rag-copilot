@@ -1739,9 +1739,18 @@ textarea:focus-visible {
 .repo-contextual {
   font-size: 9px;
   color: var(--accent-soft);
-  opacity: 0.7;
   cursor: default;
   line-height: 1;
+  /* Slow glow-beat: signals "this repo has AI context embedded" without
+     demanding attention. Opacity oscillates between dim and full while
+     text-shadow breathes the accent glow in and out. 3.6s period keeps
+     it calm — closer to a sleeping MacBook indicator than a notification. */
+  animation: contextual-beat 8s ease-in-out infinite;
+}
+@keyframes contextual-beat {
+  0%   { opacity: 0.45; color: var(--accent-soft);     text-shadow: none; }
+  50%  { opacity: 1;    color: rgba(200, 130, 255, 1); text-shadow: 0 0 8px rgba(200, 130, 255, 0.9), 0 0 16px var(--accent); }
+  100% { opacity: 0.45; color: var(--accent-soft);     text-shadow: none; }
 }
 
 .quality-tip-key {
