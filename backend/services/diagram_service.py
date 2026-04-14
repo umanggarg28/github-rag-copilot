@@ -104,62 +104,50 @@ _ENRICH_SYSTEM = (
 )
 
 _TOUR_SYSTEM = (
-    "You are an expert software architect explaining codebases to curious developers. "
-    "Your job is to identify the 6-8 core concepts that unlock understanding of any codebase — "
-    "the foundational data structures, key algorithms, and architectural patterns that everything else builds on. "
-    "You are skilled at reading real source code and extracting the 'aha moments' that make a design click. "
+    "You are an expert at onboarding developers onto unfamiliar codebases. "
+    "Given source code from any type of project, you identify the concepts a new developer "
+    "must understand — in dependency order — to build a complete mental model of how the system works. "
+    "You reason about structure: what builds on what, what comes first, what is core vs peripheral. "
     "Return ONLY valid JSON — no markdown fences, no explanation, just the JSON object."
 )
 
 _TOUR_PROMPT = """\
-Explain the repository "{repo}" — how it works and what patterns it demonstrates.
+Repository: {repo}
 
-Below are the most important code elements from this repo, with their actual source code.
-Read the code carefully — your descriptions must reflect what the code literally does, not
-what you might guess from the function name alone.
+Below are the most important code elements, with their actual source code.
+Read the code carefully — your output must reflect what the code literally does.
 
 {chunk_summary}
 
-Generate a JSON "concept map" — 6-8 key concepts that explain how this codebase is structured and why.
+Identify 6-8 core concepts that unlock this codebase for a developer seeing it for the first time.
 
-Surface the concepts that unlock understanding of this specific codebase. Use domain knowledge to pick the right framing — these are examples of the KIND of concepts to look for, not a checklist to copy:
-- ML training codebase → forward pass, loss function, backward pass, optimizer step, data pipeline
-- RAG / search codebase → chunking strategy, embedding pipeline, vector storage, retrieval scoring, context assembly
-- Web framework or API → routing, middleware, request lifecycle, data models, auth, persistence
-- Compiler / interpreter → lexer, parser, AST, IR, code generation, symbol table
-- Game engine → game loop, entity-component system, rendering pipeline, physics, input handling
-- Database / storage engine → query planner, storage layout, index structure, transaction log, cache
-- CLI tool or DevOps → config parsing, command dispatch, execution engine, output formatting
-- Any other codebase → the core data structure it operates on, the main algorithm, and the key abstraction layers
+Work through these questions before writing your answer:
 
-Always pick concepts that a developer must understand in order — from foundation to full picture.
+1. FOUNDATION: What is the simplest, most primitive concept in this codebase — the data structure,
+   algorithm, or abstraction that everything else is built on top of? This has no dependencies and
+   is where a new developer must start. It is the SIMPLEST piece, not the most powerful.
 
-CONCEPT SELECTION — apply these three tests. A concept must pass ALL THREE or it is excluded.
+2. DEPENDENCY ORDER: For each remaining concept, what must a developer already understand before
+   this one makes sense? Order all concepts from foundation (reading_order=1) to full picture.
 
-  TEST 1 — ALGORITHMIC VALUE: Does this concept contain a non-trivial algorithm or design decision?
-    PASS: a chunking strategy, a search algorithm, a training loop, a parsing technique
-    FAIL: a config loader, a data schema with no logic, a thin client wrapper, a protocol adapter
+3. CORE vs PERIPHERAL: For each candidate concept, ask two questions:
+   a. "If this entire subsystem were removed, would the repo's main purpose still work?"
+      If yes → it is a secondary feature. Exclude it.
+   b. "Is there a real algorithm or design decision here, or is this just wiring two other
+      concepts together?" Thin adapters, config loaders, and protocol bridges that contain
+      no original logic should be excluded — the edge between the two concepts they connect
+      already implies their relationship.
 
-  TEST 2 — TRANSFERABILITY: Could a developer extract the technique and use it in their own project?
-    PASS: "use AST boundaries instead of character windows for chunking" — directly applicable elsewhere
-    FAIL: "this app uses protocol X to connect to service Y" — integration wiring specific to this app
-    NOTE: MCP adapters, REST clients, WebSocket handlers, and similar protocol layers always fail this test.
-          They are plumbing, not reusable patterns. Skip them even if the file has substantial code.
+4. DEVELOPER VALUE: A new developer asks three things:
+   "Where do I start?" → reading_order=1
+   "How do the pieces connect?" → depends_on graph
+   "What is the non-obvious insight I would not have guessed?" → description field
+   Only include a concept if it meaningfully answers at least one of these questions.
 
-  TEST 3 — PRIMARY PURPOSE: Is this central to the repo's CORE function, not a secondary feature?
-    PASS: the main processing pipeline, the key algorithm, the central data transformation
-    FAIL: an agent wrapper, an admin utility, a visualisation tool, or ANY feature that lives on top
-          of the core system. If this entire subsystem were deleted, would the repo's main purpose
-          still work? If yes, it fails Test 3.
-
-If a file is just wiring two other concepts together, skip it and let the edge between those concepts imply the connection.
-
-ENTRY POINT RULE: The concept with reading_order=1 must have real algorithmic content — not just data shape definitions (Pydantic models, TypeScript interfaces, config structs). If the only file with no dependencies is a schema file, pick the NEXT most foundational file that has actual logic.
-
-Return ONLY this JSON structure (no markdown, no extra text):
+Return ONLY this JSON (no markdown, no extra text):
 {{
-  "summary": "2-sentence plain-English overview: what this repo does and what pattern it demonstrates",
-  "entry_point": "the most FOUNDATIONAL file for a new reader — the file that defines the core data structure or central abstraction that all other concepts build on top of. Choose the simplest, most primitive piece, NOT the most complex or feature-rich file. A student with zero context must be able to start here and understand everything else afterward. (just filename, e.g. 'engine.py')",
+  "summary": "2 sentences: what this repo does and what architectural pattern it demonstrates",
+  "entry_point": "filename of the most foundational concept (reading_order=1) — the simplest primitive, not the most complex",
   "concepts": [
     {{
       "id": 0,
@@ -167,26 +155,23 @@ Return ONLY this JSON structure (no markdown, no extra text):
       "subtitle": "One-line description of this component's role",
       "file": "filename where this concept lives",
       "type": "class|function|module|algorithm",
-      "description": "2-3 sentences: WHAT it does, WHY it was designed this way, and the key insight — the 'aha moment' that makes the design click. Focus on non-obvious decisions.",
-      "key_items": ["method_or_function_name_1", "method_or_function_name_2", "method_or_function_name_3"],
+      "description": "2-3 sentences: WHAT it does, WHY it was designed this way, and the non-obvious insight that makes the design click",
+      "key_items": ["actual_method_name_1", "actual_method_name_2", "actual_method_name_3"],
       "depends_on": [],
       "reading_order": 1,
-      "ask": "A natural question a curious developer would ask about this component (start with 'How', 'Why', 'What', or 'Explain')"
+      "ask": "A question a curious developer would ask about this component (start with How, Why, What, or Explain)"
     }}
   ]
 }}
 
 Rules:
-- Exactly 6-8 concepts — pick the most essential, skip utilities and tests
-- PREFER concepts with interesting logic over integration glue — a concept is only worth including if it teaches a pattern
-- depends_on: list of concept ids this concept builds on (empty [] for foundational concepts with no prerequisites)
-- reading_order: 1-indexed integer — order a student should read to build mental model from scratch
-- CRITICAL: reading_order=1 MUST be the concept whose depends_on is [] AND whose file matches entry_point — the simplest foundation, not the most complex file
-- CRITICAL: entry_point and reading_order=1 MUST agree — the concept with reading_order=1 must have its file match entry_point
-- The concepts must form a DAG — no circular dependencies
-- Descriptions must explain WHY this component exists and the key design insight, not just what it does
-- key_items: 2-4 actual method or function names found in the indexed code above
-- type must be exactly one of: class, function, module, algorithm
+- 6-8 concepts total
+- reading_order=1 must be the concept with depends_on=[] whose file matches entry_point
+- entry_point and reading_order=1 MUST agree — same file
+- depends_on: list of concept ids this concept builds on ([] for the foundation)
+- Concepts form a DAG — no circular dependencies
+- key_items: 2-4 actual method or function names from the source code above (not invented)
+- type: exactly one of class, function, module, algorithm
 """
 
 _JSON_PROMPTS = {
