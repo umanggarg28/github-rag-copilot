@@ -3353,6 +3353,17 @@ textarea:focus-visible {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
+/* Glow pulse on the re-index button after a successful re-index.
+   Fades over 3s (matching the reindexDone timeout in Sidebar.jsx). */
+.repo-reindex.done-glow {
+  color: var(--accent-soft);
+  animation: reindex-done-pulse 3s ease-out forwards;
+}
+@keyframes reindex-done-pulse {
+  0%   { color: var(--accent-soft); text-shadow: 0 0 8px var(--accent), 0 0 16px var(--accent-glow); }
+  40%  { color: #fff;               text-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent-glow); }
+  100% { color: var(--muted);       text-shadow: none; }
+}
 
 /* Re-index progress bar — sits flush at the bottom of the repo card */
 .repo-reindex-progress {

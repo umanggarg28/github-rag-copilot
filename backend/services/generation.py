@@ -287,7 +287,7 @@ class GenerationService:
             # llama-3.3-70b produces dramatically better context sentences than
             # llama3.1-8b for structured tasks like "describe what this chunk does in
             # one sentence". Both are on Cerebras free tier.
-            self._model  = "llama-3.3-70b"
+            self._model  = "llama3.3-70b"
             print("Generation: using Cerebras (llama-3.3-70b) — fast free tier")
             return "cerebras"
         elif settings.anthropic_api_key:
@@ -336,7 +336,7 @@ class GenerationService:
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
             )
-            self._model   = "llama-3.3-70b"
+            self._model   = "llama3.3-70b"
             self.provider = "cerebras"
             print("Generation: Gemma 4 limit hit — switched to Cerebras (llama-3.3-70b)")
             return True

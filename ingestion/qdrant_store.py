@@ -483,8 +483,13 @@ class QdrantStore:
             if offset is None:
                 break
 
-        # Stale = in old index but not in new set
-        stale = [id_ for id_ in old_ids if id_ not in keep_ids]
+        # Normalize both sides before comparing.
+        # _stable_id() returns a 32-char MD5 hex string (no dashes).
+        # Qdrant stores UUIDs internally and returns them with dashes when scrolled
+        # (e.g. "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6"). Strip dashes on both
+        # sides so the comparison works regardless of formatting.
+        normalized_keep = {k.replace("-", "") for k in keep_ids}
+        stale = [id_ for id_ in old_ids if id_.replace("-", "") not in normalized_keep]
         if not stale:
             return 0
 

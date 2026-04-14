@@ -566,7 +566,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
                     )}
                     {/* Re-index button — one click re-ingests from scratch */}
                     <button
-                      className={`repo-reindex${isReindexingThis ? " spinning" : ""}`}
+                      className={`repo-reindex${isReindexingThis ? " spinning" : ""}${justDone ? " done-glow" : ""}`}
                       onClick={(e) => handleReindex(e, r.slug)}
                       disabled={!!reindexing}
                       title={isReindexingThis ? "Re-indexing…" : "Re-index with contextual retrieval — adds AI-generated descriptions to key chunks before embedding, improving search precision"}
