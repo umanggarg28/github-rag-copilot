@@ -73,13 +73,17 @@ INCLUDED_EXTENSIONS = {
 # artifacts rather than source code, regardless of what repo is being indexed.
 # Checked against the full relative path so "backend/diagrams/foo.json" matches.
 EXCLUDED_PATH_PATTERNS = (
-    # Common generated-artifact directories
-    "diagrams/",       # cached diagram/tour JSON (regenerated on demand)
-    "repo_maps/",      # cached repo map JSON (regenerated on demand)
-    ".cache/",         # any generic cache directory
-    "snapshots/",      # model/checkpoint snapshots
-    "checkpoints/",    # ML training checkpoints
-    "migrations/",     # DB migration files (schema noise, not code logic)
+    # Generated artifact directories — runtime caches with no source value
+    "diagrams/",       # cached diagram/tour JSON (Cartographer-style caches;
+                       # image assets in other repos aren't indexed by extension anyway)
+    "repo_maps/",      # cached repo map JSON
+    ".cache/",         # generic cache directories
+    "checkpoints/",    # ML model weight checkpoints (binary metadata, not code)
+    # NOTE: migrations/ is intentionally NOT excluded — migration files contain
+    # real schema SQL and are valuable for answering "how is the DB structured?"
+    # NOTE: snapshots/ is intentionally NOT excluded — could be test fixtures,
+    # API response recordings, or other useful data (Jest uses __snapshots__ which
+    # is caught by the dot-prefix dir check, not this pattern)
 )
 
 
