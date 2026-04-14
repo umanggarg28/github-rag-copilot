@@ -639,6 +639,10 @@ def _is_exhausted(e: Exception) -> bool:
     return any(kw in msg for kw in (
         "credit", "billing", "quota", "rate_limit", "rate limit",
         "resource_exhausted", "daily limit", "429", "no content from model",
+        # 404 model-not-found: treat as exhausted so we fall through to the next
+        # provider rather than surfacing the error to the user. Happens when a
+        # free-tier model is removed or renamed (e.g. Cerebras model slug changes).
+        "404", "model_not_found", "does not exist",
     ))
 
 
