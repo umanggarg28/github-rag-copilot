@@ -104,73 +104,83 @@ _ENRICH_SYSTEM = (
 )
 
 _TOUR_SYSTEM = (
-    "You are an expert at onboarding developers onto unfamiliar codebases. "
-    "Given source code from any type of project, you identify the concepts a new developer "
-    "must understand — in dependency order — to build a complete mental model of how the system works. "
-    "You reason about structure: what builds on what, what comes first, what is core vs peripheral. "
+    "You are a senior engineer writing the 'How it actually works' section of the best README "
+    "this codebase will ever have — not 'What classes exist', but the genuine insights, trade-offs, "
+    "and design decisions that make this system tick. "
     "Return ONLY valid JSON — no markdown fences, no explanation, just the JSON object."
 )
 
 _TOUR_PROMPT = """\
 Repository: {repo}
 
-Below are the most important code elements, with their actual source code.
-Read the code carefully — your output must reflect what the code literally does.
+Source code (read carefully — your output must reflect what the code actually does):
 
 {chunk_summary}
 
-Identify 6-8 core concepts that unlock this codebase for a developer seeing it for the first time.
+Identify 6-8 core concepts that give a new developer genuine understanding of this codebase.
 
-Work through these questions before writing your answer:
+── QUALITY BAR ──────────────────────────────────────────────────────────────────
 
-1. FOUNDATION: What is the simplest, most primitive concept in this codebase — the data structure,
-   algorithm, or abstraction that everything else is built on top of? This has no dependencies and
-   is where a new developer must start. It is the SIMPLEST piece, not the most powerful.
+BAD concept (do NOT produce this):
+  name: "Vector Store"
+  description: "The class responsible for storing and retrieving vectors from the database."
+  Why it fails: names an implementation artifact. Any project using a vector DB would have
+  this class. The developer learns nothing they could not have guessed from the name alone.
 
-2. DEPENDENCY ORDER: For each remaining concept, what must a developer already understand before
-   this one makes sense? Order all concepts from foundation (reading_order=1) to full picture.
+GOOD concept (produce this):
+  name: "Hybrid Retrieval Scoring"
+  description: "Pure semantic (dense) search degrades on rare tokens like error codes and
+  function names. This system combines dense ANN vectors with sparse BM25 term frequencies
+  so exact-match queries still surface the right result. The two scores are fused with
+  Reciprocal Rank Fusion — a parameter-free method that outperforms weighted sums."
+  Why it works: names a technique, states the problem it solves, names the key trade-off.
 
-3. CORE vs PERIPHERAL: For each candidate concept, ask two questions:
-   a. "If this entire subsystem were removed, would the repo's main purpose still work?"
-      If yes → it is a secondary feature. Exclude it.
-   b. "Is there a real algorithm or design decision here, or is this just wiring two other
-      concepts together?" Thin adapters, config loaders, and protocol bridges that contain
-      no original logic should be excluded — the edge between the two concepts they connect
-      already implies their relationship.
+Self-check: if your concept name is the same as a class or file name in the source, you
+have named an artifact. Ask instead — what is the TECHNIQUE or DESIGN DECISION this embodies?
 
-4. DEVELOPER VALUE: A new developer asks three things:
-   "Where do I start?" → reading_order=1
-   "How do the pieces connect?" → depends_on graph
-   "What is the non-obvious insight I would not have guessed?" → description field
-   Only include a concept if it meaningfully answers at least one of these questions.
+── REASONING CHAIN ──────────────────────────────────────────────────────────────
+
+Before writing each concept, work through these in your head:
+  1. What would break or degrade if this code were deleted or replaced with a naive alternative?
+  2. What simpler design was NOT chosen here, and what constraint forced the actual choice?
+  3. What must a developer already understand before this concept makes sense?
+
+Only after answering these should you write the name and description.
+
+── DEPENDENCY ORDER ─────────────────────────────────────────────────────────────
+
+depends_on means CONCEPTUAL prerequisite — a developer cannot understand B without first
+understanding A. This is NOT the code import graph.
+
+A healthy learning DAG for 6-8 concepts has at least 3 depth levels.
+If more than 2 concepts have depends_on=[], stop and reconsider — you have likely listed
+parallel implementation details instead of a genuine learning progression from simple to complex.
 
 Return ONLY this JSON (no markdown, no extra text):
 {{
   "summary": "2 sentences: what this repo does and what architectural pattern it demonstrates",
-  "entry_point": "filename of the most foundational concept (reading_order=1) — the simplest primitive, not the most complex",
+  "entry_point": "filename of the most foundational concept (reading_order=1)",
   "concepts": [
     {{
       "id": 0,
-      "name": "Short name (2-4 words)",
-      "subtitle": "One-line description of this component's role",
+      "name": "Technique or design decision (2-4 words) — NOT a class name",
+      "subtitle": "One line: the problem this concept solves",
       "file": "filename where this concept lives",
       "type": "class|function|module|algorithm",
-      "description": "2-3 sentences: WHAT it does, WHY it was designed this way, and the non-obvious insight that makes the design click",
-      "key_items": ["actual_method_name_1", "actual_method_name_2", "actual_method_name_3"],
+      "description": "2-3 sentences: the problem, the design decision made, and the non-obvious trade-off or insight",
+      "key_items": ["actual_method_name_1", "actual_method_name_2"],
       "depends_on": [],
       "reading_order": 1,
-      "ask": "A question a curious developer would ask about this component (start with How, Why, What, or Explain)"
+      "ask": "The question a curious developer would ask after reading this (How, Why, What, or Explain)"
     }}
   ]
 }}
 
 Rules:
 - 6-8 concepts total
-- reading_order=1 must be the concept with depends_on=[] whose file matches entry_point
-- entry_point and reading_order=1 MUST agree — same file
-- depends_on: list of concept ids this concept builds on ([] for the foundation)
-- Concepts form a DAG — no circular dependencies
-- key_items: 2-4 actual method or function names from the source code above (not invented)
+- reading_order=1 is the foundation: depends_on=[], file matches entry_point
+- entry_point and reading_order=1 MUST reference the same file
+- key_items: 2-4 actual method/function names from the source above (not invented)
 - type: exactly one of class, function, module, algorithm
 """
 
