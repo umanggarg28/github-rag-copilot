@@ -254,9 +254,16 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
       setReindexing(null);
       setReindexPct(prev => { const n = {...prev}; delete n[slug]; return n; });
       onReposChange();
-      if (!completed) {
-        setStatus({ type: "error", text: "Re-index may have completed — connection dropped at the end. Check the chunk count." });
-      }
+      // Defer the error display by one event-loop tick.
+      // When the server sends "done" and immediately closes the stream, the browser
+      // can queue onerror (connection-close) BEFORE delivering the final onmessage.
+      // The setTimeout(0) lets any pending onmessage callbacks flush first, so
+      // `completed` is already true by the time we check it here.
+      setTimeout(() => {
+        if (!completed) {
+          setStatus({ type: "error", text: "Re-index may have completed — connection dropped at the end. Check the chunk count." });
+        }
+      }, 0);
     };
   }
 
