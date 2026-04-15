@@ -13,35 +13,41 @@ flow. Dependency graphs are guessed, not traced. The foundational concept
 is rarely a pipeline overview.
 
 This agent separates understanding from formatting into three focused phases,
-each modelled after the structured investigation prompts in Claude Code
-(architecture_overview → explain_tool × N → synthesize):
+modelled directly on how Claude Code's /init command surveys a codebase:
+
+  Phase 0 — README   (= /init Phase 2: "read key files before touching code")
+    Read README.md and manifest files from the index.
+    This grounds Phase 1 in what the repo CLAIMS to do, not just what the
+    code does. The mismatch between stated purpose and implementation is
+    itself a signal worth surfacing.
 
   Phase 1 — MAP   (= architecture_overview)
     "What is the main pipeline and which files own each stage?"
-    Input:  module-level chunks from entry files (imports + calls visible)
-    Output: { entry_file, pipeline_stages: [{name, file, key_aspect}] }
+    Input:  README summary + module-level chunks from entry files
+    Output: { entry_file, readme_summary, pipeline_stages: [{name, file, key_aspect}] }
 
-  Phase 2 — INVESTIGATE   (= explain_tool / how_does_it_work, once per stage)
-    "What is the non-obvious design decision in this stage?"
-    Input:  all chunks from one specific file (deep, narrow context)
-    Output: { name, subtitle, insight, key_functions, naive_rejected }
+  Phase 2 — INVESTIGATE   (= explain_tool × N, "start broad, narrow down")
+    WHY / HOW / WHERE / WHAT — plus "what can't the code tell you?"
+    Input:  all chunks for one file + related imported files if sparse
+    Output: { name, subtitle, insight, key_functions, naive_rejected, gaps }
 
   Phase 3 — SYNTHESIZE
-    "Convert this traced understanding into tour JSON."
-    Input:  pipeline map + per-stage insights (structured findings, no raw code)
-    Output: full tour JSON with proper dependency tree
+    "Convert traced understanding into tour JSON."
+    Input:  README summary + pipeline map + per-stage insights (no raw code)
+    Output: full tour JSON with fan-out (not chain) dependency graph
 
-Each LLM call gets only what it needs. Phase 2 doesn't see other files.
-Phase 3 doesn't see raw code at all — only structured findings. This mirrors
-how a good engineer actually reads an unfamiliar codebase: overview first,
-then targeted deep-dives, then mental-model consolidation.
+Inspired by Claude Code source:
+  - /init NEW_INIT_PROMPT: reads README, manifests, CI configs before generating
+  - MagicDocs: WHY/HOW/WHERE/WHAT framing, terse high-signal documentation
+  - Explore agent: start broad, narrow down; parallel search strategies
+  - AgentTool prompt: "never delegate understanding", focused context per call
 
 TRADE-OFFS
 ───────────
 One-shot: ~10-20s, 1 LLM call, shallow guessed understanding
-Agent:    ~30-60s, 6-8 LLM calls, traced grounded understanding
+Agent:    ~45-90s, 7-10 LLM calls, traced grounded understanding
 
-Free-tier friendly: all calls stay within Gemini's free quota.
+Free-tier friendly: sequential (no parallel) to stay within Gemini's free quota.
 """
 
 from __future__ import annotations
@@ -52,87 +58,66 @@ from typing import Generator
 
 
 # Entry file patterns — most likely "top of the call stack".
-# Used in Phase 1 to narrow which module chunks to show the mapping LLM.
 _ENTRY_NAMES = {
     "main.py", "app.py", "server.py", "__init__.py",
     "agent.py", "run.py", "train.py", "pipeline.py", "index.py", "engine.py",
 }
 
-# ── System prompts for each phase ─────────────────────────────────────────────
-# Each is tightly scoped — the LLM knows exactly what it's trying to do.
+# ── System prompts ─────────────────────────────────────────────────────────────
 
 _MAP_SYSTEM = (
     "You are a senior engineer mapping an unfamiliar codebase for the first time. "
-    "Trace the main user-facing pipeline — the sequence of files and functions that "
-    "execute when the system does its primary job. "
-    "NEVER list every file. Focus on the critical path from user action to output. "
+    "You have the repo's README (what it claims to do) AND its entry-file imports "
+    "(what the code actually does). Use both. "
+    "Trace the main user-facing pipeline — the sequence of files that execute "
+    "when the system does its primary job. "
+    "NEVER list every file. Focus on the critical path only. "
     "Return ONLY valid JSON, no markdown, no explanation."
 )
 
 _INVESTIGATE_SYSTEM = (
     "You are a senior engineer doing a deep-dive into one component of a codebase. "
     "You know exactly where this component fits in the larger system. "
-    "Your job: answer four questions about this code — "
+    "Answer four questions grounded in the code: "
     "WHY does this component exist (what breaks without it?), "
     "HOW does it connect to adjacent components, "
     "WHERE is the entry point a reader should start, "
     "WHAT non-obvious pattern or design decision makes this work. "
-    "Every claim must be grounded in the actual code shown. "
-    "Class names, function names, and file names are ENCOURAGED when they clarify the design. "
+    "Also flag what the code CANNOT tell you — rationale, tradeoffs, why a library "
+    "was chosen — these are things a new engineer must discover elsewhere. "
+    "Class names, function names, file names are ENCOURAGED when they clarify design. "
     "Return ONLY valid JSON, no markdown, no explanation."
 )
 
 _SYNTHESIZE_SYSTEM = (
     "You are a senior engineer writing the guided tour you wished existed before "
-    "reading this codebase. You have already traced the full pipeline and investigated "
-    "each stage. Convert your traced findings into the structured tour format. "
-    "DEPENDENCY RULE: depends_on means 'a developer cannot understand B without first "
-    "understanding A' — it is NOT execution order. Most concepts are parallel: they "
-    "share concept 0 as a prerequisite but are independent of each other. "
-    "A chain A→B→C→D is almost always wrong. A fan-out from concept 0 is almost always right. "
+    "reading this codebase. You have traced the full pipeline and investigated each stage. "
+    "DEPENDENCY RULE: depends_on means 'cannot understand B without A' — NOT execution order. "
+    "Most concepts are independent of each other; they share only concept 0 as a prerequisite. "
+    "A chain A→B→C→D→E is almost always wrong. A fan-out from concept 0 is almost always right. "
     "Return ONLY valid JSON, no markdown, no explanation."
 )
 
 
 class TourAgent:
     """
-    Three-phase agent for building codebase concept tours.
+    Four-phase agent: README → Map → Investigate × N → Synthesize.
 
-    Each phase is a focused LLM call with only the relevant context.
-    Progress is streamed via a generator — callers iterate over the yielded
-    events and forward them as SSE to the frontend.
-
-    Usage:
-        agent = TourAgent(store, gen)
-        for event in agent.build(repo):
-            # event matches the existing tour SSE schema
-            stream_to_client(event)
-
-    The "trace" key in each event carries agent-trace info for the UI live-log:
-        {"type": "file"|"finding"|"thinking"|"found"|"info", ...}
+    Each phase is a focused LLM call with tight context scope.
+    Phase 0 (README) has no LLM call — it's pure data extraction from the index.
     """
 
     def __init__(self, store, gen):
         self._store = store
         self._gen   = gen
-        # Cache all_chunks per repo within one build() call to avoid
-        # repeated Qdrant scrolls (each scroll fetches all chunks).
         self._chunk_cache: dict[str, list[dict]] = {}
 
-    # ── Internal tools ─────────────────────────────────────────────────────────
+    # ── Data access ────────────────────────────────────────────────────────────
 
     def _all_chunks(self, repo: str) -> list[dict]:
-        """
-        Load all indexed chunks for a repo.
-
-        Uses Qdrant scroll (no vectors) for complete coverage — semantic search
-        would miss files outside the top-k for any particular query.
-        Cached after the first call so all three phases share one Qdrant round-trip.
-        """
+        """Load and cache all indexed chunks via Qdrant scroll (no vectors)."""
         if repo not in self._chunk_cache:
             raw = self._store.scroll_repo(repo)
-            # scroll_repo returns raw Qdrant payload dicts; normalise field names
-            # to match what DiagramService's _list_chunks returns.
             normalised = []
             for p in raw:
                 normalised.append({
@@ -150,7 +135,7 @@ class TourAgent:
         return self._chunk_cache[repo]
 
     def _file_chunks(self, repo: str, filepath: str) -> list[dict]:
-        """All chunks for a specific file."""
+        """All chunks for a specific file (flexible path matching)."""
         all_c = self._all_chunks(repo)
         fp_lower = filepath.lower()
         return [
@@ -160,19 +145,41 @@ class TourAgent:
                 or fp_lower in c["filepath"].lower())
         ]
 
+    def _readme_chunks(self, repo: str) -> list[dict]:
+        """
+        README and top-level documentation chunks.
+
+        Mirrors /init Phase 2: "read README before touching code."
+        The README is the repo's authoritative statement of purpose — it tells
+        us what the system is FOR, not just how it's implemented. Including it
+        in Phase 1 prevents the LLM from confusing an internal utility file
+        with the main user-facing pipeline.
+        """
+        all_c = self._all_chunks(repo)
+        readme = []
+        for c in all_c:
+            fp = c["filepath"].lower()
+            fname = fp.split("/")[-1]
+            # README.md, readme.txt, README, docs/index.md, etc.
+            if (fname.startswith("readme") or fname in ("index.md", "overview.md")
+                    or "/docs/" in fp and fname.endswith(".md")):
+                readme.append(c)
+        # Prefer root-level README over nested ones; cap to avoid overloading context
+        readme.sort(key=lambda c: (c["filepath"].count("/"), -len(c["text"])))
+        return readme[:4]
+
     def _entry_module_chunks(self, repo: str) -> list[dict]:
         """
         Module-level chunks from likely entry-point files.
 
-        Module chunks contain imports and file-level calls — they reveal
-        what a file connects to without exposing full implementation details.
-        Phase 1 (mapping) uses these to trace the pipeline.
+        Module chunks contain imports + file-level calls, revealing the call
+        graph without exposing implementation details.
         """
         all_c  = self._all_chunks(repo)
         result = []
         seen_files: set[str] = set()
         for c in all_c:
-            fp   = c["filepath"]
+            fp    = c["filepath"]
             fname = fp.split("/")[-1]
             is_entry  = fname in _ENTRY_NAMES
             is_module = c["chunk_type"] == "module"
@@ -180,6 +187,58 @@ class TourAgent:
                 seen_files.add(fp)
                 result.append(c)
         return result
+
+    def _related_chunks(self, repo: str, stage_file: str, stage_name: str,
+                        primary_chunks: list[dict]) -> list[dict]:
+        """
+        "Start broad, narrow down" — from Explore agent pattern.
+
+        When a file has only sparse chunks (<3), we expand the search:
+        1. Files whose path contains keywords from the stage name
+        2. Files that appear in the imports of the primary chunks
+
+        This mirrors how a real engineer reads code: when one file is too thin,
+        they follow the imports to adjacent files.
+        Returns supplementary chunks (not including primary_chunks).
+        """
+        if len(primary_chunks) >= 3:
+            return []   # Primary file is rich enough — no expansion needed
+
+        all_c     = self._all_chunks(repo)
+        primary_fps = {c["filepath"] for c in primary_chunks}
+
+        # Strategy 1: keyword match in filepath
+        keywords = [w.lower() for w in stage_name.split() if len(w) > 3]
+        related: list[dict] = []
+        seen: set[str] = set(primary_fps)
+
+        for c in all_c:
+            fp = c["filepath"].lower()
+            if fp in seen:
+                continue
+            if any(kw in fp for kw in keywords):
+                related.append(c)
+                seen.add(fp)
+
+        # Strategy 2: follow imports from primary chunks
+        imported_names: set[str] = set()
+        for c in primary_chunks:
+            for imp in c.get("imports", []):
+                # "from retrieval.store import X" → "store" as a keyword
+                parts = imp.replace("from ", "").replace("import ", "").split(".")
+                imported_names.update(p.strip() for p in parts if len(p) > 3)
+
+        if imported_names:
+            for c in all_c:
+                fp = c["filepath"].lower()
+                if fp in seen:
+                    continue
+                fname = fp.split("/")[-1].replace(".py", "").replace(".ts", "")
+                if fname in imported_names or any(n in fp for n in imported_names):
+                    related.append(c)
+                    seen.add(fp)
+
+        return related[:8]  # Cap to avoid bloating context
 
     def _list_file_paths(self, repo: str) -> list[str]:
         """Unique file paths in the index."""
@@ -193,10 +252,9 @@ class TourAgent:
                 paths.append(fp)
         return sorted(paths)
 
-    # ── Prompt formatters ──────────────────────────────────────────────────────
+    # ── Formatters ────────────────────────────────────────────────────────────
 
     def _fmt_module_chunk(self, c: dict, max_len: int = 500) -> str:
-        """Format a module-level chunk for the mapping phase."""
         fp    = c["filepath"]
         imps  = c.get("imports", [])
         calls = c.get("calls", [])
@@ -210,30 +268,31 @@ class TourAgent:
             lines.append(f"   source:\n{text}")
         return "\n".join(lines)
 
-    def _fmt_file_for_investigation(self, chunks: list[dict], max_len: int = 700) -> str:
-        """Format all chunks from one file for the investigation phase."""
+    def _fmt_file_for_investigation(self, chunks: list[dict], max_len: int = 700,
+                                     label: str = "") -> str:
+        """Format chunks for the investigation phase, with optional section label."""
         parts = []
+        if label:
+            parts.append(f"=== {label} ===")
         for c in chunks[:12]:
-            name  = c["name"] or "?"
-            ctype = c["chunk_type"]
-            sl    = c["start_line"]
-            el    = c["end_line"]
-            text  = c["text"].strip()[:max_len]
+            name   = c["name"] or "?"
+            ctype  = c["chunk_type"]
+            sl, el = c["start_line"], c["end_line"]
+            text   = c["text"].strip()[:max_len]
             header = f"### {name} ({ctype}) — lines {sl}–{el}"
             parts.append(f"{header}\n{text}" if text else header)
         return "\n\n".join(parts)
 
-    # ── Phase 1: Map ───────────────────────────────────────────────────────────
+    # ── Phase 1: Map ──────────────────────────────────────────────────────────
 
-    def _phase_map(self, repo: str) -> dict:
+    def _phase_map(self, repo: str, readme_text: str) -> dict:
         """
         Identify the main pipeline and its stages.
 
-        Shows the LLM module-level chunks (imports + calls) from entry files.
-        This reveals the call graph at a high level without overwhelming the
-        LLM with implementation details.
-
-        Returns: { "entry_file": str, "pipeline_stages": [{name, file, key_aspect}] }
+        Combines README (stated purpose) with entry-file imports (actual call
+        graph). This is the key improvement from /init Phase 2 — reading the
+        README before mapping prevents misidentifying internal utilities as the
+        main pipeline.
         """
         module_chunks = self._entry_module_chunks(repo)[:14]
         all_files     = self._list_file_paths(repo)
@@ -241,33 +300,41 @@ class TourAgent:
         chunk_text = "\n\n".join(self._fmt_module_chunk(c) for c in module_chunks)
         files_text = "\n".join(f"  {fp}" for fp in all_files[:80])
 
+        readme_section = (
+            f"What the repo claims to do (from README):\n{readme_text}\n"
+            if readme_text else ""
+        )
+
         prompt = f"""Repository: {repo}
 
-All indexed files:
+{readme_section}All indexed files:
 {files_text}
 
 Module-level code from entry files (imports + calls visible):
 {chunk_text}
 
-Trace the main user-facing pipeline. Follow the imports and calls above to
-find the critical path from user action to final output.
+Using BOTH the README (stated purpose) and the import graph (actual structure),
+trace the main user-facing pipeline — the critical path from user action to output.
 
 Return ONLY this JSON:
 {{
-  "entry_file": "the file at the top of the call stack (e.g. main.py or app.py)",
+  "entry_file": "file at the top of the call stack (e.g. main.py or app.py)",
+  "readme_summary": "1-2 sentences: what the README says this repo does for the user",
   "pipeline_stages": [
     {{
       "name": "Short stage name (2-4 words)",
-      "file": "filepath/to/stage.py (must exist in the index above)",
-      "key_aspect": "One sentence: what this stage does in the pipeline"
+      "file": "filepath/to/stage.py (must appear in the indexed files above)",
+      "key_aspect": "One sentence: what this stage does and why it matters"
     }}
   ]
 }}
 
 Rules:
 - 3-6 stages on the critical path only, ordered by execution sequence
-- Each stage file must appear in the indexed files list above
+- Each file must appear in the indexed files list above
 - Skip test files, config files, admin utilities, and UI files
+- If README mentions a key technique (e.g. RAG, hybrid search, AST chunking),
+  make sure the relevant stage appears in the pipeline
 """
         raw = self._gen.generate(_MAP_SYSTEM, prompt, temperature=0.0,
                                   json_mode=True, max_tokens=1024)
@@ -278,7 +345,6 @@ Rules:
             return result
         except Exception as e:
             print(f"TourAgent._phase_map failed: {e}  raw={raw[:300]}")
-            # Graceful fallback: use the first few module chunks as stages
             fallback_stages = [
                 {"name": c["name"] or c["filepath"].split("/")[-1],
                  "file": c["filepath"],
@@ -287,74 +353,92 @@ Rules:
             ]
             return {
                 "entry_file": module_chunks[0]["filepath"] if module_chunks else "",
+                "readme_summary": "",
                 "pipeline_stages": fallback_stages,
             }
 
-    # ── Phase 2: Investigate ───────────────────────────────────────────────────
+    # ── Phase 2: Investigate ──────────────────────────────────────────────────
 
     def _phase_investigate(self, repo: str, stage: dict, pipeline_context: str) -> dict:
         """
-        Deep-dive into one pipeline stage.
+        Deep-dive into one pipeline stage using WHY/HOW/WHERE/WHAT framing.
 
-        Gets all chunks for the stage file and asks for the key design decision.
-        Pipeline context is included so the LLM understands WHERE this stage
-        fits in the flow — same pattern as Claude Code's explain_tool prompt
-        which always includes the surrounding context.
+        "Start broad, narrow down" (from Explore agent): when the primary file
+        has sparse chunks, we expand to related files found via keyword matching
+        and import following. This prevents thin investigations on files that
+        delegate heavily to helpers.
 
-        Returns: { name, subtitle, insight, key_functions, naive_rejected }
+        Also asks what the code CANNOT tell you — rationale and tradeoffs that
+        live in commit history, design docs, or the author's head. Surfacing
+        these gaps is a key insight from /init: "note what you could NOT figure
+        out from code alone — these become interview questions."
         """
         stage_file   = stage.get("file", "")
         stage_name   = stage.get("name", "")
         stage_aspect = stage.get("key_aspect", "")
 
-        chunks = self._file_chunks(repo, stage_file)
-        if not chunks:
-            # Fallback: find chunks whose name matches the stage name
-            lname  = stage_name.lower()
-            all_c  = self._all_chunks(repo)
-            chunks = [c for c in all_c if lname in c["name"].lower()][:6]
+        # Primary: all chunks for the stage file
+        primary = self._file_chunks(repo, stage_file)
 
-        if not chunks:
+        # Fallback if nothing found by filepath: search by function/class name
+        if not primary:
+            lname = stage_name.lower()
+            all_c = self._all_chunks(repo)
+            primary = [c for c in all_c if lname in c["name"].lower()][:6]
+
+        # "Start broad, narrow down": expand to related files when primary is sparse
+        related  = self._related_chunks(repo, stage_file, stage_name, primary)
+
+        code_text = self._fmt_file_for_investigation(primary, label=stage_file)
+        if related:
+            related_text = self._fmt_file_for_investigation(
+                related, label="Related files (imports / keyword match)")
+            code_text = code_text + "\n\n" + related_text
+
+        if not code_text.strip():
             return {
                 "name": stage_name, "subtitle": stage_aspect,
-                "insight": stage_aspect, "key_functions": [], "naive_rejected": "",
+                "insight": stage_aspect, "key_functions": [],
+                "naive_rejected": "", "gaps": "",
             }
-
-        code_text = self._fmt_file_for_investigation(chunks)
 
         prompt = f"""Repository: {repo}
 Stage: {stage_name}
 Role in pipeline: {stage_aspect}
 
-Full pipeline (for context):
+Full pipeline context:
 {pipeline_context}
 
-Code for this stage — {stage_file}:
+Code for this stage:
 {code_text}
 
-Answer four questions about this component. Every answer must be grounded in the code above.
+Answer five questions. Ground every answer in the code above.
 
 1. WHY does this component exist? What breaks or degrades without it?
-2. HOW does it connect to the rest of the pipeline? What does it receive, what does it produce?
-3. WHERE should a reader start? Name the entry-point function or class.
-4. WHAT is the non-obvious pattern? Name the technique (and the class/function that implements it if helpful).
+2. HOW does it connect to the rest of the pipeline? Input → transformation → output.
+3. WHERE should a new engineer start reading? Name the entry-point class or function.
+4. WHAT is the non-obvious pattern or decision? Name the technique and what it replaces.
+5. GAPS: What important design rationale CANNOT be determined from this code alone?
+   (e.g. why a particular library was chosen, what alternatives were considered,
+   performance tradeoffs that aren't visible in the code)
 
 Return ONLY this JSON:
 {{
-  "name": "3-5 words naming the key technique or component (class names OK if they explain the design)",
+  "name": "3-5 words — the key technique or component (class names OK if they explain design)",
   "subtitle": "One sentence: WHY this exists — the specific problem it solves",
-  "insight": "2-3 sentences covering HOW it works and WHAT makes it non-obvious. Include the naive alternative and its failure mode.",
-  "key_functions": ["entry_point_function", "other_actual_function"],
-  "naive_rejected": "One sentence: the simpler approach that would fail and why"
+  "insight": "2-3 sentences: HOW it works, WHAT makes it non-obvious, naive alternative and its failure mode",
+  "key_functions": ["entry_class_or_function", "other_key_function"],
+  "naive_rejected": "One sentence: the simpler approach that would fail and why",
+  "gaps": "One sentence: what important context is NOT visible in this code (or 'None' if fully self-explaining)"
 }}
 
 Rules:
 - key_functions must be actual names visible in the code above
 - insight must name a concrete failure mode with the naive approach
-- Use actual class/function names when they clarify the design (e.g. 'QdrantStore.hybrid_search')
+- Use actual class/function names when they clarify design
 """
         raw = self._gen.generate(_INVESTIGATE_SYSTEM, prompt, temperature=0.0,
-                                  json_mode=True, max_tokens=800)
+                                  json_mode=True, max_tokens=900)
         try:
             result = _parse_json(raw)
             result.setdefault("name",          stage_name)
@@ -362,26 +446,33 @@ Rules:
             result.setdefault("insight",       "")
             result.setdefault("key_functions", [])
             result.setdefault("naive_rejected","")
+            result.setdefault("gaps",          "")
             return result
         except Exception as e:
             print(f"TourAgent._phase_investigate failed for {stage_name}: {e}")
             return {
                 "name": stage_name, "subtitle": stage_aspect,
-                "insight": stage_aspect, "key_functions": [], "naive_rejected": "",
+                "insight": stage_aspect, "key_functions": [],
+                "naive_rejected": "", "gaps": "",
             }
 
-    # ── Phase 3: Synthesize ────────────────────────────────────────────────────
+    # ── Phase 3: Synthesize ───────────────────────────────────────────────────
 
-    def _phase_synthesize(self, repo: str, pipeline_map: dict, insights: list[dict]) -> dict:
+    def _phase_synthesize(self, repo: str, pipeline_map: dict,
+                          insights: list[dict]) -> dict:
         """
         Convert traced understanding to tour JSON.
 
-        The LLM receives structured findings — not raw code. It only has to
-        format and assign dependency relationships, not simultaneously read
-        and understand. Separation of concerns produces far better output.
+        The LLM receives only structured findings — no raw code. Phase 3's
+        only job is to assign the right type, file, and dependency relationships.
+        Separation of concerns: no call does two hard things simultaneously.
+
+        The README summary from Phase 1 is included so the tour's introductory
+        summary aligns with the repo's stated purpose, not just its code structure.
         """
-        stages  = pipeline_map.get("pipeline_stages", [])
-        entry   = pipeline_map.get("entry_file", "")
+        stages       = pipeline_map.get("pipeline_stages", [])
+        entry        = pipeline_map.get("entry_file", "")
+        readme_summ  = pipeline_map.get("readme_summary", "")
 
         stages_text = "\n".join(
             f"  {i+1}. {s['name']} — {s['file']}: {s.get('key_aspect','')}"
@@ -392,41 +483,46 @@ Rules:
             f"  subtitle:       {ins.get('subtitle', '')}\n"
             f"  insight:        {ins.get('insight', '')}\n"
             f"  key_functions:  {', '.join(ins.get('key_functions', []))}\n"
-            f"  naive_rejected: {ins.get('naive_rejected', '')}"
+            f"  naive_rejected: {ins.get('naive_rejected', '')}\n"
+            f"  gaps:           {ins.get('gaps', '')}"
             for i, ins in enumerate(insights)
+        )
+
+        readme_section = (
+            f"What the README says this repo does:\n{readme_summ}\n\n"
+            if readme_summ else ""
         )
 
         prompt = f"""Repository: {repo}
 Entry file: {entry}
 
-Pipeline traced in order:
+{readme_section}Pipeline traced in order:
 {stages_text}
 
-Per-stage findings (already investigated — use these verbatim):
+Per-stage findings (use these verbatim — do NOT paraphrase):
 {insights_text}
 
-Convert this traced understanding into a concept tour JSON.
+Convert this into a concept tour JSON.
 
 ═══ DEPENDENCY RULE (CRITICAL) ═══
-depends_on means "a developer CANNOT understand concept B without first understanding A."
-It is NOT execution order.
+depends_on = "cannot understand B without first understanding A" — NOT execution order.
 
-Ask yourself for each concept: "Can someone understand this WITHOUT knowing the others?"
-- If yes → depends_on: [0]  (only the pipeline overview is a prerequisite)
-- If no  → depends_on: [id of the specific concept they must know first]
+Test for each concept: "Can an engineer understand this WITHOUT knowing the others?"
+  Yes → depends_on: [0]     (pipeline overview is the only prerequisite)
+  No  → depends_on: [specific concept id they must know first]
 
-WRONG (chain): 1→2→3→4→5→6→7  (almost never true)
-RIGHT (fan-out): most concepts depend on 0 only, forming a tree 1-2 levels deep
+WRONG (chain):   1→2→3→4→5→6   (almost never true for concepts in a codebase)
+RIGHT (fan-out): 1,2,3,4,5 each depend on 0 only — they are parallel concepts
 
-For a 7-concept tour the typical structure is:
+Typical structure for 7 concepts:
   0: pipeline overview (no deps)
-  1,2,3,4,5: core concepts, each depends on 0 only
-  6: one concept that genuinely requires knowing concept 1 or 2 first
+  1,2,3,4,5: core independent concepts (each depends_on: [0])
+  6: one concept with a genuine prerequisite (depends_on: [1] or [2])
 
 ═══ FORMAT ═══
 Return ONLY this JSON:
 {{
-  "summary": "2 sentences: (1) what the user can DO with this repo, naming the key technique. (2) the single architectural decision that shapes everything else.",
+  "summary": "2 sentences: (1) what the user can DO with this repo and the key technique that enables it. (2) the single architectural decision that shapes everything else. Ground this in the README summary above.",
   "entry_point": "{entry}",
   "concepts": [
     {{
@@ -435,7 +531,7 @@ Return ONLY this JSON:
       "subtitle": "What this pipeline does for the user",
       "file": "{entry}",
       "type": "module",
-      "description": "2-3 sentences: what enters, how each stage transforms it, what the user gets. Name the key files and the split that makes it work.",
+      "description": "2-3 sentences: what enters, how each stage transforms it, what the user gets. Name the key files.",
       "key_items": ["entry_function", "other_function"],
       "depends_on": [],
       "reading_order": 1,
@@ -443,12 +539,12 @@ Return ONLY this JSON:
     }},
     {{
       "id": 1,
-      "name": "Use the exact 'name' from stage 1 findings",
-      "subtitle": "Use the exact 'subtitle' from stage 1 findings",
+      "name": "Use exact 'name' from stage 1 findings",
+      "subtitle": "Use exact 'subtitle' from stage 1 findings",
       "file": "file from stage 1",
       "type": "class|function|module|algorithm",
-      "description": "Use the exact 'insight' from stage 1 findings",
-      "key_items": ["use exact key_functions from findings"],
+      "description": "Use exact 'insight' from stage 1 findings",
+      "key_items": ["use exact key_functions from stage 1 findings"],
       "depends_on": [0],
       "reading_order": 2,
       "ask": "Why was the naive approach rejected here?"
@@ -457,11 +553,11 @@ Return ONLY this JSON:
 }}
 
 Rules:
-- 6-8 concepts total (concept 0 = pipeline overview, concepts 1-N = one per stage insight)
-- Use the EXACT name, subtitle, insight, key_functions from the per-stage findings
+- 6-8 concepts total (id=0 is pipeline overview, id=1..N are stage insights)
+- Use the EXACT name/subtitle/insight/key_functions from findings — do not paraphrase
 - All concepts except id=0 must have depends_on non-empty
-- Most concepts should have depends_on: [0] — only add deeper dependencies when genuinely required
-- reading_order: sequential integers starting at 1
+- Most should have depends_on: [0] — add deeper deps only when genuinely required
+- reading_order: sequential integers from 1
 - type: exactly one of class, function, module, algorithm
 """
         raw = self._gen.generate(_SYNTHESIZE_SYSTEM, prompt, temperature=0.0,
@@ -482,17 +578,14 @@ Rules:
                 ]
         return tour
 
-    # ── Main entry point ───────────────────────────────────────────────────────
+    # ── Main entry point ──────────────────────────────────────────────────────
 
     def build(self, repo: str) -> Generator[dict, None, None]:
         """
-        Build a concept tour for a repo, yielding SSE-compatible progress events.
+        Build a concept tour yielding SSE-compatible progress events.
 
-        Each yielded dict matches the existing tour SSE schema so DiagramService
-        can drop this in without changing the router or frontend SSE consumer.
-
-        Extra "trace" key carries live-log data for the UI agent trace panel:
-            {"type": "info"|"thinking"|"found"|"file"|"finding"}
+        Phase 0 (README) has no LLM call — pure data extraction.
+        Phases 1-3 each make one focused LLM call.
         """
         yield {"stage": "mapping", "progress": 0.05, "message": "Loading repository…"}
 
@@ -506,21 +599,45 @@ Rules:
         n_chunks = len(all_chunks)
 
         yield {
-            "stage": "mapping", "progress": 0.10,
-            "message": f"Mapping {n_files} files, {n_chunks} chunks…",
+            "stage": "mapping", "progress": 0.08,
+            "message": f"Found {n_chunks} chunks across {n_files} files",
             "trace": {"type": "info",
                       "text": f"{n_chunks} chunks across {n_files} files"},
         }
 
+        # ── Phase 0: README ───────────────────────────────────────────────────
+        # Read the repo's stated purpose before touching code.
+        # Mirrors /init Phase 2: "read README before mapping."
+        readme_chunks = self._readme_chunks(repo)
+        readme_text   = ""
+        if readme_chunks:
+            # Take the first 1500 chars of README — enough for the overview,
+            # not so much that it drowns the entry-file signal in Phase 1.
+            readme_text = "\n\n".join(c["text"][:600] for c in readme_chunks[:3]).strip()[:1500]
+            yield {
+                "stage": "mapping", "progress": 0.12,
+                "message": "Read README…",
+                "trace": {"type": "file",
+                          "text": readme_chunks[0]["filepath"],
+                          "step": 0, "total": 0},
+            }
+        else:
+            yield {
+                "stage": "mapping", "progress": 0.12,
+                "message": "No README found — mapping from code only",
+                "trace": {"type": "info", "text": "No README in index"},
+            }
+
         # ── Phase 1: Map ──────────────────────────────────────────────────────
         yield {
             "stage": "mapping", "progress": 0.15,
-            "message": "Identifying pipeline stages…",
-            "trace": {"type": "thinking", "text": "Tracing entry points and imports…"},
+            "message": "Mapping pipeline from README + imports…",
+            "trace": {"type": "thinking",
+                      "text": "Combining stated purpose with actual call graph…"},
         }
 
         try:
-            pipeline_map = self._phase_map(repo)
+            pipeline_map = self._phase_map(repo, readme_text)
         except Exception as e:
             yield {"stage": "error", "progress": 1.0,
                    "error": f"Pipeline mapping failed: {e}"}
@@ -528,7 +645,6 @@ Rules:
 
         stages = pipeline_map.get("pipeline_stages", [])
         entry  = pipeline_map.get("entry_file", "")
-        stage_list = " → ".join(s["name"] for s in stages)
 
         yield {
             "stage": "mapping", "progress": 0.25,
@@ -546,15 +662,20 @@ Rules:
         insights   = []
         n_stages   = len(stages)
         base_prog  = 0.25
-        stage_step = 0.55 / max(n_stages, 1)   # investigation covers 25%→80%
+        stage_step = 0.55 / max(n_stages, 1)
 
         for i, stage in enumerate(stages):
             prog = base_prog + i * stage_step
+
+            # Report whether we'll expand (broad) or go narrow
+            primary_count = len(self._file_chunks(repo, stage.get("file", "")))
+            search_mode   = "broad (expanding to related files)" if primary_count < 3 else "deep"
+
             yield {
                 "stage": "investigating", "progress": prog,
                 "message": f"Investigating: {stage['name']}… ({i+1}/{n_stages})",
                 "trace": {"type": "file",
-                          "text": stage.get("file", ""),
+                          "text": f"{stage.get('file', '')} — {search_mode}",
                           "step": i + 1,
                           "total": n_stages},
             }
@@ -562,12 +683,19 @@ Rules:
             insight = self._phase_investigate(repo, stage, pipeline_context)
             insights.append(insight)
 
+            # Surface gaps in the trace panel — shows users what the agent
+            # couldn't determine, building honest expectations about the tour.
+            gaps_text = insight.get("gaps", "")
+            trace_text = (insight.get("insight") or "")[:120]
+            if gaps_text and gaps_text.lower() != "none":
+                trace_text += f" | gap: {gaps_text[:60]}"
+
             yield {
                 "stage": "investigating", "progress": prog + stage_step * 0.8,
                 "message": f"Found: {insight.get('name', stage['name'])}",
                 "trace": {"type": "finding",
                           "name": insight.get("name", ""),
-                          "text": (insight.get("insight") or "")[:140]},
+                          "text": trace_text},
             }
 
         # ── Phase 3: Synthesize ───────────────────────────────────────────────
@@ -575,7 +703,7 @@ Rules:
             "stage": "synthesizing", "progress": 0.82,
             "message": "Synthesizing concept tour…",
             "trace": {"type": "thinking",
-                      "text": "Building dependency tree from traced insights…"},
+                      "text": "Building fan-out dependency graph from traced insights…"},
         }
 
         try:
@@ -588,7 +716,7 @@ Rules:
         yield {"stage": "done", "progress": 1.0, **tour}
 
 
-# ── Shared JSON parser (same logic as DiagramService._parse_json) ──────────────
+# ── JSON parser ────────────────────────────────────────────────────────────────
 
 def _parse_json(raw: str) -> dict:
     """Parse JSON from an LLM response, tolerating markdown fences and trailing text."""
