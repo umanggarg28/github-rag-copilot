@@ -187,10 +187,9 @@ _ENTRY_NAMES = {
 
 _MAP_SYSTEM = (
     "You are a senior engineer mapping an unfamiliar codebase for the first time. "
-    "You have the repo's README (what it claims to do) AND its entry-file imports "
-    "(what the code actually does). Use both. "
-    "Trace the main user-facing pipeline — the sequence of files that execute "
-    "when the system does its primary job. "
+    "You have the repo's README (what it claims to do) AND the module-level imports "
+    "and signatures of every non-bootstrap file (what the code actually does). Use both. "
+    "Trace the main pipeline — the sequence of files that execute the system's primary job. "
     "NEVER list every file. Focus on the critical path only. "
     "Return ONLY valid JSON, no markdown, no explanation."
 )
@@ -280,6 +279,43 @@ class TourAgent:
                 or c["filepath"].lower().endswith("/" + fp_lower)
                 or fp_lower in c["filepath"].lower())
         ]
+
+    def _manifest_chunks(self, repo: str) -> list[dict]:
+        """
+        Project manifest files — the most information-dense source for Phase 1.
+
+        Manifest files (package.json, Cargo.toml, pyproject.toml, go.mod, etc.)
+        declare dependencies and entry points. They reveal the tech stack and
+        project type for ANY repo without relying on directory name heuristics:
+          - fastapi + qdrant-client → web API + vector search
+          - torch + transformers    → ML training pipeline
+          - llvm-sys                → compiler
+          - no framework deps       → pure library (like micrograd)
+
+        This is the same principle as claude-code /init Phase 2: read manifest
+        files before touching code.
+        """
+        # Filenames that are universally recognised project manifests
+        MANIFEST_NAMES = {
+            "package.json", "cargo.toml", "pyproject.toml", "setup.py",
+            "setup.cfg", "go.mod", "pom.xml", "build.gradle", "build.gradle.kts",
+            "gemfile", "composer.json", "mix.exs", "project.clj", "dune-project",
+            "requirements.txt", "pipfile", "makefile",
+        }
+        all_c = self._all_chunks(repo)
+        manifests = []
+        seen: set[str] = set()
+        for c in all_c:
+            fname = c["filepath"].split("/")[-1].lower()
+            # Root-level manifests only (depth 0 or 1) — nested ones are
+            # subpackage manifests and would confuse the pipeline mapping.
+            depth = c["filepath"].count("/")
+            if fname in MANIFEST_NAMES and depth <= 1 and c["filepath"] not in seen:
+                seen.add(c["filepath"])
+                manifests.append(c)
+        # Prefer root-level; within same depth prefer richer content
+        manifests.sort(key=lambda c: (c["filepath"].count("/"), -len(c["text"])))
+        return manifests[:6]
 
     def _readme_chunks(self, repo: str) -> list[dict]:
         """
@@ -460,77 +496,86 @@ class TourAgent:
         """
         Identify the main pipeline and its stages.
 
-        Strategy: README + directory structure as primary signals, service/library
-        module chunks as secondary signal. Deliberately avoids bootstrap files
-        (main.py, app.py) — they import ALL features equally and reveal nothing
-        about the core pipeline.
+        Primary signal: the README (what the repo claims to do) + module-level
+        imports and function signatures of every non-bootstrap file.
 
-        This mirrors the claude-code get_architecture approach: provide a curated
-        structural overview (directory layers) rather than a raw import graph.
+        A file's imports are a universal, language-agnostic signal of its role:
+          - imports domain/math/IO libraries → does real work (pipeline stage)
+          - imports web-framework routing primitives → dispatch layer
+          - imports everything from sibling files → orchestration or bootstrap
+
+        No directory-name heuristics — those break on any codebase that uses
+        non-conventional naming (micrograd, game engines, compilers, etc.).
         """
-        module_chunks = self._entry_module_chunks(repo)[:12]
-        all_files     = self._list_file_paths(repo)
+        # Manifest files first — they declare dependencies and entry points,
+        # which reveal the project type without any domain heuristics.
+        # (Same principle as claude-code /init Phase 2: read manifest files
+        # before touching code.)
+        manifest_chunks = self._manifest_chunks(repo)
+        module_chunks   = self._entry_module_chunks(repo)[:14]
+        all_files       = self._list_file_paths(repo)
 
-        # Directory-grouped file list — structural signal the LLM needs to see
-        # which files belong to which layer (ingestion, retrieval, services, routers).
-        # A flat list of 80 files gives no architectural signal.
         dir_text = self._fmt_files_by_directory(all_files)
 
+        manifest_text = _token_budget(
+            "\n\n".join(
+                f"── {c['filepath']}\n{c['text'].strip()[:600]}"
+                for c in manifest_chunks
+            ),
+            max_tokens=800,
+        )
         chunk_text = _token_budget(
             "\n\n".join(self._fmt_module_chunk(c) for c in module_chunks),
             max_tokens=1800,
         )
 
         readme_section = (
-            f"What the repo claims to do (from README):\n{readme_text}\n\n"
+            f"README:\n{readme_text}\n\n"
             if readme_text else ""
+        )
+        manifest_section = (
+            f"Project manifest files (dependencies and entry points):\n{manifest_text}\n\n"
+            if manifest_text.strip() else ""
         )
 
         prompt = f"""Repository: {repo}
 
-{readme_section}Repository structure (files grouped by directory — shows the layer architecture):
+{manifest_section}{readme_section}File structure:
 {dir_text}
 
-Module-level code from service/library files (imports and calls — secondary signal):
+Module-level imports and signatures:
 {chunk_text}
 
-Your task: identify the CORE DATA TRANSFORMATION pipeline this repo implements.
+Task: identify the core pipeline — the sequence of files that transforms data
+from raw input into the output described in the README.
 
-Step 1 — Read the README summary above. It tells you WHAT the system does for a user.
-The pipeline stages are the steps that make that happen — each one takes data in one
-form and produces it in another.
+Use the manifest files (dependencies) and README together as your anchor:
+they tell you what the project does and what libraries it uses. Each major
+capability in the README maps to one or more files in the module list.
 
-Step 2 — Read the directory structure. Each directory name reveals its role:
-  - Directories whose names suggest domain operations (e.g. ingestion, parsing, embedding,
-    retrieval, inference, processing, generation, search) — these contain pipeline stages.
-  - Directories whose names suggest wiring (e.g. routers, routes, middleware, handlers,
-    controllers, api, endpoints, tests, utils, config) — these contain dispatch and
-    infrastructure, not pipeline stages.
-
-Step 3 — For each stage the README describes, find the FILE in a domain-operation directory
-that implements it. Prefer files whose names match the operation (fetcher, chunker, embedder,
-retrieval, generation, etc.) over files in routing or infrastructure directories.
+A pipeline stage is a file that takes data in one form and produces it in
+another — evident from its imports (what libraries it uses) and function
+signatures (what it receives and returns).
 
 Return ONLY this JSON:
 {{
-  "entry_file": "the service or library file that orchestrates the core pipeline (not a router, not a bootstrap file)",
-  "readme_summary": "1-2 sentences: what the README says this repo does for the user",
+  "entry_file": "the file most central to the core pipeline",
+  "readme_summary": "1-2 sentences: what the README says this repo does",
   "pipeline_stages": [
     {{
-      "name": "Short stage name (2-4 words, names the DATA TRANSFORMATION operation)",
-      "file": "filepath/to/stage.py (must appear in the directory listing above)",
-      "key_aspect": "One sentence: what input this stage receives and what output it produces"
+      "name": "Short stage name (2-4 words, names the transformation)",
+      "file": "filepath/to/stage.py (must appear in the file structure above)",
+      "key_aspect": "One sentence: what data enters and what comes out"
     }}
   ]
 }}
 
 Rules:
-- 3-6 stages covering the COMPLETE core pipeline, ordered by data flow
-- Every stage file must be in a domain-operation directory, never in a routing/dispatch directory
-- A stage transforms data: raw source → structured form, text → vectors, query → ranked results
-- NEVER pick a router, HTTP handler, or application bootstrap file as a stage
-- stage name must name the OPERATION (good: "AST Code Chunking"; bad: "chunker.py", "ChunkerClass")
-- Every technique the README highlights as a key capability must appear as a stage
+- 3-6 stages covering the complete pipeline from raw input to final output
+- Every stage file must appear in the file structure above
+- Choose files where data is transformed, not where calls are dispatched
+- Stage name describes the transformation, not the filename or class name
+- Every major capability the README and manifest declare must appear as a stage
 """
         raw = self._gen.generate(_MAP_SYSTEM, prompt, temperature=0.0,
                                   json_mode=True, max_tokens=1024)
