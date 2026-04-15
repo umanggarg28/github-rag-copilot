@@ -496,32 +496,41 @@ Module-level code from service/library files (imports and calls — secondary si
 
 Your task: identify the CORE DATA TRANSFORMATION pipeline this repo implements.
 
-Step 1 — Read the README summary. It tells you WHAT the pipeline does (e.g. "indexes GitHub repos and answers questions about code"). The pipeline stages are the steps that make that happen.
+Step 1 — Read the README summary above. It tells you WHAT the system does for a user.
+The pipeline stages are the steps that make that happen — each one takes data in one
+form and produces it in another.
 
-Step 2 — Look at the directory structure. Directories like ingestion/, retrieval/, services/ contain pipeline stages. Directories like routers/, middleware/, tests/ contain wiring, dispatch, and infrastructure.
+Step 2 — Read the directory structure. Each directory name reveals its role:
+  - Directories whose names suggest domain operations (e.g. ingestion, parsing, embedding,
+    retrieval, inference, processing, generation, search) — these contain pipeline stages.
+  - Directories whose names suggest wiring (e.g. routers, routes, middleware, handlers,
+    controllers, api, endpoints, tests, utils, config) — these contain dispatch and
+    infrastructure, not pipeline stages.
 
-Step 3 — Match each README-described pipeline stage to the FILE in the appropriate service/library directory that implements it.
+Step 3 — For each stage the README describes, find the FILE in a domain-operation directory
+that implements it. Prefer files whose names match the operation (fetcher, chunker, embedder,
+retrieval, generation, etc.) over files in routing or infrastructure directories.
 
 Return ONLY this JSON:
 {{
-  "entry_file": "the file that orchestrates or initiates the main pipeline (not a router or bootstrap file)",
+  "entry_file": "the service or library file that orchestrates the core pipeline (not a router, not a bootstrap file)",
   "readme_summary": "1-2 sentences: what the README says this repo does for the user",
   "pipeline_stages": [
     {{
       "name": "Short stage name (2-4 words, names the DATA TRANSFORMATION operation)",
       "file": "filepath/to/stage.py (must appear in the directory listing above)",
-      "key_aspect": "One sentence: what input data this stage receives and what output it produces"
+      "key_aspect": "One sentence: what input this stage receives and what output it produces"
     }}
   ]
 }}
 
 Rules:
 - 3-6 stages covering the COMPLETE core pipeline, ordered by data flow
-- Each stage file must be in a service, library, or core directory — NOT in a routers/ or middleware/ directory
-- A stage transforms data: source → parsed form, text → vectors, query → ranked results, chunks → answer
-- NEVER pick a router, HTTP handler, or bootstrap file as a stage — they dispatch, not transform
-- stage name must name the OPERATION (good: "AST Code Chunking", "Semantic Embedding"; bad: "chunker.py", "EmbedderClass")
-- If the README mentions a key technique (RAG, hybrid search, AST chunking, embeddings), that technique must appear as a stage
+- Every stage file must be in a domain-operation directory, never in a routing/dispatch directory
+- A stage transforms data: raw source → structured form, text → vectors, query → ranked results
+- NEVER pick a router, HTTP handler, or application bootstrap file as a stage
+- stage name must name the OPERATION (good: "AST Code Chunking"; bad: "chunker.py", "ChunkerClass")
+- Every technique the README highlights as a key capability must appear as a stage
 """
         raw = self._gen.generate(_MAP_SYSTEM, prompt, temperature=0.0,
                                   json_mode=True, max_tokens=1024)
