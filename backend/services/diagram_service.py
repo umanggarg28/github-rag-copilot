@@ -564,22 +564,26 @@ class DiagramService:
 
     def build_tour_stream(self, repo: str, force: bool = False):
         """
-        Generator version of build_tour that yields progress events.
+        Multi-step agent tour generation — yields SSE progress events.
 
-        Each event is a dict: { "stage": str, "progress": float, ...payload }
-        The frontend consumes these via SSE to show a live progress bar instead
-        of a blank spinner during the 5-10s LLM call.
+        Uses TourAgent (3-phase: Map → Investigate × N → Synthesize) instead
+        of a single one-shot LLM call. Each phase is a focused call with tight
+        context, producing grounded dependency trees rather than guessed ones.
 
-        Stages:
-          loading    (0.10) — fetching chunks from Qdrant
-          analysing  (0.35) — ranking chunks by importance
-          generating (0.55) — LLM call in progress (the slow part)
-          parsing    (0.90) — validating and caching result
-          done       (1.00) — full tour data in payload
-          error      (1.00) — error message in payload
+        WHY AGENT > ONE-SHOT
+        ─────────────────────
+        One-shot sends 50 ranked snippets and asks the LLM to simultaneously
+        understand architecture, trace pipeline, find insights, and format JSON.
+        The agent separates these concerns into focused calls — same pattern as
+        Claude Code's architecture_overview + explain_tool + synthesize prompts.
 
-        force=True skips both memory and disk cache — used by the Regenerate button.
+        Event stages: mapping → investigating → synthesizing → done | error
+        Extra "trace" key in each event feeds the UI live-log panel.
+
+        force=True skips both caches — used by the Regenerate button.
         """
+        from backend.services.tour_agent import TourAgent
+
         if force:
             self._tour_cache.pop(repo, None)
             disk_path = self._tour_path(repo)
@@ -589,79 +593,20 @@ class DiagramService:
             if repo in self._tour_cache:
                 yield {"stage": "done", "progress": 1.0, **self._tour_cache[repo]}
                 return
-
             disk = self._load_tour(repo)
             if disk is not None:
                 yield {"stage": "done", "progress": 1.0, **disk}
                 return
 
-        yield {"stage": "loading", "progress": 0.10, "message": "Loading repository chunks…"}
-        chunks = self._list_chunks(repo)
-        if not chunks:
-            yield {"stage": "error", "progress": 1.0, "error": "No indexed chunks found for this repo. Try re-ingesting."}
-            return
-
-        yield {"stage": "analysing", "progress": 0.35, "message": f"Analysing {len(chunks)} code chunks…"}
-
-        _ENTRY_FILES   = {"main.py", "app.py", "server.py", "index.py", "__init__.py",
-                          "agent.py", "run.py", "train.py", "model.py", "pipeline.py"}
-        _HIGH_PRIORITY = {"class", "module"}
-
-        def _chunk_score(c: dict) -> int:
-            score = 0
-            if c["type"] in _HIGH_PRIORITY:
-                score += 10
-            fname = c["file"].split("/")[-1] if c["file"] else ""
-            if fname in _ENTRY_FILES:
-                score += 8
-            if c["text"]:
-                score += 3
-            if c["base_classes"]:
-                score += 2
-            return score
-
-        ranked      = sorted([c for c in chunks if c["name"]], key=_chunk_score, reverse=True)
-        TOP_N       = 50
-        STUB_N      = 80
-        SNIPPET_LEN = 700
-
-        code_sections = []
-        for c in ranked[:TOP_N]:
-            snippet = (c["text"] or "").strip()[:SNIPPET_LEN]
-            if snippet:
-                code_sections.append(f"### {c['name']} ({c['type']}) in {c['file']}\n{snippet}")
-            else:
-                code_sections.append(f"- {c['name']} ({c['type']}) in {c['file']}")
-
-        name_only = "\n".join(
-            f"- {c['name']} ({c['type']}) in {c['file']}"
-            for c in ranked[TOP_N:TOP_N + STUB_N]
-        )
-
-        chunk_summary = "\n\n".join(code_sections)
-        if name_only:
-            chunk_summary += "\n\n--- Additional elements (names only) ---\n" + name_only
-
-        prompt = _TOUR_PROMPT.format(repo=repo, chunk_summary=chunk_summary)
-
-        yield {"stage": "generating", "progress": 0.55, "message": "Generating concept tour with AI…"}
-        raw = self._gen.generate(_TOUR_SYSTEM, prompt, temperature=0.0, json_mode=True, max_tokens=8192)
-
-        yield {"stage": "parsing", "progress": 0.90, "message": "Finalizing…"}
-        try:
-            tour = _parse_json(raw)
-        except ValueError:
-            print(f"DiagramService: failed to parse tour JSON (stream):\n{raw[:600]}")
-            yield {"stage": "error", "progress": 1.0, "error": "Could not parse tour from LLM response. Try regenerating."}
-            return
-
-        valid_ids = {c["id"] for c in tour.get("concepts", [])}
-        for c in tour.get("concepts", []):
-            c["depends_on"] = [d for d in c.get("depends_on", []) if d in valid_ids and d != c["id"]]
-
-        self._tour_cache[repo] = tour
-        self._save_tour(repo, tour)
-        yield {"stage": "done", "progress": 1.0, **tour}
+        agent = TourAgent(self._store, self._gen)
+        for event in agent.build(repo):
+            if event.get("stage") == "done":
+                # Cache the tour (strip SSE-only keys before storing)
+                tour = {k: v for k, v in event.items()
+                        if k not in ("stage", "progress", "message", "trace")}
+                self._tour_cache[repo] = tour
+                self._save_tour(repo, tour)
+            yield event
 
     def build_diagram_stream(self, repo: str, diagram_type: str, force: bool = False):
         """

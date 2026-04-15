@@ -140,9 +140,21 @@ Three models available in the UI, selectable per conversation:
 
 ## Additional Features
 
-### Explore View — Codebase Concept Map
+### Explore View — Agent-Generated Concept Tour
 
-For any indexed repo, Cartographer generates an **interactive concept map** using the repo map (a per-file summary built from chunk metadata). The LLM produces a structured JSON tour: key components, their relationships, and a suggested reading order. Rendered as a D3.js force-directed graph.
+For any indexed repo, Cartographer runs a **three-phase agent** to generate an interactive concept map that teaches you how to approach the codebase:
+
+```
+Phase 1 — MAP        Trace the main pipeline from entry file imports/calls
+Phase 2 — INVESTIGATE  Deep-dive into each pipeline stage (one LLM call per file)
+Phase 3 — SYNTHESIZE  Convert traced understanding into structured tour JSON
+```
+
+Each phase gets only the context it needs — no LLM call is asked to do two hard things simultaneously. This mirrors Claude Code's own `architecture_overview` + `explain_tool` prompt pattern, and produces grounded dependency graphs traced from actual imports rather than guessed from naming conventions.
+
+During generation, a **live agent trace panel** shows each investigation step in real time — making the reasoning process visible and building trust in why each concept appears.
+
+The result is rendered as an interactive concept map: 6–8 concepts, each with a non-obvious insight and the naive alternative that was rejected. Arrows show conceptual prerequisites (understand A before B). Click any card to expand its insight. Scroll to zoom, drag to pan.
 
 ### Diagram View
 
@@ -197,7 +209,7 @@ The ⟳ button in the sidebar triggers a re-index with LLM-generated chunk descr
 | LLM generation | Cerebras → Groq → Gemini → OpenRouter → Anthropic | Automatic cascade, all free tiers |
 | Agent | MCP via FastMCP | JSON-RPC tool discovery + calling; compatible with Claude Code |
 | Diagrams | Mermaid.js | Lazy-loaded, client-side rendering |
-| Graph visualization | D3.js (force-directed) | Explore view concept map |
+| Graph visualization | D3.js (force-directed) | Architecture diagram; Explore view uses topological layout |
 | Analytics | Vercel Analytics | Page views and visitor tracking |
 | Backend hosting | HuggingFace Spaces (Docker) | Free CPU tier, port 7860 |
 | Frontend hosting | Vercel | Global CDN, instant deploys |

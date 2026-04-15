@@ -179,7 +179,7 @@ function bezierPath(fromPos, toPos) {
 }
 
 // ── ConceptCard ────────────────────────────────────────────────────────────────
-function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, onSelect, onHover, onAsk }) {
+function ConceptCard({ concept, visualNum, isEntry, isSelected, isHovered, isDimmed, pos, onSelect, onHover, onAsk }) {
   const s = styleFor(concept.type);
 
   return (
@@ -206,7 +206,7 @@ function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, o
       {/* Top row: reading order badge + type tag */}
       <div className="ec-card-top">
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span className="ec-order">{concept.reading_order}</span>
+          <span className="ec-order">{visualNum ?? concept.reading_order}</span>
           {isEntry && <span className="ec-entry-tag">Start here</span>}
         </div>
         <span className="ec-type-tag" style={{ color: s.dot, borderColor: `${s.dot}44` }}>
@@ -251,11 +251,97 @@ function ConceptCard({ concept, isEntry, isSelected, isHovered, isDimmed, pos, o
   );
 }
 
+// ── TracePanel — live log of agent investigation steps ─────────────────────────
+// Each entry in `log` is the "trace" payload from a TourAgent SSE event:
+//   { type: "info"|"thinking"|"found"|"file"|"finding", text, name?, stages? }
+//
+// WHY SHOW THIS: transparency builds trust. When users see "Investigating:
+// retrieval/hybrid_search.py" they understand WHY that concept appears in
+// the tour — it was specifically investigated, not guessed from a keyword scan.
+function TracePanel({ log, open, onToggle }) {
+  const bodyRef = useRef(null);
+
+  // Auto-scroll to bottom as new lines arrive
+  useEffect(() => {
+    if (open && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [log, open]);
+
+  const ICONS = {
+    thinking: (
+      <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+        <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM8 5.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
+      </svg>
+    ),
+    found: (
+      <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+        <path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/>
+      </svg>
+    ),
+    file: (
+      <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+        <path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0H4zm5.5 1.5v2a1 1 0 0 0 1 1h2l-3-3z"/>
+      </svg>
+    ),
+    finding: (
+      <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+        <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.099zm-5.242 1.656a5.5 5.5 0 1 1 0-11 5.5 5.5 0 0 1 0 11z"/>
+      </svg>
+    ),
+    info: (
+      <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+        <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
+      </svg>
+    ),
+  };
+
+  return (
+    <div className="ec-trace-panel">
+      <div className="ec-trace-header" onClick={onToggle}>
+        <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+          <path d="M5 3.5h6A1.5 1.5 0 0 1 12.5 5v5.034a.5.5 0 0 1-.276.447l-1.5.75-.448-.894.776-.388V5a.5.5 0 0 0-.5-.5H5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h3.5v1H5A1.5 1.5 0 0 1 3.5 12V5A1.5 1.5 0 0 1 5 3.5z"/>
+          <path d="M11.854 11.146a.5.5 0 0 0-.707.708L12.293 13H9.5a.5.5 0 0 0 0 1h2.793l-1.147 1.146a.5.5 0 0 0 .708.708l2-2a.5.5 0 0 0 0-.708l-2-2z"/>
+        </svg>
+        Agent trace — {log.length} steps
+        <svg viewBox="0 0 16 16" fill="currentColor" width="10" height="10"
+          style={{ marginLeft: "auto", transform: open ? "rotate(180deg)" : undefined, transition: "transform 0.2s" }}>
+          <path d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+        </svg>
+      </div>
+      {open && (
+        <div className="ec-trace-body" ref={bodyRef}>
+          {log.map((entry, i) => (
+            <div key={i} className="ec-trace-line">
+              <span className={`ec-trace-icon ${entry.type}`}>
+                {ICONS[entry.type] || ICONS.info}
+              </span>
+              <div className="ec-trace-text">
+                {entry.name && <span className="ec-trace-name">{entry.name} </span>}
+                {entry.text && <span className="ec-trace-sub">{entry.text}</span>}
+                {entry.stages && (
+                  <div className="ec-trace-stages">
+                    {entry.stages.map((s, j) => (
+                      <span key={j} className="ec-trace-stage-pill">{s}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── ExploreView ────────────────────────────────────────────────────────────────
 export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   const [data, setData]         = useState(null);
   const [loading, setLoading]   = useState(false);
   const [loadStage, setStage]   = useState(null);   // { stage, progress, message }
+  const [traceLog, setTrace]    = useState([]);      // agent investigation steps
+  const [traceOpen, setTrOpen]  = useState(true);   // trace panel expanded?
   const [error, setError]       = useState(null);
   const [selectedId, setSelected] = useState(null);
   const [hoveredId, setHovered]   = useState(null);
@@ -291,13 +377,19 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     }
     setLoading(true);
     setStage(null);
+    setTrace([]);
+    setTrOpen(true);
     setError(null);
     setData(null);
     setSelected(null);
     setXform({ x: 0, y: 0, scale: window.innerWidth < 768 ? 0.5 : 0.85 });
     const cancel = streamTour(repo, {
       force,
-      onProgress: (ev) => setStage(ev),
+      onProgress: (ev) => {
+        setStage(ev);
+        // Accumulate trace events for the live-log panel
+        if (ev.trace) setTrace(prev => [...prev, ev.trace]);
+      },
       onDone:     (d)  => {
         tourCache[repo] = d;
         try { localStorage.setItem(tourLsKey(repo), JSON.stringify(d)); } catch { /* quota full */ }
@@ -451,28 +543,27 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     const pct   = loadStage ? Math.round(loadStage.progress * 100) : 0;
     const label = loadStage?.message || "Building your guided tour…";
     return (
-      <div className="ec-loading">
-        <span className="spinner" />
-        <div style={{ flex: 1, maxWidth: 320 }}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>{label}</div>
-          {/* Progress bar */}
-          <div style={{
-            height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden",
-          }}>
-            <div style={{
-              height: "100%",
-              width:  `${pct}%`,
-              background:  "var(--accent)",
-              borderRadius: 2,
-              transition:  "width 0.4s ease",
-            }} />
-          </div>
-          {pct > 0 && (
-            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
-              {pct}%
+      <div className="ec-loading" style={{ flexDirection: "column", alignItems: "stretch", gap: 16, maxWidth: 480 }}>
+        {/* Progress row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="spinner" />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>{label}</div>
+            <div style={{ height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+              <div style={{
+                height: "100%", width: `${pct}%`,
+                background: "var(--accent)", borderRadius: 2, transition: "width 0.5s ease",
+              }} />
             </div>
-          )}
+            {pct > 0 && (
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>{pct}%</div>
+            )}
+          </div>
         </div>
+        {/* Live agent trace log */}
+        {traceLog.length > 0 && (
+          <TracePanel log={traceLog} open={traceOpen} onToggle={() => setTrOpen(v => !v)} />
+        )}
       </div>
     );
   }
@@ -490,6 +581,15 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
 
   const concepts      = data.concepts || [];
   const basePositions = computeLayout(concepts);
+
+  // Visual sequence numbers: left-to-right columns, top-to-bottom within each
+  // column — so the badge always matches how your eye travels across the canvas.
+  // The LLM's reading_order only controls sort-within-column; we override the
+  // displayed number here so it always matches visual position.
+  const visualNumber = {};
+  Object.entries(basePositions)
+    .sort(([, a], [, b]) => a.x !== b.x ? a.x - b.x : a.y - b.y)
+    .forEach(([id], i) => { visualNumber[Number(id)] = i + 1; });
 
   // When a card is expanded push the cards below it in the same column down
   // so the expanded content doesn't overlap them.
@@ -547,6 +647,14 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
           }}
         >
           {/* ── SVG arrow layer ── */}
+          {/* Each arrow has two layers:
+              1. Base path — solid thin line + arrowhead (always visible)
+              2. Traveling dot — small glowing circle that animates from source to target
+                 using <animateMotion> + <mpath>. This communicates DIRECTION: you can
+                 instantly see which way concepts depend on each other. The dot fades in
+                 after 10% of the journey and fades out before 90% so it never looks
+                 abrupt at the endpoints. Highlighted arrows skip the dot — the glow
+                 filter communicates selection state instead. */}
           <svg
             width={canvasW}
             height={canvasH}
@@ -554,11 +662,9 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
             aria-hidden="true"
           >
             <defs>
-              {/* Default arrowhead */}
               <marker id="ec-arrow" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(91,143,249,0.55)" />
+                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(91,143,249,0.4)" />
               </marker>
-              {/* Highlighted arrowhead — brighter, with glow colour */}
               <marker id="ec-arrow-hi" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
                 <polygon points="0 0, 7 2.5, 0 5" fill="#7DABFF" />
               </marker>
@@ -572,26 +678,40 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
 
                 const isHi  = connectedIds?.has(c.id) && connectedIds?.has(depId);
                 const isDim = connectedIds && !isHi;
+                const pathId = `ec-path-${depId}-${c.id}`;
+                // Stagger dot travel per connection so all dots don't move in sync
+                const stagger = `${((depId * 3 + c.id * 7) % 40) / 10}s`;
+                const d = bezierPath(from, to);
 
                 return (
-                  <path
-                    key={`${depId}→${c.id}`}
-                    d={bezierPath(from, to)}
-                    stroke={isHi ? "#7DABFF" : "rgba(91,143,249,0.45)"}
-                    strokeWidth={isHi ? 2.5 : 1.5}
-                    // dasharray 12 6: the marching-ant animation advances the offset by
-                    // one period (18px) per cycle, making the dashes appear to travel
-                    // from source to target — a directional flow cue without extra UI.
-                    strokeDasharray="12 6"
-                    fill="none"
-                    markerEnd={isHi ? "url(#ec-arrow-hi)" : "url(#ec-arrow)"}
-                    style={{
-                      opacity: isDim ? 0.1 : 1,
-                      animation: "ec-flow 1.8s linear infinite",
-                      filter: isHi ? "drop-shadow(0 0 4px rgba(125,171,255,0.7))" : undefined,
-                      transition: "opacity 0.15s, stroke 0.15s, stroke-width 0.15s",
-                    }}
-                  />
+                  <g key={`${depId}→${c.id}`} style={{ opacity: isDim ? 0.08 : 1, transition: "opacity 0.15s" }}>
+                    {/* Base arrow path */}
+                    <path
+                      id={pathId}
+                      d={d}
+                      stroke={isHi ? "#7DABFF" : "rgba(91,143,249,0.35)"}
+                      strokeWidth={isHi ? 2 : 1.2}
+                      fill="none"
+                      markerEnd={isHi ? "url(#ec-arrow-hi)" : "url(#ec-arrow)"}
+                      style={{
+                        filter: isHi ? "drop-shadow(0 0 3px rgba(125,171,255,0.6))" : undefined,
+                        transition: "stroke 0.15s, stroke-width 0.15s, filter 0.15s",
+                      }}
+                    />
+                    {/* Traveling dot — communicates flow direction.
+                        Hidden on highlighted arrows (glow covers it) and dimmed arrows. */}
+                    {!isHi && !isDim && (
+                      <circle r="2.5" fill="#7DABFF">
+                        {/* Fade in at 10%, full at 20%, full at 80%, fade out at 90% */}
+                        <animate attributeName="opacity"
+                          values="0;0;1;1;0;0" keyTimes="0;0.1;0.2;0.8;0.9;1"
+                          dur="4s" begin={stagger} repeatCount="indefinite" />
+                        <animateMotion dur="4s" begin={stagger} repeatCount="indefinite" rotate="auto">
+                          <mpath href={`#${pathId}`} />
+                        </animateMotion>
+                      </circle>
+                    )}
+                  </g>
                 );
               })
             )}
@@ -601,14 +721,13 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
           {concepts.map(c => {
             const pos = positions[c.id];
             if (!pos) return null;
-            // reading_order=1 is always the foundational "Start here" concept.
-            // We ignore entry_point for this badge — the LLM sometimes sets entry_point
-            // to the most complex file rather than the most foundational one.
-            const isEntry = c.reading_order === 1;
+            // isEntry = the leftmost card (visual number 1) — always the pipeline overview
+            const isEntry = visualNumber[c.id] === 1;
             return (
               <ConceptCard
                 key={c.id}
                 concept={c}
+                visualNum={visualNumber[c.id]}
                 isEntry={isEntry}
                 isSelected={selectedId === c.id}
                 isHovered={hoveredId === c.id || (!!connectedIds && connectedIds.has(c.id))}

@@ -3419,12 +3419,69 @@ textarea:focus-visible {
   100% { opacity: 0;   box-shadow: none; }
 }
 
-/* ── Concept tour arrow flow animation ───────────────────────────────────── */
-/* stroke-dashoffset marching toward the target creates a directional "flow" cue.
-   dasharray=12 6 means 12px dash, 6px gap — the offset advances by one period (18px)
-   per cycle so the pattern appears to travel forward along the path. */
-@keyframes ec-flow {
-  to { stroke-dashoffset: -18; }
+/* ── Concept tour arrow travel animation ─────────────────────────────────── */
+/* Arrows use SVG <animateMotion> for a traveling dot (direction is communicated
+   by the dot's movement, not CSS). The glow dot is rendered inline in ExploreView.
+   Highlighted arrows on hover use a drop-shadow filter instead of the dot. */
+
+/* ── Agent trace panel ───────────────────────────────────────────────────── */
+.ec-trace-panel {
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.ec-trace-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ec-trace-header:hover { color: var(--text); }
+.ec-trace-header svg   { flex-shrink: 0; color: var(--accent); }
+.ec-trace-body {
+  padding: 0 12px 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.7;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.ec-trace-line {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 1px 0;
+}
+.ec-trace-icon { flex-shrink: 0; width: 14px; color: var(--muted); margin-top: 2px; }
+.ec-trace-icon.thinking { color: var(--accent); }
+.ec-trace-icon.found    { color: #4ade80; }
+.ec-trace-icon.file     { color: var(--accent-soft); }
+.ec-trace-icon.finding  { color: #facc15; }
+.ec-trace-icon.info     { color: var(--muted); }
+.ec-trace-text  { color: var(--text-2); flex: 1; min-width: 0; word-break: break-word; }
+.ec-trace-name  { color: var(--text); font-weight: 600; }
+.ec-trace-sub   { color: var(--muted); font-size: 10px; }
+.ec-trace-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.ec-trace-stage-pill {
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--surface-4);
+  color: var(--accent-soft);
+  font-size: 10px;
 }
 
 /* ══════════════════════════════════════════════════════════
