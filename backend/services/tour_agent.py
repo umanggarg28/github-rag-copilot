@@ -172,12 +172,14 @@ def _synthesize_negative_block(repo: str, store=None) -> str:
     return "\n".join(lines) + "\n"
 
 
-# Entry file patterns — most likely "top of the call stack".
-# Keep this list narrow: false positives (e.g. agent.py in a FastAPI app is a
-# service, not an entrypoint) are worse than false negatives, because the Phase 1
-# prompt already receives ALL module-level chunks as a fallback.
+# Pipeline entry files — scripts that run the core data transformation.
+# EXCLUDED from this list: main.py, app.py, server.py — these are web-framework
+# bootstrap files that import ALL features (routers, services, middleware) equally.
+# Their import graph says "everything is equally important", which is the opposite
+# of what Phase 1 needs. The pipeline lives in service/library files, not the
+# bootstrap. (This is the same principle as claude-code's get_architecture tool —
+# it provides a curated structural overview, not the raw import graph of main.py.)
 _ENTRY_NAMES = {
-    "main.py", "app.py", "server.py",
     "run.py", "train.py", "pipeline.py", "index.py", "engine.py",
 }
 
@@ -398,6 +400,31 @@ class TourAgent:
 
     # ── Formatters ────────────────────────────────────────────────────────────
 
+    def _fmt_files_by_directory(self, all_files: list[str]) -> str:
+        """
+        Group files by directory for Phase 1's structural overview.
+
+        A flat list of 80 files gives no hint about the repo's layer architecture.
+        Grouped by directory, the LLM can immediately see "ingestion/ holds the
+        data intake logic, retrieval/ holds search, services/ holds orchestration"
+        — the same kind of structural signal that claude-code's get_architecture
+        and list_directory tools provide.
+        """
+        from collections import defaultdict
+        dirs: dict[str, list[str]] = defaultdict(list)
+        for fp in all_files:
+            if "/" in fp:
+                parent, fname = fp.rsplit("/", 1)
+            else:
+                parent, fname = "(root)", fp
+            dirs[parent].append(fname)
+
+        lines = []
+        for d in sorted(dirs):
+            files_str = ", ".join(sorted(dirs[d]))
+            lines.append(f"  {d}/: {files_str}")
+        return "\n".join(lines)
+
     def _fmt_module_chunk(self, c: dict, max_len: int = 500) -> str:
         fp    = c["filepath"]
         imps  = c.get("imports", [])
@@ -433,65 +460,68 @@ class TourAgent:
         """
         Identify the main pipeline and its stages.
 
-        Combines README (stated purpose) with entry-file imports (actual call
-        graph). This is the key improvement from /init Phase 2 — reading the
-        README before mapping prevents misidentifying internal utilities as the
-        main pipeline.
+        Strategy: README + directory structure as primary signals, service/library
+        module chunks as secondary signal. Deliberately avoids bootstrap files
+        (main.py, app.py) — they import ALL features equally and reveal nothing
+        about the core pipeline.
+
+        This mirrors the claude-code get_architecture approach: provide a curated
+        structural overview (directory layers) rather than a raw import graph.
         """
-        module_chunks = self._entry_module_chunks(repo)[:14]
+        module_chunks = self._entry_module_chunks(repo)[:12]
         all_files     = self._list_file_paths(repo)
+
+        # Directory-grouped file list — structural signal the LLM needs to see
+        # which files belong to which layer (ingestion, retrieval, services, routers).
+        # A flat list of 80 files gives no architectural signal.
+        dir_text = self._fmt_files_by_directory(all_files)
 
         chunk_text = _token_budget(
             "\n\n".join(self._fmt_module_chunk(c) for c in module_chunks),
-            max_tokens=2000,
+            max_tokens=1800,
         )
-        files_text = "\n".join(f"  {fp}" for fp in all_files[:80])
 
         readme_section = (
-            f"What the repo claims to do (from README):\n{readme_text}\n"
+            f"What the repo claims to do (from README):\n{readme_text}\n\n"
             if readme_text else ""
         )
 
         prompt = f"""Repository: {repo}
 
-{readme_section}All indexed files:
-{files_text}
+{readme_section}Repository structure (files grouped by directory — shows the layer architecture):
+{dir_text}
 
-Module-level code from entry files (imports + calls visible):
+Module-level code from service/library files (imports and calls — secondary signal):
 {chunk_text}
 
-Using BOTH the README (stated purpose) and the import graph (actual structure),
-trace the main user-facing pipeline — the critical path from user action to output.
+Your task: identify the CORE DATA TRANSFORMATION pipeline this repo implements.
+
+Step 1 — Read the README summary. It tells you WHAT the pipeline does (e.g. "indexes GitHub repos and answers questions about code"). The pipeline stages are the steps that make that happen.
+
+Step 2 — Look at the directory structure. Directories like ingestion/, retrieval/, services/ contain pipeline stages. Directories like routers/, middleware/, tests/ contain wiring, dispatch, and infrastructure.
+
+Step 3 — Match each README-described pipeline stage to the FILE in the appropriate service/library directory that implements it.
 
 Return ONLY this JSON:
 {{
-  "entry_file": "file at the top of the call stack (e.g. main.py or app.py)",
+  "entry_file": "the file that orchestrates or initiates the main pipeline (not a router or bootstrap file)",
   "readme_summary": "1-2 sentences: what the README says this repo does for the user",
   "pipeline_stages": [
     {{
-      "name": "Short stage name (2-4 words)",
-      "file": "filepath/to/stage.py (must appear in the indexed files above)",
-      "key_aspect": "One sentence: what this stage does and why it matters"
+      "name": "Short stage name (2-4 words, names the DATA TRANSFORMATION operation)",
+      "file": "filepath/to/stage.py (must appear in the directory listing above)",
+      "key_aspect": "One sentence: what input data this stage receives and what output it produces"
     }}
   ]
 }}
 
-A PIPELINE STAGE transforms data — it takes input in one form and produces output in a different form.
-Examples of pipeline stages: parsing raw text → AST nodes; text → embedding vectors; query → ranked results.
-
-DISPATCH/WIRING is not a pipeline stage — it routes a request to another component without transforming data.
-Examples of dispatch/wiring: HTTP routers, middleware, dependency injection, health checks, auth wrappers.
-
 Rules:
-- 3-6 stages on the CORE DATA TRANSFORMATION path, ordered by execution sequence
-- Each file must appear in the indexed files list above
-- A stage's file must be where the transformation HAPPENS, not where the call is dispatched from
-- EXCLUDE: test files, config files, admin utilities, UI components
-- EXCLUDE: any file whose primary job is dispatching, routing, or wiring — regardless of its location
-- EXCLUDE: single-purpose utilities with no data transformation (logging, auth stubs, error formatters)
-- stage name must name the OPERATION, not the file (good: "AST Code Chunking"; bad: "chunker.py")
-- If README mentions a key technique (e.g. RAG, hybrid search, AST chunking),
-  make sure the relevant stage appears in the pipeline
+- 3-6 stages covering the COMPLETE core pipeline, ordered by data flow
+- Each stage file must be in a service, library, or core directory — NOT in a routers/ or middleware/ directory
+- A stage transforms data: source → parsed form, text → vectors, query → ranked results, chunks → answer
+- NEVER pick a router, HTTP handler, or bootstrap file as a stage — they dispatch, not transform
+- stage name must name the OPERATION (good: "AST Code Chunking", "Semantic Embedding"; bad: "chunker.py", "EmbedderClass")
+- If the README mentions a key technique (RAG, hybrid search, AST chunking, embeddings), that technique must appear as a stage
 """
         raw = self._gen.generate(_MAP_SYSTEM, prompt, temperature=0.0,
                                   json_mode=True, max_tokens=1024)
