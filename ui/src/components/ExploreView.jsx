@@ -215,7 +215,7 @@ function bezierPath(fromPos, toPos) {
 }
 
 // ── ConceptCard ────────────────────────────────────────────────────────────────
-function ConceptCard({ concept, visualNum, isEntry, isSelected, isHovered, isDimmed, pos, onSelect, onHover, onAsk }) {
+function ConceptCard({ concept, visualNum, isEntry, isSelected, isHovered, isDimmed, pos, onSelect, onHover, onAsk, onDragStart, wasDragged }) {
   const s = styleFor(concept.type);
 
   return (
@@ -227,6 +227,7 @@ function ConceptCard({ concept, visualNum, isEntry, isSelected, isHovered, isDim
         left: pos.x,
         top: pos.y,
         width: CARD_W,
+        cursor: "grab",
         borderColor: isSelected ? s.border : isHovered ? s.border : undefined,
         boxShadow: isSelected
           ? `0 0 0 2px ${s.border}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
@@ -234,8 +235,8 @@ function ConceptCard({ concept, visualNum, isEntry, isSelected, isHovered, isDim
           ? `0 0 0 2px ${s.border}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : undefined,
       }}
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={() => onSelect(concept.id)}
+      onMouseDown={(e) => onDragStart?.(e, concept, pos)}
+      onClick={() => { if (!wasDragged?.current) onSelect(concept.id); }}
       onMouseEnter={() => onHover(concept.id)}
       onMouseLeave={() => onHover(null)}
     >
@@ -382,9 +383,16 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   const [selectedId, setSelected] = useState(null);
   const [hoveredId, setHovered]   = useState(null);
   const [xform, setXform]       = useState({ x: 0, y: 0, scale: window.innerWidth < 768 ? 0.5 : 0.85 });
-  const dragging = useRef(false);
-  const drag0    = useRef({});
-  const wrapRef  = useRef(null);
+  const dragging   = useRef(false);
+  const drag0      = useRef({});
+  const wrapRef    = useRef(null);
+
+  // Per-node drag — same pattern as GraphDiagram
+  const [nodePos, setNodePos]  = useState({});  // id → {x,y} overrides
+  const dragNode   = useRef(null);              // active node drag state
+  const wasDragged = useRef(false);            // suppress click-after-drag
+  const scaleRef   = useRef(xform.scale);      // current scale for doc-level handlers
+  useEffect(() => { scaleRef.current = xform.scale; }, [xform.scale]);
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
   const load = useCallback((force = false) => {
@@ -439,6 +447,9 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   }, [repo]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Reset dragged positions whenever a new tour loads
+  useEffect(() => { setNodePos({}); }, [data]);
 
   // Expose a force-reload function to DiagramView via a ref so the header
   // "Regenerate" button can bust the cache without prop-drilling a callback.
@@ -540,6 +551,17 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   // element the cursor is currently over — the standard pattern for drag.
   useEffect(() => {
     function onDocMove(e) {
+      // Node drag takes priority over canvas pan
+      if (dragNode.current) {
+        const dx = (e.clientX - dragNode.current.startMouse.x) / scaleRef.current;
+        const dy = (e.clientY - dragNode.current.startMouse.y) / scaleRef.current;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) wasDragged.current = true;
+        const id   = dragNode.current.id;
+        const newX = dragNode.current.startPos.x + dx;
+        const newY = dragNode.current.startPos.y + dy;
+        setNodePos(prev => ({ ...prev, [id]: { x: newX, y: newY } }));
+        return;
+      }
       if (!dragging.current) return;
       setXform(t => ({
         ...t,
@@ -548,9 +570,10 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
       }));
     }
     function onDocUp() {
-      if (!dragging.current) return;
+      dragNode.current = null;
       dragging.current = false;
       if (wrapRef.current) wrapRef.current.style.cursor = "grab";
+      setTimeout(() => { wasDragged.current = false; }, 0);
     }
     document.addEventListener("mousemove", onDocMove);
     document.addEventListener("mouseup",   onDocUp);
@@ -558,13 +581,23 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
       document.removeEventListener("mousemove", onDocMove);
       document.removeEventListener("mouseup",   onDocUp);
     };
-  }, []); // empty deps — only refs + setXform (stable) are used inside
+  }, []); // empty deps — only refs + stable setters used inside
 
   function onMouseDown(e) {
     if (e.button !== 0) return;
     dragging.current = true;
     drag0.current = { mx: e.clientX, my: e.clientY, tx: xform.x, ty: xform.y };
     if (wrapRef.current) wrapRef.current.style.cursor = "grabbing";
+  }
+
+  function onNodeDragStart(e, concept, currentPos) {
+    if (e.button !== 0) return;
+    e.stopPropagation(); // prevent canvas pan from activating
+    dragNode.current = {
+      id:         concept.id,
+      startPos:   currentPos,
+      startMouse: { x: e.clientX, y: e.clientY },
+    };
   }
 
   function handleAsk(concept) {
@@ -637,6 +670,9 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     ])
   );
 
+  // Dragged position overrides static layout — falls back to positions[id]
+  const getPosFor = (id) => nodePos[id] ?? positions[id];
+
   // Canvas bounding box — account for potential expansion
   const allX = Object.values(positions).map(p => p.x + CARD_W + 80);
   const allY = Object.values(positions).map(p => p.y + CARD_H + (selectedId !== null ? EXPANSION_H : 0) + 80);
@@ -708,8 +744,8 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
 
             {concepts.map(c =>
               (c.depends_on ?? []).map(depId => {
-                const from = positions[depId];
-                const to   = positions[c.id];
+                const from = getPosFor(depId);
+                const to   = getPosFor(c.id);
                 if (!from || !to) return null;
 
                 const isHi  = connectedIds?.has(c.id) && connectedIds?.has(depId);
@@ -755,7 +791,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
 
           {/* ── Concept cards ── */}
           {concepts.map(c => {
-            const pos = positions[c.id];
+            const pos = getPosFor(c.id);
             if (!pos) return null;
             // isEntry = the leftmost card (visual number 1) — always the pipeline overview
             const isEntry = visualNumber[c.id] === 1;
@@ -772,6 +808,8 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
                 onSelect={id => setSelected(v => v === id ? null : id)}
                 onHover={setHovered}
                 onAsk={handleAsk}
+                onDragStart={onNodeDragStart}
+                wasDragged={wasDragged}
               />
             );
           })}
@@ -787,7 +825,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
           </span>
         ))}
         <span className="ec-legend-hint">
-          {concepts.length} concepts · scroll to zoom · drag to pan · click to expand
+          {concepts.length} concepts · scroll to zoom · drag canvas or cards · click to expand
         </span>
       </div>
     </div>

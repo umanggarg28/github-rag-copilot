@@ -183,6 +183,48 @@ _ENTRY_NAMES = {
     "run.py", "train.py", "pipeline.py", "index.py", "engine.py",
 }
 
+# ── Phase 1 stage-name validation ─────────────────────────────────────────────
+# Phase 1 asks the LLM for "design decisions" but the LLM sometimes returns code
+# identifiers (class names, method names, filenames) as stage names. These are
+# artifacts, not techniques. We filter them out in Python before Phase 2 runs —
+# no LLM call should be wasted investigating "AgentService._build_initial_messages".
+#
+# Rules derived from what artifacts look like syntactically:
+import re as _re
+
+_ARTIFACT_EXTENSION = _re.compile(r'\.\w{1,5}$')          # e.g. "diagrams.py"
+_ARTIFACT_SNAKE     = _re.compile(r'[a-z]_[a-z]')         # snake_case: "build_initial"
+_ARTIFACT_DOTREF    = _re.compile(r'\w\.\w')               # dot-reference: "Agent.method"
+_ARTIFACT_ALLCAPS   = _re.compile(r'^[A-Z_]{3,}$')         # ALL_CAPS constant
+# Single generic words that describe infrastructure, not design decisions
+_GENERIC_WORDS = {
+    'health', 'config', 'utils', 'main', 'app', 'server', 'index', 'api',
+    'init', 'setup', 'core', 'base', 'test', 'run', 'build', 'client',
+    'router', 'handler', 'middleware', 'logger', 'helper', 'model', 'schema',
+}
+
+def _is_artifact_stage_name(name: str) -> bool:
+    """Return True if the stage name looks like a code artifact, not a technique.
+
+    WHY: Phase 1 identifies design decisions but the LLM sometimes copies code
+    identifiers (method names, filenames, class references) from the module chunks.
+    These produce empty Phase 2 results and hollow concept cards. Better to skip
+    them before Phase 2 wastes a LLM call than to catch them later.
+    """
+    n = name.strip()
+    if not n:
+        return True
+    if _ARTIFACT_EXTENSION.search(n): return True  # "diagrams.py", "agent.go"
+    if _ARTIFACT_SNAKE.search(n):     return True  # "build_initial_messages"
+    if _ARTIFACT_DOTREF.search(n):    return True  # "AgentService._build"
+    if _ARTIFACT_ALLCAPS.match(n):    return True  # "MAX_TOKENS"
+    # Single generic word (infrastructure, not a decision)
+    words = n.split()
+    if len(words) == 1 and n.lower() in _GENERIC_WORDS:
+        return True
+    return False
+
+
 # ── System prompts ─────────────────────────────────────────────────────────────
 
 _MAP_SYSTEM = (
@@ -1106,6 +1148,16 @@ Rules:
         stages = pipeline_map.get("pipeline_stages", [])
         entry  = pipeline_map.get("entry_file", "")
 
+        # ── Phase 1 artifact filter ───────────────────────────────────────────
+        # Remove any stage whose name is a code identifier (method name, filename,
+        # generic single word). These produce hollow Phase 2 results — better to
+        # skip them now than waste a LLM call and get an empty concept card.
+        clean_stages = [s for s in stages if not _is_artifact_stage_name(s.get("name", ""))]
+        if len(clean_stages) < len(stages):
+            removed = [s["name"] for s in stages if _is_artifact_stage_name(s.get("name", ""))]
+            print(f"TourAgent: filtered {len(removed)} artifact stage(s) from Phase 1: {removed}")
+        stages = clean_stages or stages  # keep originals if everything got filtered
+
         yield {
             "stage": "mapping", "progress": 0.25,
             "message": f"Found {len(stages)}-stage pipeline",
@@ -1200,6 +1252,24 @@ Rules:
         if filtered_stages != stages:
             stages   = filtered_stages
             insights = filtered_insights
+            pipeline_map = {**pipeline_map, "pipeline_stages": stages}
+
+        # ── Hollow insight filter ─────────────────────────────────────────────
+        # Phase 2 may return an insight with empty subtitle AND empty insight text.
+        # This happens when Phase 2 investigated a file and found no meaningful
+        # technique (but also didn't return "Infrastructure: ..." cleanly). An
+        # insight with no content produces an empty card in the tour — skip it.
+        non_hollow = [
+            (s, ins) for s, ins in zip(stages, insights)
+            if ins and (ins.get("subtitle", "").strip() or ins.get("insight", "").strip())
+        ]
+        if len(non_hollow) < len(stages):
+            hollow_names = [ins.get("name", "?") for s, ins in zip(stages, insights)
+                            if not (ins and (ins.get("subtitle","").strip() or ins.get("insight","").strip()))]
+            print(f"TourAgent: skipping {len(hollow_names)} hollow insight(s): {hollow_names}")
+        if non_hollow:
+            stages   = [s for s, _ in non_hollow]
+            insights = [ins for _, ins in non_hollow]
             pipeline_map = {**pipeline_map, "pipeline_stages": stages}
 
         # ── Phase 3: Synthesize ───────────────────────────────────────────────
