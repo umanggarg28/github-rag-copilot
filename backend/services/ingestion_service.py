@@ -253,12 +253,17 @@ class IngestionService:
 # ── Contextual Retrieval ───────────────────────────────────────────────────────
 
 _CONTEXT_SYSTEM = (
-    "You are an expert software architect writing retrieval-optimised context sentences. "
-    "For a given code chunk, write ONE sentence that states: what this chunk does, "
-    "what larger component it belongs to, and its role in the system. "
-    "NEVER write 'This chunk contains' or 'This code defines' — start with the function or role directly. "
+    "You are a technical documentation writer specialising in code retrieval. "
+    "Your output will be PREPENDED to a code chunk before it is embedded in a vector database. "
+    "Goal: make the embedding capture SEMANTIC ROLE, not just raw syntax. "
+    "A chunk like 'def relu(x): return max(0,x)' without context embeds as 'arithmetic on scalars'. "
+    "With your 2-3 sentence context it embeds as 'neural network activation function — introduces "
+    "non-linearity in the forward pass'. The difference is what the retrieval system finds. "
+    "Write 2-3 sentences that answer: what is this, where does it fit in the larger system, "
+    "and what would break or degrade if it were missing. "
+    "Start with the function/class/module name and its role — not 'This chunk'. "
     "NEVER invent behaviour not visible in the source. "
-    "Output ONLY that one sentence — no preamble, no quotes, no punctuation beyond the sentence itself."
+    "Output ONLY the 2-3 context sentences — no preamble, no quotes."
 )
 
 # Importance scoring mirrors diagram_service's chunk ranking.
@@ -349,10 +354,17 @@ def _add_context(
         if not chunk_text or not doc_text:
             return idx, None
         prompt = (
+            f"<document>\n{doc_text}\n</document>\n\n"
+            f"Here is the chunk we want to situate within the document above:\n"
+            f"<chunk>\n{chunk_text[:800]}\n</chunk>\n\n"
             f"File: {filepath}\n\n"
-            f"File content (truncated):\n{doc_text}\n\n"
-            f"Chunk to describe:\n{chunk_text[:800]}\n\n"
-            "Write ONE sentence describing what this chunk does and its role in the system."
+            "Write 2-3 sentences that situate this chunk within the whole file, "
+            "for the purpose of improving vector search retrieval. "
+            "State: (1) what this specific function/class/block does, "
+            "(2) where it fits in the file's overall flow (called by whom, or calls what), "
+            "(3) what would break or degrade without it. "
+            "Start with the name and role — not 'This chunk'. "
+            "Output ONLY the 2-3 sentences."
         )
         try:
             sentence = gen.generate(_CONTEXT_SYSTEM, prompt, temperature=0.0).strip()

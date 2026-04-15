@@ -224,7 +224,7 @@ Return ONLY this JSON (no markdown, no extra text):
       "label": "Component Name",
       "type": "module|class|service|database|external",
       "file": "filename.py",
-      "description": "One sentence: what this component does — name the specific mechanism or data it owns, not its generic role (NEVER 'handles', 'manages', 'is responsible for')",
+      "description": "One sentence: what this component DOES and WHY it's a separate module. Name the specific mechanism and the data it owns or transforms. NEVER write 'handles X', 'manages X', 'is responsible for X', 'provides X'. Bad: 'Manages request processing'. Good: 'Validates each incoming request against the schema, then routes it to the correct handler based on the method and path.'",
       "items": ["key_method_1", "key_method_2"]
     }}
   ],

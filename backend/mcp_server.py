@@ -190,18 +190,32 @@ def search_code(
     mode: str = "hybrid",
 ) -> str:
     """
-    Search the indexed GitHub repositories for code relevant to a query.
+    Search indexed repositories for code relevant to a natural-language query.
 
-    Uses hybrid BM25 + semantic search with RRF fusion by default.
-    Returns ranked code chunks with file paths, function names, and line numbers.
+    Uses hybrid BM25 + semantic search with RRF fusion — finds code by concept
+    (semantic) AND by exact identifier (keyword) in one call.
+    Returns ranked chunks with file paths, function names, and line numbers.
 
-    Call this first when answering any question about the codebase.
-    Call multiple times with different queries for broader coverage.
+    PREFER THIS OVER search_symbol when:
+    - You have a concept, not a name ("how does the loss function backpropagate?")
+    - You want semantically related code, not just exact name matches
+
+    PREFER search_symbol OVER THIS when:
+    - You already know the exact function/class name from a prior result
+    - You want the definition, not callers or related code
+
+    MODE GUIDE:
+    - 'hybrid' (default) — best for most queries; combines semantic + keyword
+    - 'semantic' — use for conceptual questions ("how does gradient accumulation work?")
+    - 'keyword' — use for exact identifiers ("BackwardFunction", "_relu", "ValueError")
+
+    PATTERN: call 2-3 searches with different angles in ONE turn — they run in parallel.
+    Example: search_code("forward pass") + search_code("loss computation") together.
 
     Args:
-        query: Natural language description or code identifier to search for
-        repo:  Optional 'owner/repo' to restrict search (e.g. 'karpathy/micrograd')
-        mode:  'hybrid' (default) | 'semantic' (concepts) | 'keyword' (exact names)
+        query: Concept or identifier to search for (natural language or code name)
+        repo:  Optional 'owner/repo' filter (e.g. 'karpathy/micrograd')
+        mode:  'hybrid' | 'semantic' | 'keyword'
     """
     if _retrieval is None:
         return "Search service not ready — backend still initializing."
@@ -220,16 +234,27 @@ def search_code(
 @mcp.tool()
 def find_callers(function_name: str, repo: Optional[str] = None) -> str:
     """
-    Find all places in the codebase that call a specific function or class.
+    Find every function in the codebase that CALLS a given function or class.
 
-    Essential for understanding HOW something is used, not just what it does.
-    Use this after search_code when you need usage patterns and call sites.
+    Answers: "Who uses this?" rather than "What does this do?"
+    Essential for tracing data flow upwards and understanding how a component
+    is actually used vs how it's designed to be used.
 
-    Uses the 'calls' payload field populated during AST chunking — this is
-    a structural lookup, not text search, so it finds exact call sites only.
+    PREFER THIS OVER search_code when:
+    - You have a function name and want its call sites
+    - You need to trace the execution chain upward ("what triggers forward()?")
+    - search_code already found the definition; now you want who calls it
+
+    PREFER search_code/search_symbol OVER THIS when:
+    - You don't have an exact function name yet
+    - You want the definition, not its callers
+
+    This is a structural lookup on AST metadata — it finds exact call sites
+    recorded during indexing, not textual matches. The function name must
+    match exactly (case-sensitive).
 
     Args:
-        function_name: The exact function or class name to find callers of
+        function_name: Exact function or class name as it appears in source code
         repo:          Optional 'owner/repo' to restrict search
     """
     if _store is None:
@@ -260,16 +285,25 @@ def get_file_chunk(
     end_line: int,
 ) -> str:
     """
-    Fetch raw source lines from a file in a GitHub repository.
+    Read a specific line range from a file — more targeted than read_file.
 
-    Use when search returns a function but you need more context:
-    the surrounding class, the docstring, or what comes right after.
+    Use when a previous search gave you line numbers and you need the surrounding
+    context: the class body, the docstring, or the lines immediately after a function.
+
+    PREFER THIS OVER read_file when:
+    - You already have line numbers from search_code or search_symbol
+    - The file is large (>300 lines) and you only need a small section
+    - You want 20-50 lines of context around a specific function
+
+    PREFER read_file OVER THIS when:
+    - You need the full file structure (imports, all class definitions)
+    - You don't know the line numbers yet
 
     Args:
-        repo:       'owner/repo' (e.g. 'karpathy/micrograd')
-        filepath:   Path within the repo (e.g. 'micrograd/engine.py')
-        start_line: First line to fetch, 1-indexed
-        end_line:   Last line to fetch, inclusive
+        repo:       'owner/repo' — must be exactly owner/name with one slash
+        filepath:   Path within repo (e.g. 'src/engine.py' — no leading slash)
+        start_line: First line to fetch, 1-indexed (1 = first line of file)
+        end_line:   Last line to fetch, inclusive. Keep range ≤ 80 lines for focus.
     """
     # Validate repo format — LLM-supplied args must never be passed raw into URLs.
     if "/" not in repo or repo.count("/") != 1:

@@ -1192,17 +1192,33 @@ class AgentService:
         content = question
 
         if repo_filter:
-            # Inject the repo map so the agent skips list_files and goes straight
-            # to targeted searches. Built from Qdrant metadata — zero LLM calls.
-            # ~300 tokens: entry files, key classes, top-file breakdown.
+            # Inject two layers of repo context so the agent starts informed:
+            #
+            # 1. README summary — the repo's STATED PURPOSE (what it's for).
+            #    Without this, the agent treats a RAG system and a game engine
+            #    identically — both are "just files". The README anchors every
+            #    search in intent, not just structure.
+            #
+            # 2. Repo map — STRUCTURAL metadata (entry files, key classes).
+            #    Lets the agent skip list_files and go straight to targeted searches.
+            #
+            # Combined: the agent knows what the repo does AND where to find it.
             if self._repo_map:
                 try:
+                    readme_summary = self._get_readme_summary(repo_filter)
+                    if readme_summary:
+                        content = (
+                            f"╔══ REPO PURPOSE ══╗\n{readme_summary}\n╚══════════════════╝\n\n"
+                            + content
+                        )
+
                     repo_map = self._repo_map.get_or_build(repo_filter)
                     map_text = self._repo_map.format_for_prompt(repo_map)
                     if map_text:
                         content = map_text + "\n\n" + content
                 except Exception as e:
-                    print(f"AgentService: repo map failed (non-fatal): {e}")
+                    print(f"AgentService: context injection failed (non-fatal): {e}")
+
             content += f"\n\n(Focus search on repo: {repo_filter})"
         else:
             # Cross-repo mode: tell the agent it can search across all indexed repos
@@ -1211,6 +1227,45 @@ class AgentService:
 
         messages.append({"role": "user", "content": content})
         return messages
+
+    def _get_readme_summary(self, repo: str) -> str:
+        """
+        Extract a short README summary from the Qdrant index.
+
+        Reads README chunks directly from the store — no LLM call, no I/O.
+        Returns the first ~400 chars from the top-level README, or empty string
+        if no README was indexed.
+
+        Why 400 chars?
+        Enough for the project description and core feature list — all the
+        agent needs to orient itself. The full README goes to the tour agent;
+        here we just want a grounding sentence or two.
+        """
+        if not self._repo_map or not hasattr(self._repo_map, '_store'):
+            return ""
+        try:
+            store = self._repo_map._store
+            all_chunks = store.scroll_repo(repo)
+            readme_chunks = []
+            for p in all_chunks:
+                fp = (p.get("filepath") or "").lower()
+                fname = fp.split("/")[-1]
+                if fname.startswith("readme") or fname in ("index.md", "overview.md"):
+                    readme_chunks.append(p)
+
+            # Prefer root-level README over nested ones
+            readme_chunks.sort(key=lambda c: c.get("filepath", "").count("/"))
+
+            if not readme_chunks:
+                return ""
+
+            text = (readme_chunks[0].get("text") or "").strip()
+            # Strip markdown headings for cleaner summary
+            import re as _re
+            text = _re.sub(r'^#+\s+', '', text, flags=_re.MULTILINE)
+            return text[:400].strip()
+        except Exception:
+            return ""
 
     def _build_tool_result(self, tool_id: str, tool_name: str, result: str) -> dict:
         """

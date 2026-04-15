@@ -95,7 +95,23 @@ _SYNTHESIZE_SYSTEM = (
     "DEPENDENCY RULE: depends_on means 'cannot understand B without A' — NOT execution order. "
     "Most concepts are independent of each other; they share only concept 0 as a prerequisite. "
     "A chain A→B→C→D→E is almost always wrong. A fan-out from concept 0 is almost always right. "
+    "NAME RULE: concept names MUST be technique/decision names — never artifacts. "
+    "A BAD name identifies an artifact: any filename, any class name, any function name. "
+    "A GOOD name identifies a decision or mechanism that exists regardless of what it is called: "
+    "'Lazy Initialisation', 'Request-Response Lifecycle', 'Two-Phase Commit', 'Optimistic Locking'. "
     "Return ONLY valid JSON, no markdown, no explanation."
+)
+
+_VALIDATE_SYSTEM = (
+    "You are a strict quality reviewer for codebase concept tours. "
+    "Your ONLY job: check whether concept names are technique/decision names or artifact names. "
+    "ARTIFACT (BAD): any file path, class name, function name, or identifier from the code. "
+    "Signs of artifacts: ends in .py/.ts/.js, contains underscores, is CamelCase matching a class, "
+    "matches a module name, or reads like a variable (e.g. 'health', 'config', 'utils', 'main'). "
+    "TECHNIQUE (GOOD): a name that describes a design decision or mechanism — it could exist "
+    "in any codebase with a similar purpose: 'Two-Phase Execution', 'Lazy Initialisation', "
+    "'Connection Pooling', 'Request Fan-Out', 'Idempotent Retry'. "
+    "Return ONLY valid JSON."
 )
 
 
@@ -332,7 +348,10 @@ Return ONLY this JSON:
 Rules:
 - 3-6 stages on the critical path only, ordered by execution sequence
 - Each file must appear in the indexed files list above
-- Skip test files, config files, admin utilities, and UI files
+- SKIP: test files, config files, admin utilities, UI files
+- SKIP: health check endpoints, router setup files, middleware, __init__.py
+- SKIP: single-responsibility utilities with no pipeline logic (e.g. logging, auth wrappers)
+- stage name must name the OPERATION, not the file (good: "AST Code Chunking"; bad: "chunker.py")
 - If README mentions a key technique (e.g. RAG, hybrid search, AST chunking),
   make sure the relevant stage appears in the pipeline
 """
@@ -424,8 +443,8 @@ Answer five questions. Ground every answer in the code above.
 
 Return ONLY this JSON:
 {{
-  "name": "3-5 words — the key technique or component (class names OK if they explain design)",
-  "subtitle": "One sentence: WHY this exists — the specific problem it solves",
+  "name": "3-5 words — the KEY TECHNIQUE or DESIGN DECISION (NEVER a file name, class name, or function name)",
+  "subtitle": "One sentence: WHY this technique exists — the specific failure it prevents",
   "insight": "2-3 sentences: HOW it works, WHAT makes it non-obvious, naive alternative and its failure mode",
   "key_functions": ["entry_class_or_function", "other_key_function"],
   "naive_rejected": "One sentence: the simpler approach that would fail and why",
@@ -455,6 +474,109 @@ Rules:
                 "insight": stage_aspect, "key_functions": [],
                 "naive_rejected": "", "gaps": "",
             }
+
+    # ── Evaluator pass ───────────────────────────────────────────────────────
+
+    def _validate_concepts(self, tour: dict) -> dict:
+        """
+        Self-critique pass: catch concept names that are file/class/function names.
+
+        Inspired by the evaluator-optimizer pattern: generation and quality-checking
+        are separate concerns. Phase 3 synthesis focuses on structure and dependency
+        logic; this validator focuses on a single, easily-checkable property —
+        whether concept names are technique descriptions or artifact names.
+
+        The evaluator runs one targeted LLM call on just the names+descriptions.
+        It either PASSES (no changes needed) or returns corrected names.
+
+        This is cheaper than asking Phase 3 to simultaneously produce correct
+        structure AND correct names — separation of concerns in the LLM layer.
+        """
+        concepts = tour.get("concepts", [])
+        if not concepts:
+            return tour
+
+        names_block = "\n".join(
+            f'  id={c["id"]}: name="{c.get("name","")}" | subtitle="{c.get("subtitle","")}"'
+            for c in concepts
+        )
+
+        prompt = f"""Review these concept names from a codebase tour.
+Each name should describe a TECHNIQUE or DESIGN DECISION — never a file, class, or function name.
+
+Concept names to review:
+{names_block}
+
+For each concept, decide:
+- PASS: name is a technique/decision (e.g. "Two-Phase Execution", "Lazy Initialisation", "Connection Pooling")
+- FIX: name is a file/class/function/artifact (e.g. any filename, any class name, any function name, "health", "config")
+
+If ALL concepts PASS, return: {{"status": "ok"}}
+
+If any need fixing, return corrected names for ALL concepts:
+{{
+  "status": "fixed",
+  "concepts": [
+    {{"id": 0, "name": "corrected technique name", "subtitle": "updated subtitle if needed"}},
+    ...
+  ]
+}}
+
+FIX RULE: derive the technique name from the subtitle/description — what does this component DO, not what is it CALLED.
+Concept is non-trivial (keep but rename): derive technique name from subtitle — "Semantic+keyword hybrid search" → "Semantic Hybrid Search"
+Concept is trivial infrastructure (remove): health checks, config loaders, logging setup, auth stubs — these don't teach the codebase
+Concept is a mechanism (rename): subtitle describes the design decision — use that as the name
+"""
+        try:
+            raw = self._gen.generate(_VALIDATE_SYSTEM, prompt, temperature=0.0,
+                                      json_mode=True, max_tokens=1200)
+            result = _parse_json(raw)
+
+            if result.get("status") == "ok":
+                return tour   # All names passed — no changes needed
+
+            if result.get("status") == "fixed" and result.get("concepts"):
+                # Build a lookup of corrections by concept id
+                corrections = {c["id"]: c for c in result["concepts"]}
+                valid_ids   = {c["id"] for c in corrections.values()}
+
+                # Filter out concepts removed by the validator (not in corrected list)
+                # and apply name/subtitle corrections
+                original_ids = {c["id"] for c in tour["concepts"]}
+                kept_ids     = original_ids & valid_ids
+
+                new_concepts = []
+                for c in tour["concepts"]:
+                    if c["id"] not in kept_ids:
+                        continue   # Validator removed this concept (e.g. "health")
+                    correction = corrections.get(c["id"], {})
+                    if correction.get("name"):
+                        c = {**c, "name": correction["name"]}
+                    if correction.get("subtitle"):
+                        c = {**c, "subtitle": correction["subtitle"]}
+                    new_concepts.append(c)
+
+                # Re-assign sequential ids and fix depends_on references after removals
+                if len(new_concepts) != len(tour["concepts"]):
+                    # Remap ids and depends_on after removals
+                    id_map = {old["id"]: new_i for new_i, old in enumerate(new_concepts)}
+                    for c in new_concepts:
+                        c["id"]         = id_map[c["id"]]
+                        c["depends_on"] = [
+                            id_map[d] for d in c.get("depends_on", [])
+                            if d in id_map and id_map[d] != c["id"]
+                        ]
+                    # Re-normalise concept 0 depends_on
+                    if new_concepts:
+                        new_concepts[0]["depends_on"] = []
+
+                tour = {**tour, "concepts": new_concepts}
+
+        except Exception as e:
+            print(f"TourAgent._validate_concepts failed (non-fatal): {e}")
+            # Validation is non-fatal — return the unmodified tour
+
+        return tour
 
     # ── Phase 3: Synthesize ───────────────────────────────────────────────────
 
@@ -535,7 +657,7 @@ Return ONLY this JSON:
       "key_items": ["entry_function", "other_function"],
       "depends_on": [],
       "reading_order": 1,
-      "ask": "How does the full pipeline work end to end?"
+      "ask": "Where does the data flow change if one of the pipeline stages is removed?"
     }},
     {{
       "id": 1,
@@ -547,7 +669,7 @@ Return ONLY this JSON:
       "key_items": ["use exact key_functions from stage 1 findings"],
       "depends_on": [0],
       "reading_order": 2,
-      "ask": "Why was the naive approach rejected here?"
+      "ask": "A specific question naming THIS concept's mechanism — answerable only by someone who understands this specific technique, e.g. 'What would fail if this component processed items sequentially instead of in parallel?' or 'Why does this layer need to complete before the next stage can begin?'"
     }}
   ]
 }}
@@ -559,6 +681,13 @@ Rules:
 - Most should have depends_on: [0] — add deeper deps only when genuinely required
 - reading_order: sequential integers from 1
 - type: exactly one of class, function, module, algorithm
+- NAME RULE (CRITICAL): concept names MUST describe a technique or design decision.
+  FORBIDDEN: any filename, any class name, any function name, any identifier with underscores
+  A valid name could exist in any codebase with similar purpose — it names a MECHANISM, not an artifact
+- ask RULE: each ask must be a SPECIFIC question about THIS concept's key mechanism and failure mode.
+  BAD: "Why was the naive approach rejected?" (could apply to any concept anywhere — zero information)
+  GOOD: name the mechanism, name the thing that would break: "What breaks if you remove X from Y?"
+  Each ask must be answerable ONLY by someone who has read this specific concept — never vague
 """
         raw = self._gen.generate(_SYNTHESIZE_SYSTEM, prompt, temperature=0.0,
                                   json_mode=True, max_tokens=8192)
@@ -712,6 +841,18 @@ Rules:
             yield {"stage": "error", "progress": 1.0,
                    "error": f"Synthesis failed: {e}"}
             return
+
+        # ── Evaluator pass ────────────────────────────────────────────────────
+        # A targeted quality check: are concept names techniques or artifacts?
+        # Runs one cheap LLM call on just the names — far less context than a
+        # full re-synthesis. Non-fatal: if it fails, the original tour is used.
+        yield {
+            "stage": "synthesizing", "progress": 0.93,
+            "message": "Validating concept names…",
+            "trace": {"type": "thinking",
+                      "text": "Checking concepts are technique names, not file/class names…"},
+        }
+        tour = self._validate_concepts(tour)
 
         yield {"stage": "done", "progress": 1.0, **tour}
 
