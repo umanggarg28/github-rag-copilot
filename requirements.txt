@@ -35,3 +35,5 @@ posthog
 # Semantic Map — 2D projection of code embeddings
 scikit-learn  # PCA fallback + K-means clustering
 umap-learn    # UMAP projection (better clusters than PCA; PCA used if not installed)
+pytest
+pytest-asyncio

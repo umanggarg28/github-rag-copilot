@@ -464,11 +464,13 @@ TOOL SELECTION GUIDE
 STRATEGY
 ═══════════════════════════════
 
-  1. READ MAP  — check the ╔══ REPO MAP ══╗ in the user message (if present)
+  1. READ MAP  — check the ╔══ REPO MAP ══╗ and ╔══ REPO PURPOSE ══╗ in the user message
   2. RECALL    — recall_notes() to see what you already know this session
   3. PLAN      — write a <plan> block with your first 2-3 search steps
-  4. FIND      — search_code or search_symbol; group related searches into one turn
-  5. TRACE     — trace_calls for execution paths, find_callers for usage
+  4. FIND      — fire ALL searches for the same question in ONE turn (parallel execution)
+                 e.g. search_code("forward pass") + search_code("loss function") together
+                 NEVER send one search, wait, then send the next — that wastes turns
+  5. DRILL     — search_symbol for exact names found in step 4; find_callers/trace_calls for paths
   6. NOTE      — note() every key discovery immediately after finding it
   7. ANSWER    — recall_notes() to compile, then cite file + line for every claim
 
@@ -476,10 +478,10 @@ STRATEGY
 RULES
 ═══════════════════════════════
 
-- Read the REPO MAP before anything else — skip list_files if the map covers it
+- Read REPO PURPOSE + REPO MAP before anything else — skip list_files if the map covers it
 - Always call recall_notes() before your first search and before your final answer
 - Write a <plan> before your first tool call every session
-- Group related searches into one turn — they run in parallel
+- PARALLEL: group all searches covering the same question into one turn — they execute concurrently
 - Note discoveries immediately — don't rely on scrolling back through results
 - If search_code gives you a name, use search_symbol to get the full definition
 - Stop when you have enough — over-searching wastes turns
@@ -1230,20 +1232,25 @@ class AgentService:
 
     def _get_readme_summary(self, repo: str) -> str:
         """
-        Extract a short README summary from the Qdrant index.
+        Extract the project purpose sentence from the indexed README.
 
-        Reads README chunks directly from the store — no LLM call, no I/O.
-        Returns the first ~400 chars from the top-level README, or empty string
-        if no README was indexed.
+        Strategy: strip markdown noise (badges, links, headings), then return
+        the first substantive sentence — typically the one-liner that says what
+        the project does. Cap at 200 chars.
 
-        Why 400 chars?
-        Enough for the project description and core feature list — all the
-        agent needs to orient itself. The full README goes to the tour agent;
-        here we just want a grounding sentence or two.
+        Why 200 chars (not 400)?
+        The README's first meaningful sentence is almost always under 150 chars.
+        400 chars frequently captures CI badge rows, table-of-contents links,
+        or boilerplate that precedes the actual description. We want the purpose
+        statement, not the decoration around it.
+
+        The full README goes to the tour agent's Phase 0; this is just a
+        grounding hint so the agent knows the repo's intent before searching.
         """
         if not self._repo_map or not hasattr(self._repo_map, '_store'):
             return ""
         try:
+            import re as _re
             store = self._repo_map._store
             all_chunks = store.scroll_repo(repo)
             readme_chunks = []
@@ -1253,17 +1260,32 @@ class AgentService:
                 if fname.startswith("readme") or fname in ("index.md", "overview.md"):
                     readme_chunks.append(p)
 
-            # Prefer root-level README over nested ones
+            # Prefer root-level README over nested documentation files
             readme_chunks.sort(key=lambda c: c.get("filepath", "").count("/"))
-
             if not readme_chunks:
                 return ""
 
             text = (readme_chunks[0].get("text") or "").strip()
-            # Strip markdown headings for cleaner summary
-            import re as _re
+
+            # Remove markdown badge lines: [![...](...)(...)] and [!badge] patterns
+            text = _re.sub(r'\[!\[.*?\]\(.*?\)\]\(.*?\)', '', text)
+            text = _re.sub(r'!\[.*?\]\(.*?\)', '', text)
+            # Remove bare markdown links [text](url) — keep the text
+            text = _re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
+            # Strip heading markers
             text = _re.sub(r'^#+\s+', '', text, flags=_re.MULTILINE)
-            return text[:400].strip()
+            # Collapse multiple blank lines
+            text = _re.sub(r'\n{3,}', '\n\n', text)
+
+            # Find the first line with ≥20 chars that looks like a description
+            # (not a badge row, not a pure URL, not just punctuation/whitespace)
+            for line in text.splitlines():
+                line = line.strip()
+                if len(line) >= 20 and not line.startswith('http') and not line.startswith('|'):
+                    return line[:200]
+
+            # Fallback: return whatever is left, capped at 200
+            return text.strip()[:200]
         except Exception:
             return ""
 

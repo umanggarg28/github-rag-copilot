@@ -515,6 +515,85 @@ class QdrantStore:
         )
         return before
 
+    # ── Tour concept-name feedback store ─────────────────────────────────────
+    # When the evaluator corrects an artifact concept name (e.g. "health" → "Health
+    # Check Bypass"), that correction is stored here so future tour builds can
+    # avoid the same artifact name. Uses the same sidecar pattern as agent notes.
+    #
+    # Storage: one point per repo, ID = hash(repo + ":feedback"), payload stores
+    # the full {bad_name: good_name} dict as a JSON string. One point per repo
+    # makes load/save O(1) and keeps the collection tiny.
+
+    @property
+    def _feedback_collection(self) -> str:
+        return f"{self.collection}_feedback"
+
+    def _ensure_feedback_collection(self) -> None:
+        """Create the feedback sidecar collection if it doesn't exist (idempotent)."""
+        existing = [c.name for c in self.client.get_collections().collections]
+        if self._feedback_collection not in existing:
+            self.client.create_collection(
+                collection_name=self._feedback_collection,
+                vectors_config=VectorParams(size=1, distance=Distance.DOT),
+            )
+            try:
+                self.client.create_payload_index(
+                    collection_name=self._feedback_collection,
+                    field_name="repo",
+                    field_schema=PayloadSchemaType.KEYWORD,
+                )
+            except Exception:
+                pass
+
+    def save_tour_feedback(self, repo: str, corrections: dict) -> None:
+        """
+        Persist bad→good concept name corrections for a repo.
+
+        Merges new corrections into any previously stored ones — the feedback
+        store only grows, never shrinks, so the model's avoid-list gets richer.
+        """
+        self._ensure_feedback_collection()
+        existing = self.load_tour_feedback(repo)
+        existing.update(corrections)
+        import json as _json
+        feedback_id = hashlib.md5(f"{repo}::feedback".encode()).hexdigest()
+        self.client.upsert(
+            collection_name=self._feedback_collection,
+            points=[PointStruct(
+                id=feedback_id,
+                vector=[0.0],   # dummy — retrieved by filter, not similarity
+                payload={
+                    "repo":     repo,
+                    "feedback": _json.dumps(existing),
+                },
+            )],
+        )
+
+    def load_tour_feedback(self, repo: str) -> dict:
+        """
+        Load persisted concept-name corrections for a repo.
+        Returns {bad_name: good_name} dict, or {} if no feedback stored yet.
+        """
+        self._ensure_feedback_collection()
+        import json as _json
+        results, _ = self.client.scroll(
+            collection_name=self._feedback_collection,
+            scroll_filter=Filter(must=[
+                FieldCondition(key="repo", match=MatchValue(value=repo))
+            ]),
+            limit=1,
+            with_payload=["feedback"],
+            with_vectors=False,
+        )
+        for p in results:
+            raw = (p.payload or {}).get("feedback", "")
+            if raw:
+                try:
+                    return _json.loads(raw)
+                except Exception:
+                    return {}
+        return {}
+
     # ── Persistent agent notes ────────────────────────────────────────────────
     # Agent notes are stored in a sidecar collection ("<collection>_notes").
     # Each note is a point whose ID is a deterministic hash of (repo, key),

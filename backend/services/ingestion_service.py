@@ -253,17 +253,15 @@ class IngestionService:
 # ── Contextual Retrieval ───────────────────────────────────────────────────────
 
 _CONTEXT_SYSTEM = (
-    "You are a technical documentation writer specialising in code retrieval. "
-    "Your output will be PREPENDED to a code chunk before it is embedded in a vector database. "
-    "Goal: make the embedding capture SEMANTIC ROLE, not just raw syntax. "
-    "A chunk like 'def relu(x): return max(0,x)' without context embeds as 'arithmetic on scalars'. "
-    "With your 2-3 sentence context it embeds as 'neural network activation function — introduces "
-    "non-linearity in the forward pass'. The difference is what the retrieval system finds. "
-    "Write 2-3 sentences that answer: what is this, where does it fit in the larger system, "
-    "and what would break or degrade if it were missing. "
-    "Start with the function/class/module name and its role — not 'This chunk'. "
-    "NEVER invent behaviour not visible in the source. "
-    "Output ONLY the 2-3 context sentences — no preamble, no quotes."
+    "You are a code indexing assistant. Your output is prepended to a code chunk before "
+    "it is embedded in a vector database — it must make the embedding match the queries "
+    "developers actually type, not explain the code's failure modes. "
+    "Write 1-2 sentences that situate this chunk within the document: "
+    "name the function/class, state its role in the file's pipeline, and name the "
+    "key identifier(s) a developer would search for to find this code. "
+    "NEVER write 'This chunk', 'This code', or failure scenarios. "
+    "NEVER invent behaviour not in the source. "
+    "Output ONLY the 1-2 sentences — no preamble, no quotes."
 )
 
 # Importance scoring mirrors diagram_service's chunk ranking.
@@ -282,6 +280,48 @@ def _chunk_importance(c: dict) -> int:
     if c.get("base_classes"):
         score += 2
     return score
+
+
+def _anthropic_contextualise(
+    client, model: str, system: str, doc_text: str, chunk_question: str
+) -> str:
+    """
+    Call Anthropic with prompt caching on the document block.
+
+    Structure:
+      system: _CONTEXT_SYSTEM
+      user message:
+        block 1 — <document>...</document>  with cache_control=ephemeral
+        block 2 — chunk + question          (not cached; varies per chunk)
+
+    The ephemeral cache lives for 5 minutes (Anthropic's TTL for beta caching).
+    Within a single contextualisation run all chunks for the same file are
+    processed in the same thread pool — close enough together to hit the cache.
+
+    Cache write tokens count at 1.25× normal; cache read tokens at 0.1× normal.
+    For a file with 10 chunks: 1 write + 9 reads vs 10 full document reads.
+    Break-even at 2 chunks per file; most source files have 5-20+.
+    """
+    resp = client.messages.create(
+        model=model,
+        max_tokens=200,
+        system=system,
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"<document>\n{doc_text}\n</document>",
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {
+                    "type": "text",
+                    "text": "\n\n" + chunk_question,
+                },
+            ],
+        }],
+    )
+    return resp.content[0].text.strip()
 
 
 def _add_context(
@@ -345,6 +385,14 @@ def _add_context(
             result[i] = dict(result[i])
             result[i]["contextual_at"] = contextual_at
 
+    # Detect whether the active provider supports prompt caching.
+    # When using Anthropic, the <document> block can be marked ephemeral so
+    # the KV state is cached once per file and reused for all chunks in that
+    # file — ~50x cheaper than embedding the full document on every call.
+    # The cached block must be ≥1024 tokens to qualify; typical source files
+    # are 200-6000 tokens, so most will qualify.
+    _use_anthropic_cache = getattr(gen, 'provider', None) == 'anthropic'
+
     # Worker function for a single chunk — called from multiple threads.
     # Returns (idx, updated_chunk) or (idx, None) on failure.
     def _enrich_one(idx: int, chunk: dict) -> tuple[int, dict | None]:
@@ -353,21 +401,39 @@ def _add_context(
         doc_text   = file_content_map.get(filepath, "")[:6000]
         if not chunk_text or not doc_text:
             return idx, None
-        prompt = (
-            f"<document>\n{doc_text}\n</document>\n\n"
+
+        chunk_question = (
             f"Here is the chunk we want to situate within the document above:\n"
             f"<chunk>\n{chunk_text[:800]}\n</chunk>\n\n"
-            f"File: {filepath}\n\n"
-            "Write 2-3 sentences that situate this chunk within the whole file, "
-            "for the purpose of improving vector search retrieval. "
-            "State: (1) what this specific function/class/block does, "
-            "(2) where it fits in the file's overall flow (called by whom, or calls what), "
-            "(3) what would break or degrade without it. "
-            "Start with the name and role — not 'This chunk'. "
-            "Output ONLY the 2-3 sentences."
+            "Please give a short succinct context to situate this chunk within the overall "
+            "document for the purpose of improving search retrieval of the chunk. "
+            "Name the function/class/block, its role in the file's pipeline, and the key "
+            "identifiers a developer would search to find it. "
+            "Answer only with the succinct context and nothing else."
         )
+
         try:
-            sentence = gen.generate(_CONTEXT_SYSTEM, prompt, temperature=0.0).strip()
+            if _use_anthropic_cache:
+                # Anthropic prompt caching: mark the document block as ephemeral.
+                # The Anthropic API caches the KV state for the document once per
+                # unique document text; subsequent calls with the same document
+                # (i.e. other chunks from the same file) reuse the cache at ~10%
+                # of the original token cost. This turns O(N_chunks) document
+                # processing into O(N_files) full-cost calls.
+                sentence = _anthropic_contextualise(
+                    gen._client, gen._model, _CONTEXT_SYSTEM,
+                    doc_text, chunk_question,
+                )
+            else:
+                prompt = (
+                    f"<document>\n{doc_text}\n</document>\n\n"
+                    + chunk_question
+                )
+                # fast=True: use the lightweight model tier for enrichment.
+                # Contextual enrichment is 1-2 sentences — does not require the
+                # strong synthesis model. This preserves quota for tour/diagram calls.
+                sentence = gen.generate(_CONTEXT_SYSTEM, prompt, temperature=0.0, fast=True).strip()
+
             updated              = dict(chunk)
             updated["raw_text"]  = chunk_text
             updated["text"]      = f"{sentence}\n\n{chunk_text}"

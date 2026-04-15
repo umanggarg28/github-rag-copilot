@@ -276,7 +276,11 @@ class GenerationService:
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
-            self._model  = "gemini-2.5-flash"
+            self._model      = "gemini-2.5-flash"
+            # gemini-2.0-flash-lite: ~4x faster and lighter than 2.5-flash.
+            # Used for high-volume enrichment calls (one per chunk at ingest time)
+            # so the stronger model's quota is preserved for synthesis tasks.
+            self._fast_model = "gemini-2.0-flash-lite"
             print("Generation: using Gemini 2.5 Flash via Google Gemini API")
             return "gemini"
         elif settings.sambanova_api_key:
@@ -286,7 +290,8 @@ class GenerationService:
                 base_url="https://api.sambanova.ai/v1",
             )
             # Llama 3.1 405B — largest model on any free tier, best quality after Gemini.
-            self._model  = "Meta-Llama-3.1-405B-Instruct"
+            self._model      = "Meta-Llama-3.1-405B-Instruct"
+            self._fast_model = self._model   # no lighter SambaNova tier available
             print("Generation: using SambaNova (Llama 3.1 405B) — free tier")
             return "sambanova"
         elif settings.cerebras_api_key:
@@ -295,18 +300,22 @@ class GenerationService:
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
             )
-            self._model  = "llama3.3-70b"
+            self._model      = "llama3.3-70b"
+            # llama3.1-8b: ~8x smaller than 70B, adequate for 1-2 sentence enrichment.
+            self._fast_model = "llama3.1-8b"
             print("Generation: using Cerebras (llama3.3-70b) — fast free tier")
             return "cerebras"
         elif settings.anthropic_api_key:
             import anthropic
-            self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-            self._model  = "claude-haiku-4-5-20251001"
+            self._client     = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+            self._model      = "claude-haiku-4-5-20251001"
+            self._fast_model = self._model   # haiku is already the fast Anthropic tier
             print(f"Generation: using Anthropic ({self._model})")
             return "anthropic"
         elif settings.openrouter_api_key:
-            self._client = _openrouter_client(settings.openrouter_api_key)
-            self._model  = _OPENROUTER_MODEL
+            self._client     = _openrouter_client(settings.openrouter_api_key)
+            self._model      = _OPENROUTER_MODEL
+            self._fast_model = self._model
             print(f"Generation: using OpenRouter ({self._model})")
             return "openrouter"
         elif settings.mistral_api_key:
@@ -316,13 +325,15 @@ class GenerationService:
                 base_url="https://api.mistral.ai/v1",
             )
             # mistral-small-latest: free tier, 1B tok/month, strong at structured output.
-            self._model  = "mistral-small-latest"
+            self._model      = "mistral-small-latest"
+            self._fast_model = self._model
             print("Generation: using Mistral (mistral-small-latest) — free tier")
             return "mistral"
         elif settings.groq_api_key:
             from groq import Groq
-            self._client = Groq(api_key=settings.groq_api_key)
-            self._model  = "llama-3.3-70b-versatile"
+            self._client     = Groq(api_key=settings.groq_api_key)
+            self._model      = "llama-3.3-70b-versatile"
+            self._fast_model = self._model
             print(f"Generation: using Groq ({self._model})")
             return "groq"
         else:
@@ -468,7 +479,9 @@ class GenerationService:
             self._model   = "gemini-2.5-flash"
             self.provider = "gemini"
 
-    def generate(self, system: str, prompt: str, temperature: float = 0.2, json_mode: bool = False, max_tokens: int = 2048) -> str:
+    def generate(self, system: str, prompt: str, temperature: float = 0.2,
+                 json_mode: bool = False, max_tokens: int = 2048,
+                 fast: bool = False) -> str:
         """
         One-shot generation with a custom system prompt — no RAG context, no history.
         Used for structured tasks like diagram/tour generation where we control
@@ -476,6 +489,13 @@ class GenerationService:
 
         temperature=0.0 for factual/structured output (tour, concept graphs).
         temperature=0.2 for Mermaid diagrams (slight variation helps layout).
+
+        fast=True: use the lightweight model tier (_fast_model) instead of the
+          primary model. Intended for high-volume enrichment calls (one per chunk
+          during contextual retrieval) where synthesis quality is secondary and
+          throughput/quota preservation matters more.
+          Thread-safe: model selection is passed through the params dict (created
+          fresh per call) rather than mutating self._model.
 
         json_mode=True: tells the provider to output valid JSON.
           - OpenAI-compatible (Groq, Gemini, OpenRouter): sets response_format=json_object
@@ -488,8 +508,10 @@ class GenerationService:
         # which 429s again, which retries again — infinite recursion.
         if not getattr(self, '_in_fallback', False):
             self._reset_to_primary()
+        model    = getattr(self, '_fast_model', self._model) if fast else self._model
         messages = [{"role": "user", "content": prompt}]
-        params   = {"temperature": temperature, "max_tokens": max_tokens, "json_mode": json_mode}
+        params   = {"temperature": temperature, "max_tokens": max_tokens,
+                    "json_mode": json_mode, "model": model}
         try:
             if self.provider in ("cerebras", "groq", "gemini", "openrouter", "sambanova", "mistral"):
                 return self._groq_complete(system, messages, params)
@@ -499,7 +521,7 @@ class GenerationService:
             if _is_exhausted(e) and self._try_fallback():
                 self._in_fallback = True
                 try:
-                    return self.generate(system, prompt, temperature, json_mode, max_tokens)
+                    return self.generate(system, prompt, temperature, json_mode, max_tokens, fast)
                 finally:
                     self._in_fallback = False
             raise
@@ -585,9 +607,10 @@ class GenerationService:
     }
 
     def _groq_complete(self, system: str, messages: list[dict], params: dict) -> str:
+        model   = params.get("model", self._model)
         max_out = min(params["max_tokens"], self._MAX_OUTPUT.get(self.provider, params["max_tokens"]))
         kwargs: dict = dict(
-            model=self._model,
+            model=model,
             messages=[{"role": "system", "content": system}] + messages,
             temperature=params["temperature"],
             max_tokens=max_out,

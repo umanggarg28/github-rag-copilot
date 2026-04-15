@@ -45,16 +45,131 @@ Inspired by Claude Code source:
 TRADE-OFFS
 ───────────
 One-shot: ~10-20s, 1 LLM call, shallow guessed understanding
-Agent:    ~45-90s, 7-10 LLM calls, traced grounded understanding
+Agent:    ~25-50s, 7-10 LLM calls, traced grounded understanding
 
-Free-tier friendly: sequential (no parallel) to stay within Gemini's free quota.
+Phase 2 uses 3 parallel workers (ThreadPoolExecutor) — same approach as
+_add_context in ingestion_service.py. 3 workers gives ~3x speedup on typical
+5-stage pipelines while staying under free-tier rate limits (15 RPM Gemini).
+All-at-once parallelism would hit the rate limiter on 6+ stage pipelines.
 """
 
 from __future__ import annotations
 
 import json as _json
 import re as _re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Generator
+
+
+# ── Concept-name feedback store ────────────────────────────────────────────────
+# When the evaluator corrects a concept name (artifact → technique), we persist
+# the bad name so future runs avoid generating it. This is online learning without
+# retraining: the system observes its own corrections and injects them as negative
+# examples into Phase 3's synthesize prompt.
+#
+# Feedback is stored per repo (bad names in micrograd are local knowledge, not
+# universal). The store is a flat JSON dict: {"bad_name": "corrected_name", ...}.
+# We accumulate corrections across runs — the file grows but never shrinks, so the
+# model's "avoid list" gets richer over time.
+
+_FEEDBACK_DIR = Path(__file__).parent.parent / "tour_feedback"
+_FEEDBACK_DIR.mkdir(exist_ok=True)
+
+
+def _feedback_path(repo: str) -> Path:
+    slug = repo.replace("/", "_")
+    return _FEEDBACK_DIR / f"{slug}_feedback.json"
+
+
+def _load_feedback(repo: str, store=None) -> dict[str, str]:
+    """
+    Return persisted name corrections for repo: {bad_name: good_name}.
+
+    Tries Qdrant first (durable across HF Space restarts) then falls back
+    to the local filesystem. Qdrant is preferred for production deployments
+    where container file systems are ephemeral.
+    """
+    if store is not None:
+        try:
+            return store.load_tour_feedback(repo)
+        except Exception:
+            pass  # Qdrant unavailable — fall through to file
+    # File-based fallback (local dev / no Qdrant connection)
+    p = _feedback_path(repo)
+    if p.exists():
+        try:
+            return _json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_feedback(repo: str, corrections: dict[str, str], store=None) -> None:
+    """
+    Merge new bad→good corrections into the repo's feedback store.
+
+    Saves to Qdrant when available (production), and also mirrors to the local
+    file as a backup so local dev sessions accumulate feedback without Qdrant.
+    """
+    if not corrections:
+        return
+    if store is not None:
+        try:
+            store.save_tour_feedback(repo, corrections)
+        except Exception as e:
+            print(f"TourAgent: Qdrant feedback save failed (non-fatal): {e}")
+    # Also write to local file (backup + local dev experience)
+    p = _feedback_path(repo)
+    existing = _load_feedback(repo)   # read from file for the local merge
+    existing.update(corrections)
+    try:
+        p.write_text(_json.dumps(existing, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"TourAgent: could not save feedback to file for {repo}: {e}")
+
+
+def _token_budget(text: str, max_tokens: int) -> str:
+    """
+    Truncate text to stay within an approximate token budget.
+
+    Uses 4 chars/token as a conservative heuristic — works well for English
+    prose mixed with code (actual ratio varies 3-6 chars/token).  We don't
+    depend on tiktoken to keep the dependency footprint minimal.
+
+    Called at LLM prompt-building time, not after the fact, so overflow is
+    prevented rather than surfaced as a server-side 400 error.
+    """
+    limit = max_tokens * 4
+    if len(text) <= limit:
+        return text
+    truncated = text[:limit]
+    # Snap to the last newline so we don't cut mid-line
+    last_nl = truncated.rfind("\n")
+    if last_nl > limit // 2:   # only snap if we're not losing too much
+        truncated = truncated[:last_nl]
+    return truncated + f"\n\n[... truncated at ~{max_tokens} tokens ...]"
+
+
+def _synthesize_negative_block(repo: str, store=None) -> str:
+    """
+    Return a prompt fragment listing previously bad concept names for this repo.
+
+    Injected into Phase 3's NAME RULE section. When the evaluator has corrected
+    names in prior runs, those artifact names are forbidden so the model won't
+    generate them again — saving one evaluator round per run.
+
+    Returns an empty string if no feedback exists yet.
+    """
+    feedback = _load_feedback(repo, store)
+    if not feedback:
+        return ""
+    lines = [
+        f'  PREVIOUSLY REJECTED for this repo (do NOT use these names — they were flagged as artifacts):'
+    ]
+    for bad, good in list(feedback.items())[:20]:   # cap at 20 to stay token-light
+        lines.append(f'    "{bad}" → was corrected to "{good}"')
+    return "\n".join(lines) + "\n"
 
 
 # Entry file patterns — most likely "top of the call stack".
@@ -313,7 +428,10 @@ class TourAgent:
         module_chunks = self._entry_module_chunks(repo)[:14]
         all_files     = self._list_file_paths(repo)
 
-        chunk_text = "\n\n".join(self._fmt_module_chunk(c) for c in module_chunks)
+        chunk_text = _token_budget(
+            "\n\n".join(self._fmt_module_chunk(c) for c in module_chunks),
+            max_tokens=2000,
+        )
         files_text = "\n".join(f"  {fp}" for fp in all_files[:80])
 
         readme_section = (
@@ -421,6 +539,11 @@ Rules:
                 "naive_rejected": "", "gaps": "",
             }
 
+        # Guard: 12 primary × 700 chars + 8 related × 700 = up to 14 000 chars.
+        # Cap at ~3 000 tokens (12 000 chars) so we stay within context budgets
+        # on free-tier models with 8K context windows.
+        code_text = _token_budget(code_text, max_tokens=3000)
+
         prompt = f"""Repository: {repo}
 Stage: {stage_name}
 Role in pipeline: {stage_aspect}
@@ -477,33 +600,67 @@ Rules:
 
     # ── Evaluator pass ───────────────────────────────────────────────────────
 
-    def _validate_concepts(self, tour: dict) -> dict:
+    def _validate_concepts(self, tour: dict, repo: str = "") -> dict:
         """
-        Self-critique pass: catch concept names that are file/class/function names.
+        Evaluator-optimizer loop: catch concept names that are artifacts.
 
-        Inspired by the evaluator-optimizer pattern: generation and quality-checking
-        are separate concerns. Phase 3 synthesis focuses on structure and dependency
-        logic; this validator focuses on a single, easily-checkable property —
-        whether concept names are technique descriptions or artifact names.
+        Implements the full evaluator-optimizer pattern:
+          generate (Phase 3) → evaluate → if PASS return
+                                         → if FAIL apply corrections, re-evaluate
+        Max two evaluation rounds — enough to handle edge cases where the first
+        correction round replaces one artifact name with another.
 
-        The evaluator runs one targeted LLM call on just the names+descriptions.
-        It either PASSES (no changes needed) or returns corrected names.
+        Each round feeds previous corrections back into the prompt so the model
+        knows what was already tried and rejected — this is the "memory
+        accumulation" property from the cookbook's loop() implementation.
 
-        This is cheaper than asking Phase 3 to simultaneously produce correct
-        structure AND correct names — separation of concerns in the LLM layer.
+        After validation, persists bad→good corrections to disk (M4: negative
+        example feedback). On the next run for the same repo, these previously
+        bad names are injected into Phase 3's prompt so the model avoids
+        generating them from the start.
+
+        Non-fatal: any exception returns the unmodified tour.
         """
+        # Dynamic round count: repos with a history of many artifact names get
+        # an extra pass; fresh repos with no history need only one.
+        # 0 past corrections → 1 round (no known problem patterns yet)
+        # 1-5 corrections    → 2 rounds (some artifact tendency, default)
+        # >5 corrections     → 3 rounds (repo consistently produces bad names)
+        past_correction_count = len(_load_feedback(repo, self._store)) if repo else 0
+        if past_correction_count == 0:
+            MAX_ROUNDS = 1
+        elif past_correction_count > 5:
+            MAX_ROUNDS = 3
+        else:
+            MAX_ROUNDS = 2
+
         concepts = tour.get("concepts", [])
         if not concepts:
             return tour
 
-        names_block = "\n".join(
-            f'  id={c["id"]}: name="{c.get("name","")}" | subtitle="{c.get("subtitle","")}"'
-            for c in concepts
-        )
+        prior_corrections: list[str] = []   # accumulates across rounds for context
+        # Collect bad→good pairs across all rounds for end-of-run persistence
+        all_corrections: dict[str, str] = {}
 
-        prompt = f"""Review these concept names from a codebase tour.
+        for round_num in range(MAX_ROUNDS):
+            names_block = "\n".join(
+                f'  id={c["id"]}: name="{c.get("name","")}" | subtitle="{c.get("subtitle","")}"'
+                for c in tour.get("concepts", [])
+            )
+
+            # On round 2+, include what was already tried so the model doesn't
+            # repeat the same correction that already failed evaluation.
+            prior_context = ""
+            if prior_corrections:
+                prior_context = (
+                    "\nPrevious correction attempts that were still flagged:\n"
+                    + "\n".join(f"  - {p}" for p in prior_corrections)
+                    + "\nDo NOT repeat these — find a different technique name.\n"
+                )
+
+            prompt = f"""Review these concept names from a codebase tour.
 Each name should describe a TECHNIQUE or DESIGN DECISION — never a file, class, or function name.
-
+{prior_context}
 Concept names to review:
 {names_block}
 
@@ -522,33 +679,45 @@ If any need fixing, return corrected names for ALL concepts:
   ]
 }}
 
-FIX RULE: derive the technique name from the subtitle/description — what does this component DO, not what is it CALLED.
-Concept is non-trivial (keep but rename): derive technique name from subtitle — "Semantic+keyword hybrid search" → "Semantic Hybrid Search"
-Concept is trivial infrastructure (remove): health checks, config loaders, logging setup, auth stubs — these don't teach the codebase
+FIX RULE: derive the technique name from the subtitle — what does this component DO, not what is it CALLED.
+Concept is non-trivial (keep but rename): derive technique name from subtitle
+Concept is trivial infrastructure (remove): health checks, config loaders, logging setup, auth stubs
 Concept is a mechanism (rename): subtitle describes the design decision — use that as the name
 """
-        try:
-            raw = self._gen.generate(_VALIDATE_SYSTEM, prompt, temperature=0.0,
-                                      json_mode=True, max_tokens=1200)
-            result = _parse_json(raw)
+            try:
+                raw = self._gen.generate(_VALIDATE_SYSTEM, prompt, temperature=0.0,
+                                          json_mode=True, max_tokens=1200)
+                result = _parse_json(raw)
+            except Exception as e:
+                print(f"TourAgent._validate_concepts round {round_num+1} failed (non-fatal): {e}")
+                break
 
             if result.get("status") == "ok":
-                return tour   # All names passed — no changes needed
+                break   # All names passed — no further rounds needed
 
             if result.get("status") == "fixed" and result.get("concepts"):
-                # Build a lookup of corrections by concept id
                 corrections = {c["id"]: c for c in result["concepts"]}
                 valid_ids   = {c["id"] for c in corrections.values()}
 
-                # Filter out concepts removed by the validator (not in corrected list)
-                # and apply name/subtitle corrections
+                # Record what names were fixed — for context in the next round
+                # AND for end-of-run persistence as negative examples.
+                for c in tour.get("concepts", []):
+                    corr = corrections.get(c["id"])
+                    if corr and corr.get("name") and corr["name"] != c.get("name"):
+                        bad_name  = c.get("name", "")
+                        good_name = corr["name"]
+                        prior_corrections.append(
+                            f'id={c["id"]}: "{bad_name}" → "{good_name}"'
+                        )
+                        all_corrections[bad_name] = good_name
+
                 original_ids = {c["id"] for c in tour["concepts"]}
                 kept_ids     = original_ids & valid_ids
 
                 new_concepts = []
                 for c in tour["concepts"]:
                     if c["id"] not in kept_ids:
-                        continue   # Validator removed this concept (e.g. "health")
+                        continue
                     correction = corrections.get(c["id"], {})
                     if correction.get("name"):
                         c = {**c, "name": correction["name"]}
@@ -556,25 +725,48 @@ Concept is a mechanism (rename): subtitle describes the design decision — use 
                         c = {**c, "subtitle": correction["subtitle"]}
                     new_concepts.append(c)
 
-                # Re-assign sequential ids and fix depends_on references after removals
+                # Re-number ids and fix depends_on references after any removals.
+                # When a concept that others depended on is removed (e.g. a health-
+                # check trivial concept), its dependents would otherwise have a
+                # dangling reference. We reroute those to concept 0 (pipeline
+                # overview) — the safe universal prerequisite — rather than
+                # silently dropping the dependency and leaving concepts with an
+                # empty depends_on (which signals "no prerequisites needed").
                 if len(new_concepts) != len(tour["concepts"]):
-                    # Remap ids and depends_on after removals
-                    id_map = {old["id"]: new_i for new_i, old in enumerate(new_concepts)}
+                    id_map    = {old["id"]: new_i for new_i, old in enumerate(new_concepts)}
+                    new_id_0  = 0   # after re-numbering, concept 0 stays 0
                     for c in new_concepts:
-                        c["id"]         = id_map[c["id"]]
-                        c["depends_on"] = [
-                            id_map[d] for d in c.get("depends_on", [])
-                            if d in id_map and id_map[d] != c["id"]
-                        ]
-                    # Re-normalise concept 0 depends_on
+                        old_id = c["id"]
+                        c["id"] = id_map[old_id]
+                        remapped = []
+                        for d in c.get("depends_on", []):
+                            if d in id_map:
+                                new_d = id_map[d]
+                                if new_d != c["id"]:
+                                    remapped.append(new_d)
+                            else:
+                                # Dep was removed — reroute to concept 0 (the pipeline
+                                # overview) so the concept still has a prerequisite.
+                                if new_id_0 != c["id"] and new_id_0 not in remapped:
+                                    remapped.append(new_id_0)
+                        c["depends_on"] = remapped
                     if new_concepts:
                         new_concepts[0]["depends_on"] = []
 
-                tour = {**tour, "concepts": new_concepts}
+                # Concept 0 (pipeline overview) must always be a root node —
+                # it has no prerequisites by definition. Clear any deps that
+                # the LLM may have set (or that survived the correction round).
+                if new_concepts:
+                    new_concepts[0]["depends_on"] = []
 
-        except Exception as e:
-            print(f"TourAgent._validate_concepts failed (non-fatal): {e}")
-            # Validation is non-fatal — return the unmodified tour
+                tour = {**tour, "concepts": new_concepts}
+                # Continue to next round to verify corrections passed
+
+        # Persist bad→good corrections so future runs inject them as negative
+        # examples into Phase 3 — the model won't generate these names again.
+        if repo and all_corrections:
+            _save_feedback(repo, all_corrections, self._store)
+            print(f"TourAgent: saved {len(all_corrections)} negative example(s) for {repo}")
 
         return tour
 
@@ -591,6 +783,10 @@ Concept is a mechanism (rename): subtitle describes the design decision — use 
 
         The README summary from Phase 1 is included so the tour's introductory
         summary aligns with the repo's stated purpose, not just its code structure.
+
+        Past corrections (M4): if the evaluator has previously flagged bad concept
+        names for this repo, they are injected here as a FORBIDDEN list so the model
+        avoids generating the same artifact names before the evaluator even runs.
         """
         stages       = pipeline_map.get("pipeline_stages", [])
         entry        = pipeline_map.get("entry_file", "")
@@ -684,7 +880,7 @@ Rules:
 - NAME RULE (CRITICAL): concept names MUST describe a technique or design decision.
   FORBIDDEN: any filename, any class name, any function name, any identifier with underscores
   A valid name could exist in any codebase with similar purpose — it names a MECHANISM, not an artifact
-- ask RULE: each ask must be a SPECIFIC question about THIS concept's key mechanism and failure mode.
+{_synthesize_negative_block(repo, self._store)}- ask RULE: each ask must be a SPECIFIC question about THIS concept's key mechanism and failure mode.
   BAD: "Why was the naive approach rejected?" (could apply to any concept anywhere — zero information)
   GOOD: name the mechanism, name the thing that would break: "What breaks if you remove X from Y?"
   Each ask must be answerable ONLY by someone who has read this specific concept — never vague
@@ -783,44 +979,71 @@ Rules:
                       "stages": [s["name"] for s in stages]},
         }
 
-        # ── Phase 2: Investigate each stage ───────────────────────────────────
+        # ── Phase 2: Investigate all stages in parallel ───────────────────────
+        # All stage investigations are independent — each reads its own file
+        # chunks and uses only the shared pipeline_context string.
+        # 3 workers: ~3x speedup while staying within free-tier rate limits.
+        # (All-at-once parallelism hits 15 RPM Gemini on 6+ stage pipelines.)
         pipeline_context = "\n".join(
             f"  {i+1}. {s['name']}: {s.get('key_aspect', '')}"
             for i, s in enumerate(stages)
         )
-        insights   = []
         n_stages   = len(stages)
         base_prog  = 0.25
         stage_step = 0.55 / max(n_stages, 1)
+        _INV_WORKERS = 3
 
+        # Emit "start" events for all stages before the pool runs — the pool
+        # runs synchronously from the generator's perspective, so we can't
+        # yield from inside the threads. Emit start events now, results after.
         for i, stage in enumerate(stages):
-            prog = base_prog + i * stage_step
-
-            # Report whether we'll expand (broad) or go narrow
             primary_count = len(self._file_chunks(repo, stage.get("file", "")))
             search_mode   = "broad (expanding to related files)" if primary_count < 3 else "deep"
-
             yield {
-                "stage": "investigating", "progress": prog,
-                "message": f"Investigating: {stage['name']}… ({i+1}/{n_stages})",
+                "stage": "investigating", "progress": base_prog + i * stage_step * 0.3,
+                "message": f"Queued: {stage['name']} ({i+1}/{n_stages})",
                 "trace": {"type": "file",
                           "text": f"{stage.get('file', '')} — {search_mode}",
                           "step": i + 1,
                           "total": n_stages},
             }
 
-            insight = self._phase_investigate(repo, stage, pipeline_context)
-            insights.append(insight)
+        yield {
+            "stage": "investigating", "progress": base_prog + 0.05,
+            "message": f"Investigating {n_stages} stages in parallel…",
+            "trace": {"type": "thinking",
+                      "text": f"Running {n_stages} investigations with {_INV_WORKERS} workers…"},
+        }
 
-            # Surface gaps in the trace panel — shows users what the agent
-            # couldn't determine, building honest expectations about the tour.
-            gaps_text = insight.get("gaps", "")
+        # Run investigations in parallel; collect results keyed by stage index.
+        insights: list[dict | None] = [None] * n_stages
+        with ThreadPoolExecutor(max_workers=_INV_WORKERS) as pool:
+            future_to_idx = {
+                pool.submit(self._phase_investigate, repo, stage, pipeline_context): i
+                for i, stage in enumerate(stages)
+            }
+            for future in as_completed(future_to_idx):
+                i = future_to_idx[future]
+                try:
+                    insights[i] = future.result()
+                except Exception as e:
+                    print(f"TourAgent: investigation failed for stage {i}: {e}")
+                    insights[i] = {
+                        "name": stages[i].get("name", ""),
+                        "subtitle": stages[i].get("key_aspect", ""),
+                        "insight": "", "key_functions": [],
+                        "naive_rejected": "", "gaps": "",
+                    }
+
+        # Emit "found" events in pipeline order after all are complete
+        for i, (stage, insight) in enumerate(zip(stages, insights)):
+            prog      = base_prog + (i + 1) * stage_step
+            gaps_text  = insight.get("gaps", "")
             trace_text = (insight.get("insight") or "")[:120]
             if gaps_text and gaps_text.lower() != "none":
                 trace_text += f" | gap: {gaps_text[:60]}"
-
             yield {
-                "stage": "investigating", "progress": prog + stage_step * 0.8,
+                "stage": "investigating", "progress": prog,
                 "message": f"Found: {insight.get('name', stage['name'])}",
                 "trace": {"type": "finding",
                           "name": insight.get("name", ""),
@@ -852,7 +1075,7 @@ Rules:
             "trace": {"type": "thinking",
                       "text": "Checking concepts are technique names, not file/class names…"},
         }
-        tour = self._validate_concepts(tour)
+        tour = self._validate_concepts(tour, repo=repo)
 
         yield {"stage": "done", "progress": 1.0, **tour}
 

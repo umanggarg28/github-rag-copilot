@@ -155,16 +155,9 @@ def init_services(retrieval_service, qdrant_store):
 mcp = FastMCP(
     name="cartographer",
     instructions=(
-        "Code search server for indexed GitHub repositories. "
-        "Use list_files to browse directory structure before diving in. "
-        "Use search_code to find relevant code by concept or identifier. "
-        "Use search_symbol to jump directly to a named function or class definition. "
-        "Use find_callers to understand how a function is used across the codebase. "
-        "Use trace_calls to follow an execution path end-to-end across multiple functions. "
-        "Use read_file to read an entire source file (imports, structure, context). "
-        "Use get_file_chunk to read specific line ranges when you know the location. "
-        "Use note(key, value) to record key discoveries and recall_notes() to retrieve them. "
-        "Always search before answering questions about a codebase."
+        "Code search and navigation server for indexed GitHub repositories. "
+        "Each tool description specifies exactly when to use it over similar tools — "
+        "read those descriptions to make the right tool choice."
     ),
     streamable_http_path="/",
     # stateless_http=True: each request is independent — no persistent sessions.
@@ -222,7 +215,7 @@ def search_code(
 
     results = _retrieval.search(
         query=query,
-        top_k=6,
+        top_k=12,
         repo_filter=repo,
         mode=mode,
     )
