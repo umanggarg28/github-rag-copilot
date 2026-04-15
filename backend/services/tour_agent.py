@@ -173,9 +173,12 @@ def _synthesize_negative_block(repo: str, store=None) -> str:
 
 
 # Entry file patterns — most likely "top of the call stack".
+# Keep this list narrow: false positives (e.g. agent.py in a FastAPI app is a
+# service, not an entrypoint) are worse than false negatives, because the Phase 1
+# prompt already receives ALL module-level chunks as a fallback.
 _ENTRY_NAMES = {
-    "main.py", "app.py", "server.py", "__init__.py",
-    "agent.py", "run.py", "train.py", "pipeline.py", "index.py", "engine.py",
+    "main.py", "app.py", "server.py",
+    "run.py", "train.py", "pipeline.py", "index.py", "engine.py",
 }
 
 # ── System prompts ─────────────────────────────────────────────────────────────
@@ -305,9 +308,14 @@ class TourAgent:
 
         Module chunks contain imports + file-level calls, revealing the call
         graph without exposing implementation details.
+
+        Priority order: named entry files first (most likely top of the call stack),
+        then other module chunks. This ensures Phase 1 sees the app's spine before
+        peripheral files.
         """
         all_c  = self._all_chunks(repo)
-        result = []
+        entries    = []
+        non_entries = []
         seen_files: set[str] = set()
         for c in all_c:
             fp    = c["filepath"]
@@ -316,8 +324,13 @@ class TourAgent:
             is_module = c["chunk_type"] == "module"
             if (is_entry or is_module) and fp not in seen_files:
                 seen_files.add(fp)
-                result.append(c)
-        return result
+                if is_entry:
+                    entries.append(c)
+                else:
+                    non_entries.append(c)
+        # Entry files first so the LLM sees the true top of the call stack before
+        # peripheral module chunks that may look like pipeline stages but aren't.
+        return entries + non_entries
 
     def _related_chunks(self, repo: str, stage_file: str, stage_name: str,
                         primary_chunks: list[dict]) -> list[dict]:
@@ -463,12 +476,19 @@ Return ONLY this JSON:
   ]
 }}
 
+A PIPELINE STAGE transforms data — it takes input in one form and produces output in a different form.
+Examples of pipeline stages: parsing raw text → AST nodes; text → embedding vectors; query → ranked results.
+
+DISPATCH/WIRING is not a pipeline stage — it routes a request to another component without transforming data.
+Examples of dispatch/wiring: HTTP routers, middleware, dependency injection, health checks, auth wrappers.
+
 Rules:
-- 3-6 stages on the critical path only, ordered by execution sequence
+- 3-6 stages on the CORE DATA TRANSFORMATION path, ordered by execution sequence
 - Each file must appear in the indexed files list above
-- SKIP: test files, config files, admin utilities, UI files
-- SKIP: health check endpoints, router setup files, middleware, __init__.py
-- SKIP: single-responsibility utilities with no pipeline logic (e.g. logging, auth wrappers)
+- A stage's file must be where the transformation HAPPENS, not where the call is dispatched from
+- EXCLUDE: test files, config files, admin utilities, UI components
+- EXCLUDE: any file whose primary job is dispatching, routing, or wiring — regardless of its location
+- EXCLUDE: single-purpose utilities with no data transformation (logging, auth stubs, error formatters)
 - stage name must name the OPERATION, not the file (good: "AST Code Chunking"; bad: "chunker.py")
 - If README mentions a key technique (e.g. RAG, hybrid search, AST chunking),
   make sure the relevant stage appears in the pipeline
@@ -658,31 +678,43 @@ Rules:
                     + "\nDo NOT repeat these — find a different technique name.\n"
                 )
 
-            prompt = f"""Review these concept names from a codebase tour.
-Each name should describe a TECHNIQUE or DESIGN DECISION — never a file, class, or function name.
+            prompt = f"""You are evaluating concept names in a codebase tour.
+A good concept name describes a TECHNIQUE or DESIGN DECISION that required tradeoffs.
 {prior_context}
-Concept names to review:
+Concepts to review:
 {names_block}
 
-For each concept, decide:
-- PASS: name is a technique/decision (e.g. "Two-Phase Execution", "Lazy Initialisation", "Connection Pooling")
-- FIX: name is a file/class/function/artifact (e.g. any filename, any class name, any function name, "health", "config")
+For each concept, apply these three tests:
 
-If ALL concepts PASS, return: {{"status": "ok"}}
+TEST 1 — Is it a technique or decision name?
+  PASS: names a mechanism, pattern, or tradeoff (e.g. "Two-Phase Execution", "Lazy Initialisation", "Connection Pooling")
+  FAIL: is a file, class, function, or identifier (has underscores, ends in .py/.ts, matches a class/function name)
 
-If any need fixing, return corrected names for ALL concepts:
+TEST 2 — Does it reveal an architectural insight?
+  Ask: "Would a senior engineer need to understand this to work on the system's core value?"
+  PASS: yes — removing this concept would leave a gap in understanding the system's key behaviour
+  FAIL: no — it handles an edge case, manages a single external dependency, or is a standard utility found in every codebase
+
+TEST 3 — Is the subtitle evidence of a real design decision?
+  PASS: subtitle explains what breaks or degrades without this technique
+  FAIL: subtitle describes loading config, excluding files, handling a single API's quota, or other narrow infrastructure
+
+A concept that fails TEST 1 should be RENAMED.
+A concept that fails TEST 2 or TEST 3 should be REMOVED — it is trivial infrastructure.
+
+If ALL concepts pass all three tests, return: {{"status": "ok"}}
+
+Otherwise return:
 {{
   "status": "fixed",
   "concepts": [
-    {{"id": 0, "name": "corrected technique name", "subtitle": "updated subtitle if needed"}},
-    ...
+    {{"id": 0, "action": "keep"}},
+    {{"id": 1, "action": "rename", "name": "better technique name", "subtitle": "revised subtitle explaining the failure mode"}},
+    {{"id": 2, "action": "remove"}}
   ]
 }}
 
-FIX RULE: derive the technique name from the subtitle — what does this component DO, not what is it CALLED.
-Concept is non-trivial (keep but rename): derive technique name from subtitle
-Concept is trivial infrastructure (remove): health checks, config loaders, logging setup, auth stubs
-Concept is a mechanism (rename): subtitle describes the design decision — use that as the name
+Include EVERY concept id. Use "action": "keep" for concepts that pass all tests.
 """
             try:
                 raw = self._gen.generate(_VALIDATE_SYSTEM, prompt, temperature=0.0,
@@ -697,32 +729,36 @@ Concept is a mechanism (rename): subtitle describes the design decision — use 
 
             if result.get("status") == "fixed" and result.get("concepts"):
                 corrections = {c["id"]: c for c in result["concepts"]}
-                valid_ids   = {c["id"] for c in corrections.values()}
 
-                # Record what names were fixed — for context in the next round
-                # AND for end-of-run persistence as negative examples.
+                # Record renames — for context in the next round AND for
+                # end-of-run persistence as negative examples.
                 for c in tour.get("concepts", []):
                     corr = corrections.get(c["id"])
-                    if corr and corr.get("name") and corr["name"] != c.get("name"):
+                    if corr and corr.get("action") == "rename" and corr.get("name"):
                         bad_name  = c.get("name", "")
                         good_name = corr["name"]
-                        prior_corrections.append(
-                            f'id={c["id"]}: "{bad_name}" → "{good_name}"'
-                        )
-                        all_corrections[bad_name] = good_name
+                        if good_name != bad_name:
+                            prior_corrections.append(
+                                f'id={c["id"]}: "{bad_name}" → "{good_name}"'
+                            )
+                            all_corrections[bad_name] = good_name
 
-                original_ids = {c["id"] for c in tour["concepts"]}
-                kept_ids     = original_ids & valid_ids
-
+                # Build new concept list: keep or rename; omit those marked remove.
+                # The evaluator now explicitly sets action="remove" for trivial
+                # infrastructure, so removal intent is unambiguous — no longer
+                # inferred from missing IDs which could silently swallow concepts
+                # the evaluator simply forgot to include.
                 new_concepts = []
                 for c in tour["concepts"]:
-                    if c["id"] not in kept_ids:
+                    corr   = corrections.get(c["id"], {})
+                    action = corr.get("action", "keep")  # default keep if LLM omits
+                    if action == "remove":
                         continue
-                    correction = corrections.get(c["id"], {})
-                    if correction.get("name"):
-                        c = {**c, "name": correction["name"]}
-                    if correction.get("subtitle"):
-                        c = {**c, "subtitle": correction["subtitle"]}
+                    if action == "rename":
+                        if corr.get("name"):
+                            c = {**c, "name": corr["name"]}
+                        if corr.get("subtitle"):
+                            c = {**c, "subtitle": corr["subtitle"]}
                     new_concepts.append(c)
 
                 # Re-number ids and fix depends_on references after any removals.

@@ -81,8 +81,8 @@ class TestValidateConcepts:
         fixed_resp = json.dumps({
             "status": "fixed",
             "concepts": [
-                {"id": 0, "name": "End-to-end Pipeline", "subtitle": ""},
-                {"id": 1, "name": "Hybrid Retrieval Strategy", "subtitle": ""},
+                {"id": 0, "action": "rename", "name": "End-to-end Pipeline", "subtitle": ""},
+                {"id": 1, "action": "rename", "name": "Hybrid Retrieval Strategy", "subtitle": ""},
             ],
         })
         # Round 1 returns fixed, round 2 returns ok
@@ -100,7 +100,7 @@ class TestValidateConcepts:
         # Always return "fixed" — should stop after MAX_ROUNDS
         fixed_resp = json.dumps({
             "status": "fixed",
-            "concepts": [{"id": 0, "name": "Still Artifact", "subtitle": ""}],
+            "concepts": [{"id": 0, "action": "rename", "name": "Still Artifact", "subtitle": ""}],
         })
         # 3 rounds max for a repo with >5 past corrections
         store = MagicMock()
@@ -119,7 +119,7 @@ class TestValidateConcepts:
         """The second round prompt must include what was already tried."""
         fixed_resp_r1 = json.dumps({
             "status": "fixed",
-            "concepts": [{"id": 0, "name": "Still Bad Name", "subtitle": ""}],
+            "concepts": [{"id": 0, "action": "rename", "name": "Still Bad Name", "subtitle": ""}],
         })
         ok_resp = json.dumps({"status": "ok"})
         # Give the agent 2 past corrections → MAX_ROUNDS=2, so a second round fires
@@ -148,7 +148,7 @@ class TestFeedbackPersistence:
         """After fixing artifact names, corrections are persisted via QdrantStore."""
         fixed_resp = json.dumps({
             "status": "fixed",
-            "concepts": [{"id": 0, "name": "Pipeline Overview", "subtitle": ""}],
+            "concepts": [{"id": 0, "action": "rename", "name": "Pipeline Overview", "subtitle": ""}],
         })
         ok_resp = json.dumps({"status": "ok"})
         agent = _make_agent([fixed_resp, ok_resp])
@@ -173,7 +173,7 @@ class TestFeedbackPersistence:
         try:
             fixed_resp = json.dumps({
                 "status": "fixed",
-                "concepts": [{"id": 0, "name": "Pipeline Overview", "subtitle": ""}],
+                "concepts": [{"id": 0, "action": "rename", "name": "Pipeline Overview", "subtitle": ""}],
             })
             ok_resp = json.dumps({"status": "ok"})
 
@@ -231,11 +231,11 @@ class TestDependencyGraph:
         fixed_resp = json.dumps({
             "status": "fixed",
             "concepts": [
-                # id=2 (health) is absent from the list — evaluator removed it
-                {"id": 0, "name": "Pipeline Overview", "subtitle": ""},
-                {"id": 1, "name": "Hybrid Retrieval", "subtitle": ""},
+                {"id": 0, "action": "keep", "name": "Pipeline Overview", "subtitle": ""},
+                {"id": 1, "action": "keep", "name": "Hybrid Retrieval", "subtitle": ""},
+                {"id": 2, "action": "remove"},   # trivial infrastructure — removed
                 # id=3 used to depend on id=2 which is now removed
-                {"id": 3, "name": "Result Ranking", "subtitle": ""},
+                {"id": 3, "action": "keep", "name": "Result Ranking", "subtitle": ""},
             ],
         })
         ok_resp = json.dumps({"status": "ok"})
@@ -265,7 +265,7 @@ class TestDependencyGraph:
         """Concept 0 (pipeline overview) must never have prerequisites."""
         fixed_resp = json.dumps({
             "status": "fixed",
-            "concepts": [{"id": 0, "name": "Pipeline Overview", "subtitle": ""}],
+            "concepts": [{"id": 0, "action": "rename", "name": "Pipeline Overview", "subtitle": ""}],
         })
         ok_resp = json.dumps({"status": "ok"})
         agent = _make_agent([fixed_resp, ok_resp])
@@ -315,7 +315,7 @@ class TestDynamicRounds:
         # Always return "fixed" to exhaust the rounds
         gen.generate.return_value = json.dumps({
             "status": "fixed",
-            "concepts": [{"id": 0, "name": "Still Bad", "subtitle": ""}],
+            "concepts": [{"id": 0, "action": "rename", "name": "Still Bad", "subtitle": ""}],
         })
         agent = TourAgent(store=store, gen=gen)
         tour = _make_tour([_make_concept(0, "artifact.py")])
