@@ -1,0 +1,191 @@
+{
+  "repo": "karpathy/nanochat",
+  "updated_at": "2026-04-13T22:11:05.786664",
+  "total_chunks": 453,
+  "total_files": 45,
+  "entry_files": [],
+  "key_classes": [
+    "DummyWandb",
+    "ColoredFormatter",
+    "TaskMixture",
+    "Task",
+    "TaskSequence",
+    "DummyReport",
+    "Report",
+    "Engine",
+    "RowState",
+    "KVCache",
+    "Linear",
+    "GPT"
+  ],
+  "files": {
+    "nanochat/common.py": {
+      "classes": [
+        "DummyWandb",
+        "ColoredFormatter"
+      ],
+      "functions": [
+        "get_dist_info",
+        "setup_default_logging",
+        "print0",
+        "download_file_with_lock",
+        "_detect_compute_dtype",
+        "compute_cleanup",
+        "print_banner",
+        "compute_init"
+      ]
+    },
+    "tasks/common.py": {
+      "classes": [
+        "TaskMixture",
+        "Task",
+        "TaskSequence"
+      ],
+      "functions": [
+        "render_mc"
+      ]
+    },
+    "nanochat/report.py": {
+      "classes": [
+        "DummyReport",
+        "Report"
+      ],
+      "functions": [
+        "get_system_info",
+        "extract_timestamp",
+        "get_report",
+        "get_gpu_info",
+        "run_command",
+        "extract",
+        "estimate_cost",
+        "get_git_info"
+      ]
+    },
+    "nanochat/engine.py": {
+      "classes": [
+        "Engine",
+        "RowState",
+        "KVCache"
+      ],
+      "functions": [
+        "timeout",
+        "use_calculator",
+        "sample_next_token",
+        "eval_with_timeout"
+      ]
+    },
+    "nanochat/checkpoint_manager.py": {
+      "classes": [],
+      "functions": [
+        "load_model",
+        "load_model_from_dir",
+        "save_checkpoint",
+        "find_largest_model",
+        "_patch_missing_config_keys",
+        "log0",
+        "load_checkpoint",
+        "build_model"
+      ]
+    },
+    "nanochat/gpt.py": {
+      "classes": [
+        "Linear",
+        "GPT",
+        "MLP",
+        "GPTConfig",
+        "Block",
+        "CausalSelfAttention"
+      ],
+      "functions": [
+        "apply_rotary_emb",
+        "norm",
+        "has_ve"
+      ]
+    },
+    "nanochat/tokenizer.py": {
+      "classes": [
+        "HuggingFaceTokenizer",
+        "RustBPETokenizer"
+      ],
+      "functions": [
+        "get_token_bytes",
+        "get_tokenizer"
+      ]
+    },
+    "nanochat/execution.py": {
+      "classes": [
+        "ExecutionResult",
+        "WriteOnlyStringIO",
+        "TimeoutException",
+        "redirect_stdin"
+      ],
+      "functions": [
+        "capture_io",
+        "_unsafe_execute",
+        "chdir",
+        "reliability_guard",
+        "time_limit",
+        "create_tempdir",
+        "execute_code"
+      ]
+    },
+    "scripts/chat_web.py": {
+      "classes": [
+        "ChatRequest",
+        "Worker",
+        "ChatMessage",
+        "WorkerPool"
+      ],
+      "functions": [
+        "stats",
+        "chat_completions",
+        "logo",
+        "health",
+        "root",
+        "lifespan",
+        "validate_chat_request",
+        "generate_stream"
+      ]
+    },
+    "tests/test_engine.py": {
+      "classes": [
+        "ByteTokenizer",
+        "MockModel",
+        "MockConfig"
+      ],
+      "functions": [
+        "test_kv_cache_basic",
+        "test_num_samples_count",
+        "test_different_seeds_introduce_variation_when_temperature_nonzero",
+        "test_temperature_zero_determinism",
+        "test_multi_sample_first_token_diversity",
+        "test_seed_reproducibility",
+        "test_max_tokens_respected",
+        "test_kv_cache_prefill"
+      ]
+    },
+    "nanochat/flash_attention.py": {
+      "classes": [],
+      "functions": [
+        "flash_attn_func",
+        "_load_flash_attention_3",
+        "_sdpa_attention",
+        "_resolve_use_fa3",
+        "flash_attn_with_kvcache"
+      ]
+    },
+    "nanochat/core_eval.py": {
+      "classes": [],
+      "functions": [
+        "find_common_length",
+        "forward_model",
+        "batch_sequences_schema",
+        "render_prompts_mc",
+        "stack_sequences",
+        "evaluate_example",
+        "render_prompts_lm",
+        "render_prompts_schema"
+      ]
+    }
+  }
+}

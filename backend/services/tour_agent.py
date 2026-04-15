@@ -570,7 +570,7 @@ Return ONLY this JSON:
   "pipeline_stages": [
     {{
       "name": "The technique or decision name (3-5 words)",
-      "file": "filepath/to/impl.py (must appear in the file structure above)",
+      "file": "path/to/file (must appear in the file structure above)",
       "key_aspect": "One sentence: what simpler approach this replaces and why that matters"
     }}
   ]

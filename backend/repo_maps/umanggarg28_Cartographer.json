@@ -1,0 +1,157 @@
+{
+  "repo": "umanggarg28/Cartographer",
+  "updated_at": "2026-04-14T19:27:37.639399",
+  "total_chunks": 620,
+  "total_files": 57,
+  "entry_files": [
+    "backend/main.py",
+    "backend/services/agent.py",
+    "backend/routers/agent.py"
+  ],
+  "key_classes": [
+    "RepoInfo",
+    "AgentToolCall",
+    "AgentRequest",
+    "ReposResponse",
+    "IngestResponse",
+    "IngestRequest",
+    "SearchRequest",
+    "SearchResponse",
+    "QueryResponse",
+    "AgentResponse",
+    "QueryRequest",
+    "CodeChunk"
+  ],
+  "files": {
+    "backend/models/schemas.py": {
+      "classes": [
+        "RepoInfo",
+        "AgentToolCall",
+        "AgentRequest",
+        "ReposResponse",
+        "IngestResponse",
+        "IngestRequest"
+      ],
+      "functions": []
+    },
+    "backend/config.py": {
+      "classes": [
+        "Settings"
+      ],
+      "functions": []
+    },
+    "backend/dependencies.py": {
+      "classes": [
+        "_Services"
+      ],
+      "functions": [
+        "get_diagram_service",
+        "get_generation_service",
+        "get_retrieval_service",
+        "ph_capture",
+        "get_distinct_id",
+        "get_agent_service",
+        "get_readme_service",
+        "check_rate_limit"
+      ]
+    },
+    "backend/services/agent.py": {
+      "classes": [
+        "AgentService"
+      ],
+      "functions": [
+        "_openrouter_client",
+        "_sources_from_search_result",
+        "_parse_qwen_tool_calls",
+        "_parse_xml_tool_calls",
+        "_source_from_chunk_call",
+        "_strip_xml_tags",
+        "_make_client",
+        "_extract_thought"
+      ]
+    },
+    "backend/mcp_server.py": {
+      "classes": [],
+      "functions": [
+        "search_symbol",
+        "get_file_chunk",
+        "recall_notes",
+        "clear_notes",
+        "analyze_repo",
+        "trace_calls",
+        "note",
+        "search_code"
+      ]
+    },
+    "backend/services/generation.py": {
+      "classes": [
+        "GenerationService"
+      ],
+      "functions": [
+        "_build_messages",
+        "classify_query",
+        "_is_exhausted",
+        "_openrouter_client",
+        "_strip_thought_tokens"
+      ]
+    },
+    "backend/routers/agent.py": {
+      "classes": [
+        "AgentStreamRequest"
+      ],
+      "functions": [
+        "agent_query",
+        "agent_stream",
+        "agent_models"
+      ]
+    },
+    "retrieval/retrieval.py": {
+      "classes": [
+        "Reranker",
+        "RetrievalService"
+      ],
+      "functions": [
+        "_rrf_merge"
+      ]
+    },
+    "ingestion/qdrant_store.py": {
+      "classes": [
+        "QdrantStore"
+      ],
+      "functions": [
+        "_stable_id",
+        "_text_to_sparse"
+      ]
+    },
+    "ingestion/code_chunker.py": {
+      "classes": [
+        "_CallExtractor"
+      ],
+      "functions": [
+        "chunk_files",
+        "_extract_imports",
+        "_split_class",
+        "_extract_base_classes",
+        "chunk_file",
+        "chunk_by_window",
+        "_extract_calls",
+        "chunk_python"
+      ]
+    },
+    "backend/services/ingestion_service.py": {
+      "classes": [
+        "IngestionService"
+      ],
+      "functions": [
+        "_chunk_importance",
+        "_add_context"
+      ]
+    },
+    "ingestion/embedder.py": {
+      "classes": [
+        "Embedder"
+      ],
+      "functions": []
+    }
+  }
+}
