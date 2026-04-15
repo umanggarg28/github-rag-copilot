@@ -260,6 +260,9 @@ _SYNTHESIZE_SYSTEM = (
     "A BAD name identifies an artifact: any filename, any class name, any function name. "
     "A GOOD name identifies a decision or mechanism that exists regardless of what it is called: "
     "'Lazy Initialisation', 'Request-Response Lifecycle', 'Two-Phase Commit', 'Optimistic Locking'. "
+    "ASK RULE: each 'ask' MUST name a specific function from key_items and describe a concrete "
+    "failure mode. Generic asks ('Why was X rejected?', 'What would happen without this?') are "
+    "forbidden — they convey no information and waste the reader's time. "
     "Return ONLY valid JSON, no markdown, no explanation."
 )
 
@@ -709,11 +712,11 @@ class TourAgent:
             transcript += f"Manifest files (dependencies / entry points):\n{manifest_text}\n\n"
         transcript += "Begin exploration. Start with list_files(\"\") to see the top-level repo structure.\n"
 
-        max_rounds = 8
+        max_rounds = 6  # 6 rounds × ~400 tokens ≈ 2400 tokens for Phase 1
         for round_n in range(max_rounds):
             raw = self._gen.generate(
                 self._AGENTIC_MAP_SYSTEM, transcript,
-                temperature=0.0, max_tokens=700,
+                temperature=0.0, max_tokens=400,  # THINK + TOOL fits in 400 tokens
             )
 
             # Parse THINK + TOOL or DONE from the LLM's response
@@ -766,7 +769,7 @@ class TourAgent:
                        "text":  f"THINK: {think_text} → {display}"}
 
                 # Truncate tool output so the transcript doesn't balloon
-                tool_result = _token_budget(tool_result, max_tokens=400)
+                tool_result = _token_budget(tool_result, max_tokens=300)
                 transcript += (
                     f"\nTHINK: {think_text}\n"
                     f"TOOL: {display}\n"
@@ -782,7 +785,7 @@ class TourAgent:
         transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
         raw = self._gen.generate(
             self._AGENTIC_MAP_SYSTEM, transcript,
-            temperature=0.0, max_tokens=1200,
+            temperature=0.0, max_tokens=900,
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
@@ -918,7 +921,174 @@ Rules:
                 "pipeline_stages": fallback_stages,
             }
 
-    # ── Phase 2: Investigate ──────────────────────────────────────────────────
+    # ── Phase 2: Agentic Investigate ─────────────────────────────────────────
+    #
+    # Why agentic: one-shot Phase 2 reads chunks from a single file and asks
+    # WHY/HOW/WHERE/WHAT. If the key algorithm spans multiple files, or the most
+    # important function is three call layers deep, the one-shot call misses it.
+    #
+    # The ReAct loop lets the agent start at the primary file, trace callers to
+    # see how it's used, trace calls to follow the implementation depth, and
+    # search for the exact function that implements the design decision. It stops
+    # when it has enough evidence — not when a token budget runs out.
+    #
+    # Called from ThreadPoolExecutor (not a generator) — accumulates trace text
+    # internally and logs it. Returns the same dict format as _phase_investigate.
+
+    _AGENTIC_INVESTIGATE_SYSTEM = (
+        "You are a senior engineer doing a deep-dive into ONE design decision in a codebase.\n\n"
+        "Your goal: produce a 9/10 quality concept card by finding SPECIFIC, GROUNDED evidence.\n\n"
+        "TOOLS — call exactly one per turn:\n"
+        "  read_file(filepath)         read a source file (see imports, class/function bodies)\n"
+        "  search_symbol(name)         find a class or function definition by exact name\n"
+        "  find_callers(name)          find all call sites — reveals how this is used in practice\n"
+        "  trace_calls(name)           trace call graph from an entry point (depth 3)\n\n"
+        "FORMAT — exactly two lines per turn:\n"
+        "  THINK: [what you learned and what specific evidence you still need]\n"
+        "  TOOL: tool_name(\"argument\")\n\n"
+        "  OR when you have enough evidence (verbatim function names, concrete failure mode):\n"
+        "  THINK: [what makes this non-obvious]\n"
+        "  DONE: {\"name\":\"...\",\"subtitle\":\"...\",\"insight\":\"...\","
+        "\"key_functions\":[\"...\"],\"naive_rejected\":\"...\",\"gaps\":\"...\"}\n\n"
+        "INVESTIGATION STRATEGY:\n"
+        "  1. read_file(primary_file) — get the full picture: imports, class defs, logic\n"
+        "  2. search_symbol(key_class_or_function) — find the exact implementation\n"
+        "  3. find_callers(key_function) — see how it's invoked (reveals the design contract)\n"
+        "  4. trace_calls(entry_point) — follow the call chain to see what it depends on\n"
+        "  5. DONE when you can answer: WHY (failure without it), HOW (mechanism), "
+        "WHERE (entry point), WHAT (non-obvious aspect)\n\n"
+        "QUALITY RULES (enforced — the output is reviewed by an expert):\n"
+        "  name: 3-5 words naming the TECHNIQUE, never a filename or class name\n"
+        "  subtitle: the SPECIFIC failure/degradation if the simpler approach is used instead\n"
+        "    BAD: 'Improves performance'  GOOD: 'Sequential embedding halves throughput on 1000-file repos'\n"
+        "  insight: 2-3 sentences — HOW it works (naming real functions) + WHAT surprises a reader\n"
+        "  key_functions: VERBATIM names from the code — copy-paste from RESULT blocks\n"
+        "  naive_rejected: name the simpler approach + its concrete failure mode\n"
+        "  gaps: what design rationale is NOT visible in the code (or 'None')\n"
+        "  If the file is pure infrastructure with no interesting technique: "
+        "name='Infrastructure: [what it does]', subtitle='', insight='', key_functions=[], "
+        "naive_rejected='', gaps=''\n"
+        "Return ONLY valid JSON in the DONE: line."
+    )
+
+    def _phase_investigate_agentic(self, repo: str, stage: dict, pipeline_context: str) -> dict:
+        """
+        Agentic deep-dive into one pipeline stage using a ReAct loop.
+
+        Unlike the one-shot version, the agent has tools to follow the design
+        decision across multiple files: read the primary file, trace callers to
+        see how it's used, trace the call graph to find the core implementation.
+
+        Runs up to 6 rounds — focused investigation (not broad exploration).
+        Falls back to static _phase_investigate() if the loop exhausts without
+        a valid DONE response.
+
+        Called from ThreadPoolExecutor — NOT a generator. Returns a dict.
+        Trace output is logged to stdout (not yielded to the UI).
+        """
+        stage_file   = stage.get("file", "")
+        stage_name   = stage.get("name", "")
+        stage_aspect = stage.get("key_aspect", "")
+
+        # Seed the transcript with: what we know about this concept + pipeline context
+        transcript = (
+            f"Repository: {repo}\n\n"
+            f"Design decision to investigate: {stage_name}\n"
+            f"Primary file: {stage_file}\n"
+            f"What it replaces: {stage_aspect}\n\n"
+            f"Pipeline context (where this fits):\n{pipeline_context}\n\n"
+            f"Begin investigation. Start with read_file(\"{stage_file}\") to see the full picture.\n"
+        )
+
+        max_rounds = 4  # 4 rounds × ~400 tokens × N stages — keep daily budget sane
+        for round_n in range(max_rounds):
+            raw = self._gen.generate(
+                self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
+                temperature=0.0, max_tokens=400,  # THINK + TOOL fits in 400 tokens
+            )
+
+            # Parse THINK + TOOL or DONE
+            think_m = _re.search(r'THINK:\s*(.+?)(?:\n|$)', raw, _re.IGNORECASE | _re.DOTALL)
+            tool_m  = _re.search(r'TOOL:\s*(\w+)\(\s*"?([^")\n]*)"?\s*\)', raw, _re.IGNORECASE)
+            done_m  = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
+
+            think_text = (think_m.group(1).strip() if think_m else raw[:120].strip())
+
+            # ── DONE ──────────────────────────────────────────────────────────
+            if done_m:
+                try:
+                    result = _parse_json(done_m.group(1))
+                    result.setdefault("name",          stage_name)
+                    result.setdefault("subtitle",      stage_aspect)
+                    result.setdefault("insight",       "")
+                    result.setdefault("key_functions", [])
+                    result.setdefault("naive_rejected","")
+                    result.setdefault("gaps",          "")
+                    print(f"TourAgent.investigate_agentic [{stage_name}] done in {round_n + 1} round(s): {think_text[:80]}")
+                    return result
+                except Exception:
+                    pass  # malformed JSON — keep going
+
+            # ── TOOL CALL ─────────────────────────────────────────────────────
+            if tool_m:
+                tool_name = tool_m.group(1).lower().replace("-", "_")
+                tool_arg  = tool_m.group(2).strip().strip('"').strip("'")
+
+                # No list_files for Phase 2 — investigation is focused, not exploratory
+                if tool_name == "read_file":
+                    tool_result = self._agentic_read_file(repo, tool_arg)
+                    display     = f"read_file(\"{tool_arg}\")"
+                elif tool_name == "search_symbol":
+                    tool_result = self._agentic_search_symbol(repo, tool_arg)
+                    display     = f"search_symbol(\"{tool_arg}\")"
+                elif tool_name == "find_callers":
+                    tool_result = self._agentic_find_callers(repo, tool_arg)
+                    display     = f"find_callers(\"{tool_arg}\")"
+                elif tool_name == "trace_calls":
+                    tool_result = self._agentic_trace_calls(repo, tool_arg)
+                    display     = f"trace_calls(\"{tool_arg}\")"
+                else:
+                    tool_result = (
+                        f"(unknown tool '{tool_name}' — use: read_file, search_symbol, "
+                        "find_callers, trace_calls)"
+                    )
+                    display = tool_name
+
+                print(f"TourAgent.investigate_agentic [{stage_name}] r{round_n+1}: {display}")
+                tool_result = _token_budget(tool_result, max_tokens=350)
+                transcript += (
+                    f"\nTHINK: {think_text}\n"
+                    f"TOOL: {display}\n"
+                    f"RESULT:\n{tool_result}\n"
+                )
+            else:
+                transcript += f"\n[No valid action in round {round_n + 1}. Output TOOL: or DONE:]\n"
+
+        # ── Exhausted rounds — force final output ──────────────────────────────
+        print(f"TourAgent.investigate_agentic [{stage_name}] round limit — forcing DONE")
+        transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
+        raw = self._gen.generate(
+            self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
+            temperature=0.0, max_tokens=800,
+        )
+        done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
+        try:
+            result = _parse_json(done_m.group(1) if done_m else raw)
+            result.setdefault("name",          stage_name)
+            result.setdefault("subtitle",      stage_aspect)
+            result.setdefault("insight",       "")
+            result.setdefault("key_functions", [])
+            result.setdefault("naive_rejected","")
+            result.setdefault("gaps",          "")
+            return result
+        except Exception:
+            pass
+
+        # Complete fallback: static one-shot investigation
+        print(f"TourAgent.investigate_agentic [{stage_name}] failed — falling back to static")
+        return self._phase_investigate(repo, stage, pipeline_context)
+
+    # ── Phase 2: Investigate (static fallback) ────────────────────────────────
 
     def _phase_investigate(self, repo: str, stage: dict, pipeline_context: str) -> dict:
         """
@@ -1311,7 +1481,7 @@ Return ONLY this JSON:
       "key_items": ["use exact key_functions from stage 1 findings"],
       "depends_on": [0],
       "reading_order": 2,
-      "ask": "A specific question naming THIS concept's mechanism — answerable only by someone who understands this specific technique, e.g. 'What would fail if this component processed items sequentially instead of in parallel?' or 'Why does this layer need to complete before the next stage can begin?'"
+      "ask": "MUST NAME a function from key_items and its specific failure: 'What breaks in [key_function] if [specific simpler behaviour] is used instead?'"
     }}
   ]
 }}
@@ -1326,13 +1496,18 @@ Rules:
 - NAME RULE (CRITICAL): concept names MUST describe a technique or design decision.
   FORBIDDEN: any filename, any class name, any function name, any identifier with underscores
   A valid name could exist in any codebase with similar purpose — it names a MECHANISM, not an artifact
-{_synthesize_negative_block(repo, self._store)}- ask RULE: each ask must be a SPECIFIC question about THIS concept's key mechanism and failure mode.
-  BAD: "Why was the naive approach rejected?" (could apply to any concept anywhere — zero information)
-  GOOD: name the mechanism, name the thing that would break: "What breaks if you remove X from Y?"
-  Each ask must be answerable ONLY by someone who has read this specific concept — never vague
+{_synthesize_negative_block(repo, self._store)}- ask RULE: each ask MUST reference a specific function from key_items and name a concrete failure.
+  BAD: "Why was the naive approach rejected?" (zero-information — applies to any concept)
+  BAD: "What would happen if this were removed?" (too vague — could be any code anywhere)
+  GOOD: "What does [key_function] return when [specific edge case]?" (names the function, names the edge)
+  GOOD: "Why does [key_function] need [specific_dependency] before it can run?" (names both pieces)
+  GOOD: "What breaks in the output if [key_function] skips the [specific step] it performs?"
+  Each ask must be answerable ONLY by reading THIS concept's specific implementation — never vague
+- description for id=0: trace the full data flow — what enters (raw input), which stage file handles
+  each transformation, what the user receives at the end. Name 3-4 key files in the flow.
 """
         raw = self._gen.generate(_SYNTHESIZE_SYSTEM, prompt, temperature=0.0,
-                                  json_mode=True, max_tokens=8192)
+                                  json_mode=True, max_tokens=3000)
         try:
             tour = _parse_json(raw)
         except Exception as e:
@@ -1487,10 +1662,12 @@ Rules:
         }
 
         # Run investigations in parallel; collect results keyed by stage index.
+        # Uses _phase_investigate_agentic — each worker runs a ReAct loop
+        # (up to 6 rounds) with read_file/search_symbol/find_callers/trace_calls.
         insights: list[dict | None] = [None] * n_stages
         with ThreadPoolExecutor(max_workers=_INV_WORKERS) as pool:
             future_to_idx = {
-                pool.submit(self._phase_investigate, repo, stage, pipeline_context): i
+                pool.submit(self._phase_investigate_agentic, repo, stage, pipeline_context): i
                 for i, stage in enumerate(stages)
             }
             for future in as_completed(future_to_idx):

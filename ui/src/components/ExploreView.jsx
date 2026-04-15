@@ -365,14 +365,30 @@ function TracePanel({ log, open, onToggle }) {
                 {ICONS[entry.type] || ICONS.info}
               </span>
               <div className="ec-trace-text">
-                {entry.name && <span className="ec-trace-name">{entry.name} </span>}
-                {entry.text && <span className="ec-trace-sub">{entry.text}</span>}
-                {entry.stages && (
-                  <div className="ec-trace-stages">
-                    {entry.stages.map((s, j) => (
-                      <span key={j} className="ec-trace-stage-pill">{s}</span>
-                    ))}
-                  </div>
+                {entry.type === "react" ? (
+                  // ReAct entries: show tool call prominently, THINK text faint + truncated.
+                  // entry.tool = "read_file("backend/services/agent.py")"
+                  // entry.think = full reasoning sentence (can be 200+ chars)
+                  <>
+                    {entry.tool && <span className="ec-trace-react-tool">{entry.tool}</span>}
+                    {entry.think && (
+                      <span className="ec-trace-react-think">
+                        {entry.think.length > 90 ? entry.think.slice(0, 90) + "…" : entry.think}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {entry.name && <span className="ec-trace-name">{entry.name} </span>}
+                    {entry.text && <span className="ec-trace-sub">{entry.text}</span>}
+                    {entry.stages && (
+                      <div className="ec-trace-stages">
+                        {entry.stages.map((s, j) => (
+                          <span key={j} className="ec-trace-stage-pill">{s}</span>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
