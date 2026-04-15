@@ -1590,12 +1590,18 @@ Rules:
             if event.get("type") == "result":
                 pipeline_map = event.get("data", {})
                 break
-            # Forward trace events to the UI; advance progress slightly each round
+            # Forward trace events to the UI; advance progress slightly each round.
+            # For react events, show only the tool call as the loading message —
+            # the full THINK text belongs in the trace panel, not the progress label.
             react_prog = min(react_prog + 0.015, 0.24)
+            if event.get("type") == "react":
+                msg = event.get("tool", "") or event.get("text", "")
+            else:
+                msg = event.get("text", "")
             yield {
                 "stage": "mapping",
                 "progress": react_prog,
-                "message": event.get("text", ""),
+                "message": msg,
                 "trace": event,
             }
 

@@ -637,7 +637,9 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   // ── Loading / error states ─────────────────────────────────────────────────
   if (loading) {
     const pct   = loadStage ? Math.round(loadStage.progress * 100) : 0;
-    const label = loadStage?.message || "Building your guided tour…";
+    const rawLabel = loadStage?.message || "Building your guided tour…";
+    // Cap the progress label — long THINK strings must not overflow this area
+    const label = rawLabel.length > 72 ? rawLabel.slice(0, 72) + "…" : rawLabel;
     return (
       <div className="ec-loading" style={{ flexDirection: "column", alignItems: "stretch", gap: 16, maxWidth: 480, margin: "auto" }}>
         {/* Progress row */}
