@@ -546,36 +546,45 @@ class TourAgent:
 Module-level imports and signatures:
 {chunk_text}
 
-Task: identify the core pipeline — the sequence of files that transforms data
-from raw input into the output described in the README.
+Task: identify the KEY DESIGN DECISIONS in this codebase.
 
-Use the manifest files (dependencies) and README together as your anchor:
-they tell you what the project does and what libraries it uses. Each major
-capability in the README maps to one or more files in the module list.
+A design decision is a non-obvious choice — there was a simpler alternative
+that was deliberately rejected. Design decisions are the concepts a new engineer
+must understand to work on this system effectively.
 
-A pipeline stage is a file that takes data in one form and produces it in
-another — evident from its imports (what libraries it uses) and function
-signatures (what it receives and returns).
+How to find them:
+1. The README often names them explicitly (look for technique names, library
+   choices framed as decisions, or "why X instead of Y" language).
+2. The manifest dependencies reveal which libraries were chosen — each choice
+   of a non-trivial library is a decision.
+3. The module imports reveal which file implements each technique.
+
+For each decision, find the single file where it is most directly implemented.
+Infrastructure files (database wrappers, config loaders, HTTP plumbing) are
+not design decisions — skip them.
 
 Return ONLY this JSON:
 {{
-  "entry_file": "the file most central to the core pipeline",
+  "entry_file": "the file that orchestrates the core system",
   "readme_summary": "1-2 sentences: what the README says this repo does",
   "pipeline_stages": [
     {{
-      "name": "Short stage name (2-4 words, names the transformation)",
-      "file": "filepath/to/stage.py (must appear in the file structure above)",
-      "key_aspect": "One sentence: what data enters and what comes out"
+      "name": "The technique or decision name (3-5 words)",
+      "file": "filepath/to/impl.py (must appear in the file structure above)",
+      "key_aspect": "One sentence: what simpler approach this replaces and why that matters"
     }}
   ]
 }}
 
 Rules:
-- 3-6 stages covering the complete pipeline from raw input to final output
-- Every stage file must appear in the file structure above
-- Choose files where data is transformed, not where calls are dispatched
-- Stage name describes the transformation, not the filename or class name
-- Every major capability the README and manifest declare must appear as a stage
+- 4-6 decisions — enough to cover the system's core value, not every file
+- Every file must appear in the file structure above
+- Each decision must have an identifiable simpler alternative that was rejected
+- Skip pure infrastructure: storage wrappers, config loaders, HTTP routers,
+  dependency injection — these have no interesting decision in the code itself
+- Decision names describe the technique or choice, never a filename or class
+- Prioritise decisions the README explicitly names — those are the ones the
+  authors considered important enough to document
 """
         raw = self._gen.generate(_MAP_SYSTEM, prompt, temperature=0.0,
                                   json_mode=True, max_tokens=1024)
@@ -649,39 +658,45 @@ Rules:
         code_text = _token_budget(code_text, max_tokens=3000)
 
         prompt = f"""Repository: {repo}
-Stage: {stage_name}
-Role in pipeline: {stage_aspect}
+Concept to investigate: {stage_name}
+What this replaces: {stage_aspect}
 
-Full pipeline context:
+System context:
 {pipeline_context}
 
-Code for this stage:
+Source code:
 {code_text}
 
-Answer five questions. Ground every answer in the code above.
+You are investigating the concept "{stage_name}".
+The code above should contain its implementation.
 
-1. WHY does this component exist? What breaks or degrades without it?
-2. HOW does it connect to the rest of the pipeline? Input → transformation → output.
-3. WHERE should a new engineer start reading? Name the entry-point class or function.
-4. WHAT is the non-obvious pattern or decision? Name the technique and what it replaces.
-5. GAPS: What important design rationale CANNOT be determined from this code alone?
-   (e.g. why a particular library was chosen, what alternatives were considered,
-   performance tradeoffs that aren't visible in the code)
+Answer these questions using ONLY evidence visible in the code above.
+Quote actual function names, class names, or docstring text to ground your answers.
+If the code does not contain enough evidence to answer a question, say so — do not invent.
+
+1. WHY: What specific failure or degradation occurs if this technique is removed
+   and the simpler alternative is used instead?
+2. HOW: What does the code actually do to implement this? Name the key functions
+   or classes and describe their role.
+3. WHERE: Which function or class is the entry point a new engineer should read first?
+4. WHAT: What makes this non-obvious? What would a developer assume before reading
+   this code that turns out to be wrong?
 
 Return ONLY this JSON:
 {{
-  "name": "3-5 words — the KEY TECHNIQUE or DESIGN DECISION (NEVER a file name, class name, or function name)",
-  "subtitle": "One sentence: WHY this technique exists — the specific failure it prevents",
-  "insight": "2-3 sentences: HOW it works, WHAT makes it non-obvious, naive alternative and its failure mode",
-  "key_functions": ["entry_class_or_function", "other_key_function"],
-  "naive_rejected": "One sentence: the simpler approach that would fail and why",
-  "gaps": "One sentence: what important context is NOT visible in this code (or 'None' if fully self-explaining)"
+  "name": "3-5 words — the technique name, grounded in what the code actually does",
+  "subtitle": "One sentence from WHY: the specific failure the simpler approach causes",
+  "insight": "2-3 sentences from HOW and WHAT: how it works and what surprises a reader",
+  "key_functions": ["exact_function_or_class_name_from_code", "another_exact_name"],
+  "naive_rejected": "One sentence: the simpler approach and its concrete failure mode",
+  "gaps": "One sentence: what rationale is NOT visible in this code (or 'None')"
 }}
 
 Rules:
-- key_functions must be actual names visible in the code above
-- insight must name a concrete failure mode with the naive approach
-- Use actual class/function names when they clarify design
+- key_functions must be names that appear verbatim in the code above
+- name and subtitle must be derivable from evidence in the code — no invention
+- If the code is pure infrastructure with no interesting technique, set
+  name to "Infrastructure: [what it does]" so Phase 3 can skip it
 """
         raw = self._gen.generate(_INVESTIGATE_SYSTEM, prompt, temperature=0.0,
                                   json_mode=True, max_tokens=900)
@@ -1169,6 +1184,23 @@ Rules:
                           "name": insight.get("name", ""),
                           "text": trace_text},
             }
+
+        # Filter out infrastructure concepts Phase 2 flagged.
+        # Phase 2 sets name="Infrastructure: ..." when a file has no interesting
+        # technique — these would produce empty concept cards in the tour.
+        filtered_stages   = []
+        filtered_insights = []
+        for stage, insight in zip(stages, insights):
+            if insight and insight.get("name", "").lower().startswith("infrastructure:"):
+                print(f"TourAgent: skipping infrastructure concept: {insight['name']}")
+                continue
+            filtered_stages.append(stage)
+            filtered_insights.append(insight)
+
+        if filtered_stages != stages:
+            stages   = filtered_stages
+            insights = filtered_insights
+            pipeline_map = {**pipeline_map, "pipeline_stages": stages}
 
         # ── Phase 3: Synthesize ───────────────────────────────────────────────
         yield {
