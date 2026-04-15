@@ -93,11 +93,20 @@ function expansionOffsets(selectedId, concepts, basePositions) {
 // ── Layout: topological column assignment with overflow wrapping ───────────────
 // Returns { [conceptId]: { x, y } } in canvas coordinates.
 //
-// The LLM sometimes produces shallow dependency graphs (many nodes at depth 0),
-// which naively stacks all root concepts into one tall column. We cap each
-// column at MAX_PER_COL items and push overflow into the next available column,
-// keeping the visual width reasonable and the graph readable.
+// Two kinds of overflow:
+//
+// 1. Same-depth overflow (fan-out): many nodes at depth 1 (e.g. 5 children of
+//    the pipeline overview). MAX_PER_COL = 3 caps per column and overflows into
+//    the next column, then the next depth starts in the column after that.
+//
+// 2. Too-many-columns overflow (linear chain): a sequential A→B→C→D→E→F→G
+//    produces 7 columns — too wide for the screen. MAX_COLS = 4 caps the total
+//    horizontal width. After column 3, nodes wrap into a second visual band
+//    (row), placed below the first band. This turns a 7-wide layout into a
+//    2-band layout (cols 0-3 top, cols 4-6 bottom), which fits the viewport.
 const MAX_PER_COL = 3;
+const MAX_COLS    = 4;   // wrap into a second band after this many visual columns
+const BAND_GAP    = 80;  // extra vertical gap between bands
 
 function computeLayout(concepts) {
   if (!concepts.length) return {};
@@ -125,9 +134,6 @@ function computeLayout(concepts) {
   );
 
   // Step 3: assign visual columns, capping at MAX_PER_COL items per column.
-  // Each depth level starts in its own column. If a depth has more than MAX_PER_COL
-  // nodes, overflow spills into the next column. The following depth level then
-  // starts in the column after the last one used by the previous depth.
   const colAssign = {};
   let nextCol = 0;
 
@@ -141,26 +147,56 @@ function computeLayout(concepts) {
       colAssign[node.id] = col;
       count++;
     });
-    nextCol = col + 1;  // next depth starts after the last column used here
+    nextCol = col + 1;
   });
 
-  // Step 4: assign pixel positions — group by visual column, center each vertically
-  const visualCols = {};
+  // Step 4: wrap columns past MAX_COLS into bands.
+  // band = Math.floor(colIndex / MAX_COLS), wrappedCol = colIndex % MAX_COLS
+  // This maps e.g. columns [0,1,2,3,4,5,6] to band 0: [0,1,2,3], band 1: [0,1,2]
+  const bandAssign = {};
+  const wrappedColAssign = {};
+  Object.entries(colAssign).forEach(([id, col]) => {
+    bandAssign[id]      = Math.floor(col / MAX_COLS);
+    wrappedColAssign[id] = col % MAX_COLS;
+  });
+
+  // Step 5: assign pixel positions — group by (band, wrappedCol)
+  // Compute each band's total height first so we can stack bands vertically.
+  const bandColGroups = {};   // { band_wrappedCol: [concept, ...] }
+  const bandHeights   = {};   // { band: maxColumnHeight }
+
   concepts.forEach(c => {
-    const vc = colAssign[c.id] ?? 0;
-    if (!visualCols[vc]) visualCols[vc] = [];
-    visualCols[vc].push(c);
+    const band = bandAssign[c.id] ?? 0;
+    const wc   = wrappedColAssign[c.id] ?? 0;
+    const key  = `${band}_${wc}`;
+    if (!bandColGroups[key]) bandColGroups[key] = [];
+    bandColGroups[key].push(c);
   });
-  Object.values(visualCols).forEach(arr =>
-    arr.sort((a, b) => (a.reading_order ?? 99) - (b.reading_order ?? 99))
-  );
 
-  const maxColH = Math.max(...Object.values(visualCols).map(a => a.length)) * (CARD_H + ROW_GAP);
+  Object.entries(bandColGroups).forEach(([key, nodes]) => {
+    nodes.sort((a, b) => (a.reading_order ?? 99) - (b.reading_order ?? 99));
+    const [band] = key.split("_").map(Number);
+    const h = nodes.length * (CARD_H + ROW_GAP);
+    bandHeights[band] = Math.max(bandHeights[band] ?? 0, h);
+  });
+
+  // Cumulative Y offsets per band
+  const bandStartY = {};
+  let cumY = 48;
+  const numBands = Math.max(...Object.values(bandAssign)) + 1;
+  for (let b = 0; b < numBands; b++) {
+    bandStartY[b] = cumY;
+    cumY += (bandHeights[b] ?? 0) + BAND_GAP;
+  }
+
+  // Within each band, center columns relative to the tallest column in that band
   const positions = {};
-  Object.entries(visualCols).forEach(([vc, nodes]) => {
-    const x = Number(vc) * (CARD_W + COL_GAP) + 48;
+  Object.entries(bandColGroups).forEach(([key, nodes]) => {
+    const [band, wc] = key.split("_").map(Number);
+    const x = wc * (CARD_W + COL_GAP) + 48;
+    const maxH = bandHeights[band] ?? 0;
     const colH = nodes.length * (CARD_H + ROW_GAP) - ROW_GAP;
-    const startY = (maxColH - colH) / 2 + 48;
+    const startY = bandStartY[band] + (maxH - colH) / 2;
     nodes.forEach((node, row) => {
       positions[node.id] = { x, y: startY + row * (CARD_H + ROW_GAP) };
     });

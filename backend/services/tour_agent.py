@@ -70,11 +70,15 @@ _MAP_SYSTEM = (
 )
 
 _INVESTIGATE_SYSTEM = (
-    "You are a senior engineer doing a deep-dive into one component of a pipeline. "
-    "You know where this component sits in the larger system. "
-    "Your job: identify the KEY non-obvious design decision in this code. "
-    "State the failure mode that would occur with the naive alternative. "
+    "You are a senior engineer doing a deep-dive into one component of a codebase. "
+    "You know exactly where this component fits in the larger system. "
+    "Your job: answer four questions about this code — "
+    "WHY does this component exist (what breaks without it?), "
+    "HOW does it connect to adjacent components, "
+    "WHERE is the entry point a reader should start, "
+    "WHAT non-obvious pattern or design decision makes this work. "
     "Every claim must be grounded in the actual code shown. "
+    "Class names, function names, and file names are ENCOURAGED when they clarify the design. "
     "Return ONLY valid JSON, no markdown, no explanation."
 )
 
@@ -82,8 +86,10 @@ _SYNTHESIZE_SYSTEM = (
     "You are a senior engineer writing the guided tour you wished existed before "
     "reading this codebase. You have already traced the full pipeline and investigated "
     "each stage. Convert your traced findings into the structured tour format. "
-    "The dependency tree must reflect conceptual prerequisites: a developer cannot "
-    "understand concept B without first understanding concept A. "
+    "DEPENDENCY RULE: depends_on means 'a developer cannot understand B without first "
+    "understanding A' — it is NOT execution order. Most concepts are parallel: they "
+    "share concept 0 as a prerequisite but are independent of each other. "
+    "A chain A→B→C→D is almost always wrong. A fan-out from concept 0 is almost always right. "
     "Return ONLY valid JSON, no markdown, no explanation."
 )
 
@@ -326,21 +332,26 @@ Full pipeline (for context):
 Code for this stage — {stage_file}:
 {code_text}
 
-What is the KEY non-obvious design decision in this stage?
+Answer four questions about this component. Every answer must be grounded in the code above.
+
+1. WHY does this component exist? What breaks or degrades without it?
+2. HOW does it connect to the rest of the pipeline? What does it receive, what does it produce?
+3. WHERE should a reader start? Name the entry-point function or class.
+4. WHAT is the non-obvious pattern? Name the technique (and the class/function that implements it if helpful).
 
 Return ONLY this JSON:
 {{
-  "name": "Technique or decision (3-5 words — never a class/file/service name)",
-  "subtitle": "One sentence: the specific problem this solves in the pipeline",
-  "insight": "2-3 sentences: the naive approach and its failure mode, what this code does instead, the non-obvious insight that makes it work",
-  "key_functions": ["actual_function_1", "actual_function_2"],
-  "naive_rejected": "One sentence: what simpler approach was NOT used and why"
+  "name": "3-5 words naming the key technique or component (class names OK if they explain the design)",
+  "subtitle": "One sentence: WHY this exists — the specific problem it solves",
+  "insight": "2-3 sentences covering HOW it works and WHAT makes it non-obvious. Include the naive alternative and its failure mode.",
+  "key_functions": ["entry_point_function", "other_actual_function"],
+  "naive_rejected": "One sentence: the simpler approach that would fail and why"
 }}
 
 Rules:
-- Name the TECHNIQUE, not the artifact (bad: 'QdrantStore', good: 'Dual-Vector Hybrid Search')
-- key_functions must be actual method names visible in the code above
-- insight must state a concrete failure mode with the naive approach
+- key_functions must be actual names visible in the code above
+- insight must name a concrete failure mode with the naive approach
+- Use actual class/function names when they clarify the design (e.g. 'QdrantStore.hybrid_search')
 """
         raw = self._gen.generate(_INVESTIGATE_SYSTEM, prompt, temperature=0.0,
                                   json_mode=True, max_tokens=800)
@@ -396,13 +407,26 @@ Per-stage findings (already investigated — use these verbatim):
 
 Convert this traced understanding into a concept tour JSON.
 
-Concept id=0 (reading_order=1, depends_on=[]) MUST be the end-to-end pipeline
-overview — what enters, what stages transform it, what the user gets out.
-All other concepts must have depends_on pointing to at least one earlier concept.
+═══ DEPENDENCY RULE (CRITICAL) ═══
+depends_on means "a developer CANNOT understand concept B without first understanding A."
+It is NOT execution order.
 
+Ask yourself for each concept: "Can someone understand this WITHOUT knowing the others?"
+- If yes → depends_on: [0]  (only the pipeline overview is a prerequisite)
+- If no  → depends_on: [id of the specific concept they must know first]
+
+WRONG (chain): 1→2→3→4→5→6→7  (almost never true)
+RIGHT (fan-out): most concepts depend on 0 only, forming a tree 1-2 levels deep
+
+For a 7-concept tour the typical structure is:
+  0: pipeline overview (no deps)
+  1,2,3,4,5: core concepts, each depends on 0 only
+  6: one concept that genuinely requires knowing concept 1 or 2 first
+
+═══ FORMAT ═══
 Return ONLY this JSON:
 {{
-  "summary": "2 sentences: (1) what the user can DO with this repo and what mechanism makes it possible — name the technique. (2) the single architectural decision that shapes everything else.",
+  "summary": "2 sentences: (1) what the user can DO with this repo, naming the key technique. (2) the single architectural decision that shapes everything else.",
   "entry_point": "{entry}",
   "concepts": [
     {{
@@ -411,19 +435,19 @@ Return ONLY this JSON:
       "subtitle": "What this pipeline does for the user",
       "file": "{entry}",
       "type": "module",
-      "description": "2-3 sentences tracing the full flow: what enters, how each stage transforms it, what the user gets. Name the key files and the architectural split that makes it work.",
-      "key_items": ["function_1", "function_2"],
+      "description": "2-3 sentences: what enters, how each stage transforms it, what the user gets. Name the key files and the split that makes it work.",
+      "key_items": ["entry_function", "other_function"],
       "depends_on": [],
       "reading_order": 1,
       "ask": "How does the full pipeline work end to end?"
     }},
     {{
       "id": 1,
-      "name": "Use the exact 'name' field from stage 1 findings above",
-      "subtitle": "Use the exact 'subtitle' field from stage 1 findings above",
+      "name": "Use the exact 'name' from stage 1 findings",
+      "subtitle": "Use the exact 'subtitle' from stage 1 findings",
       "file": "file from stage 1",
       "type": "class|function|module|algorithm",
-      "description": "Use the exact 'insight' field from stage 1 findings above",
+      "description": "Use the exact 'insight' from stage 1 findings",
       "key_items": ["use exact key_functions from findings"],
       "depends_on": [0],
       "reading_order": 2,
@@ -433,9 +457,10 @@ Return ONLY this JSON:
 }}
 
 Rules:
-- 6-8 concepts total (concept 0 = pipeline overview, concepts 1+ = one per stage insight)
-- Use the EXACT name, subtitle, insight, key_functions from the per-stage findings above
+- 6-8 concepts total (concept 0 = pipeline overview, concepts 1-N = one per stage insight)
+- Use the EXACT name, subtitle, insight, key_functions from the per-stage findings
 - All concepts except id=0 must have depends_on non-empty
+- Most concepts should have depends_on: [0] — only add deeper dependencies when genuinely required
 - reading_order: sequential integers starting at 1
 - type: exactly one of class, function, module, algorithm
 """
