@@ -290,7 +290,12 @@ function ConceptCard({ concept, visualNum, isEntry, isSelected, isHovered, isDim
 
 // ── TracePanel — live log of agent investigation steps ─────────────────────────
 // Each entry in `log` is the "trace" payload from a TourAgent SSE event:
-//   { type: "info"|"thinking"|"found"|"file"|"finding", text, name?, stages? }
+//   { type: "info"|"thinking"|"found"|"file"|"finding"|"react", text, name?, stages? }
+//
+// "react" entries come from the agentic Phase 1 ReAct loop — they show the
+// THINK → TOOL → RESULT cycle that the agent uses to explore the codebase.
+// Showing this live demonstrates how agentic AI works: the model reasons about
+// what to read next, calls a tool, reads the result, and decides where to go.
 //
 // WHY SHOW THIS: transparency builds trust. When users see "Investigating:
 // retrieval/hybrid_search.py" they understand WHY that concept appears in
@@ -306,6 +311,12 @@ function TracePanel({ log, open, onToggle }) {
   }, [log, open]);
 
   const ICONS = {
+    // ReAct loop step — tool icon (wrench) to distinguish from investigation steps
+    react: (
+      <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
+        <path d="M13.371 2.629a3.5 3.5 0 0 0-4.849 4.274L2.78 12.745a1.5 1.5 0 1 0 2.121 2.121l5.842-5.742a3.5 3.5 0 0 0 2.628-6.495zm-1.414 3.536a1.5 1.5 0 1 1-2.121-2.122 1.5 1.5 0 0 1 2.121 2.122z"/>
+      </svg>
+    ),
     thinking: (
       <svg viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
         <path d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0zm.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM8 5.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>

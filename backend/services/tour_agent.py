@@ -532,7 +532,276 @@ class TourAgent:
             parts.append(f"{header}\n{text}" if text else header)
         return "\n\n".join(parts)
 
-    # ── Phase 1: Map ──────────────────────────────────────────────────────────
+    # ── Phase 1 (Agentic): ReAct exploration loop ─────────────────────────────
+
+    # WHY AGENTIC: a one-shot static snapshot gives the LLM ~14 random module
+    # chunks and asks it to identify design decisions. The LLM often picks code
+    # identifiers (method names, filenames) because those are the most prominent
+    # things visible in the chunks — not because they're design decisions.
+    #
+    # An agentic loop gives the LLM TOOLS and lets it decide what to read.
+    # Like a developer joining a new project, it starts at the top (README +
+    # directory listing), narrows in on interesting files, and stops when it
+    # understands the architecture — not when a fixed token budget runs out.
+    #
+    # The generator yields trace events so the UI can show the ReAct loop live:
+    #   THINK → TOOL → RESULT → THINK → TOOL → RESULT → ... → DONE
+    # This doubles as an educational demonstration of how agentic AI works.
+
+    # Tools exposed to the ReAct agent — same capabilities as our MCP server
+    # (backend/mcp_server.py) but called directly rather than over the wire.
+    # The MCP server already defines: list_files, read_file, search_symbol,
+    # find_callers, trace_calls, search_code.  We reuse that same logic here
+    # so the Phase 1 agent has exactly the same power as a Claude Code session
+    # connected to our MCP server.
+
+    _AGENTIC_MAP_SYSTEM = (
+        "You are a senior engineer exploring an unfamiliar codebase to identify its key "
+        "ARCHITECTURAL DECISIONS — the non-obvious choices where a simpler alternative "
+        "was deliberately rejected.\n\n"
+        "TOOLS — call exactly one per turn:\n"
+        "  list_files(path)            list files/dirs at a path (\"\" = repo root)\n"
+        "  read_file(filepath)         read a source file (imports, classes, functions)\n"
+        "  search_symbol(name)         find a class or function definition by exact name\n"
+        "  find_callers(name)          find all call sites of a function/class\n"
+        "  trace_calls(name)           trace the call graph from an entry point\n\n"
+        "FORMAT — output exactly two lines per turn:\n"
+        "  THINK: [one sentence: what you learned and what to investigate next]\n"
+        "  TOOL: tool_name(\"argument\")\n\n"
+        "  OR when you have identified 4-6 decisions:\n"
+        "  THINK: [why you have enough information now]\n"
+        "  DONE: {\"entry_file\":\"...\",\"readme_summary\":\"...\","
+        "\"pipeline_stages\":[{\"name\":\"...\",\"file\":\"...\",\"key_aspect\":\"...\"}]}\n\n"
+        "EXPLORATION STRATEGY:\n"
+        "  1. list_files(\"\") — see top-level repo structure\n"
+        "  2. read_file() key manifests (package.json, pyproject.toml, go.mod, Cargo.toml)\n"
+        "  3. read_file() the most interesting implementation files the README mentions\n"
+        "  4. search_symbol() / find_callers() to trace how key components connect\n"
+        "  5. DONE when you can name 4-6 real decisions grounded in what you read\n\n"
+        "STAGE NAME RULES (critical — every name is checked):\n"
+        "  GOOD: names a technique, algorithm, or tradeoff (e.g. 'Lazy Evaluation Cache',\n"
+        "        'Hybrid Sparse-Dense Retrieval', 'Progressive Context Expansion')\n"
+        "  BAD: any filename, class name, function name, or identifier with underscores\n"
+        "  4-6 stages only — core decisions, skip infrastructure (routing, config, health)\n"
+        "  key_aspect: what simpler approach this replaces and the concrete cost of that\n\n"
+        "Return ONLY valid JSON in the DONE: line — no markdown fences, no explanation."
+    )
+
+    def _agentic_list_files(self, repo: str, path: str) -> str:
+        """GitHub API directory listing — same as mcp_server.list_files."""
+        import requests as _req
+        from backend.config import settings
+        path = path.strip("/").strip()
+        owner, name = repo.split("/", 1)
+        url = f"https://api.github.com/repos/{owner}/{name}/contents/{path}"
+        headers = {"Accept": "application/vnd.github.v3+json"}
+        if settings.github_token:
+            headers["Authorization"] = f"token {settings.github_token}"
+        try:
+            resp = _req.get(url, headers=headers, timeout=15)
+            if resp.status_code == 404:
+                return f"Path not found: '{path}' in {repo}"
+            resp.raise_for_status()
+        except Exception as e:
+            return f"GitHub fetch failed: {e}"
+        entries = resp.json()
+        if not isinstance(entries, list):
+            return f"'{path}' is a file — use read_file to read it."
+        dirs  = sorted([e["name"] + "/" for e in entries if e["type"] == "dir"])
+        files = sorted([
+            f"{e['name']}  ({e.get('size',0)//1024}KB)" if e.get("size",0)>=1024
+            else f"{e['name']}  ({e.get('size',0)}B)"
+            for e in entries if e["type"] == "file"
+        ])
+        return f"# {repo}/{path or ''}\n" + "\n".join(dirs + files)
+
+    def _agentic_read_file(self, repo: str, filepath: str) -> str:
+        """GitHub API file read, truncated to ~600 tokens — same as mcp_server.read_file."""
+        import requests as _req
+        from backend.config import settings
+        filepath = filepath.strip()
+        owner, name = repo.split("/", 1)
+        url = f"https://api.github.com/repos/{owner}/{name}/contents/{filepath}"
+        headers = {"Accept": "application/vnd.github.v3.raw"}
+        if settings.github_token:
+            headers["Authorization"] = f"token {settings.github_token}"
+        try:
+            resp = _req.get(url, headers=headers, timeout=15)
+            if resp.status_code == 404:
+                return f"File not found: {filepath}"
+            resp.raise_for_status()
+        except Exception as e:
+            return f"GitHub fetch failed: {e}"
+        lines = resp.text.splitlines()
+        total = len(lines)
+        # Return up to 120 lines — enough to see imports, class defs, top-level functions.
+        # Cap keeps transcript size manageable across 8 rounds.
+        preview = "\n".join(f"{i+1}: {l}" for i, l in enumerate(lines[:120]))
+        suffix  = f"\n… ({total - 120} more lines)" if total > 120 else ""
+        return f"# {repo} — {filepath}  ({total} lines)\n\n{preview}{suffix}"
+
+    def _agentic_search_symbol(self, repo: str, symbol_name: str) -> str:
+        """Find a class or function definition by name — wraps store.find_symbol."""
+        matches = self._store.find_symbol(symbol_name, repo=repo)
+        if not matches:
+            return f"No definition found for '{symbol_name}'. Try search_symbol with the exact name."
+        parts = []
+        for i, c in enumerate(matches[:4], 1):
+            loc = f"{c.get('filepath','?')} L{c.get('start_line','?')}–{c.get('end_line','?')}"
+            parts.append(f"[{i}] {loc}\n{c.get('text','')[:400]}")
+        return f"Definitions of '{symbol_name}':\n\n" + "\n\n".join(parts)
+
+    def _agentic_find_callers(self, repo: str, function_name: str) -> str:
+        """Find all call sites — wraps store.find_callers."""
+        callers = self._store.find_callers(function_name, repo=repo)
+        if not callers:
+            return f"No call sites found for '{function_name}'."
+        parts = []
+        for i, c in enumerate(callers[:6], 1):
+            loc = f"{c.get('filepath','?')} — {c.get('name','?')} L{c.get('start_line','?')}"
+            parts.append(f"[{i}] {loc}\n{c.get('text','')[:300]}")
+        return f"Call sites of '{function_name}' ({len(callers)} found):\n\n" + "\n\n".join(parts)
+
+    def _agentic_trace_calls(self, repo: str, symbol_name: str) -> str:
+        """Trace call graph from an entry point — same logic as mcp_server.trace_calls."""
+        visited: set[str] = set()
+        lines: list[str]  = [f"# Call trace from `{symbol_name}`\n"]
+
+        def _walk(name: str, depth: int, prefix: str) -> None:
+            if depth > 3 or name in visited:
+                return
+            visited.add(name)
+            chunks = self._store.find_symbol(name, repo=repo)
+            if not chunks:
+                return
+            c   = chunks[0]
+            loc = f"{c.get('filepath','?')} L{c.get('start_line','?')}"
+            lines.append(f"{prefix}→ {name}()  `{loc}`")
+            for callee in (c.get("calls") or [])[:5]:
+                _walk(callee, depth + 1, prefix + "  ")
+
+        _walk(symbol_name, 0, "")
+        return "\n".join(lines) if len(lines) > 1 else f"Symbol '{symbol_name}' not found in index."
+
+    def _phase_map_agentic(self, repo: str, readme_text: str):
+        """Generator: ReAct exploration loop for Phase 1.
+
+        Yields dict trace events as it runs (forwarded to the UI live-log panel),
+        then yields a final {"type": "result", "data": pipeline_map_dict} when done.
+
+        Falls back to static _phase_map() on parse failure or exhausted rounds.
+        """
+        manifest_chunks = self._manifest_chunks(repo)
+        manifest_text = _token_budget(
+            "\n\n".join(
+                f"── {c['filepath']}\n{c['text'].strip()[:500]}"
+                for c in manifest_chunks
+            ),
+            max_tokens=500,
+        )
+
+        # Seed the transcript with the two highest-signal sources: README + manifests.
+        # The agent decides where to go from here.
+        transcript = f"Repository: {repo}\n\n"
+        if readme_text:
+            transcript += f"README:\n{readme_text}\n\n"
+        if manifest_text.strip():
+            transcript += f"Manifest files (dependencies / entry points):\n{manifest_text}\n\n"
+        transcript += "Begin exploration. Start with list_files(\"\") to see the top-level repo structure.\n"
+
+        max_rounds = 8
+        for round_n in range(max_rounds):
+            raw = self._gen.generate(
+                self._AGENTIC_MAP_SYSTEM, transcript,
+                temperature=0.0, max_tokens=700,
+            )
+
+            # Parse THINK + TOOL or DONE from the LLM's response
+            think_m = _re.search(r'THINK:\s*(.+?)(?:\n|$)', raw, _re.IGNORECASE | _re.DOTALL)
+            tool_m  = _re.search(r'TOOL:\s*(\w+)\(\s*"?([^")\n]*)"?\s*\)', raw, _re.IGNORECASE)
+            done_m  = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
+
+            think_text = (think_m.group(1).strip() if think_m else raw[:120].strip())
+
+            # ── DONE ──────────────────────────────────────────────────────────
+            if done_m:
+                try:
+                    result = _parse_json(done_m.group(1))
+                    if result.get("pipeline_stages"):
+                        yield {"type": "thinking",
+                               "text": f"✓ Done in {round_n + 1} round(s): {think_text}"}
+                        yield {"type": "result", "data": result}
+                        return
+                except Exception:
+                    pass  # malformed JSON — keep going
+
+            # ── TOOL CALL ─────────────────────────────────────────────────────
+            if tool_m:
+                tool_name = tool_m.group(1).lower().replace("-", "_")
+                tool_arg  = tool_m.group(2).strip().strip('"').strip("'")
+
+                if tool_name == "list_files":
+                    tool_result = self._agentic_list_files(repo, tool_arg)
+                    display     = f"list_files(\"{tool_arg}\")"
+                elif tool_name == "read_file":
+                    tool_result = self._agentic_read_file(repo, tool_arg)
+                    display     = f"read_file(\"{tool_arg}\")"
+                elif tool_name == "search_symbol":
+                    tool_result = self._agentic_search_symbol(repo, tool_arg)
+                    display     = f"search_symbol(\"{tool_arg}\")"
+                elif tool_name == "find_callers":
+                    tool_result = self._agentic_find_callers(repo, tool_arg)
+                    display     = f"find_callers(\"{tool_arg}\")"
+                elif tool_name == "trace_calls":
+                    tool_result = self._agentic_trace_calls(repo, tool_arg)
+                    display     = f"trace_calls(\"{tool_arg}\")"
+                else:
+                    tool_result = f"(unknown tool '{tool_name}' — use: list_files, read_file, search_symbol, find_callers, trace_calls)"
+                    display     = tool_name
+
+                # Emit a trace event for the UI live-log panel
+                yield {"type": "react",
+                       "think": think_text,
+                       "tool":  display,
+                       "text":  f"THINK: {think_text} → {display}"}
+
+                # Truncate tool output so the transcript doesn't balloon
+                tool_result = _token_budget(tool_result, max_tokens=400)
+                transcript += (
+                    f"\nTHINK: {think_text}\n"
+                    f"TOOL: {display}\n"
+                    f"RESULT:\n{tool_result}\n"
+                )
+            else:
+                # LLM output couldn't be parsed — nudge it
+                transcript += f"\n[No valid action found in round {round_n + 1}. Output TOOL: or DONE:]\n"
+                yield {"type": "thinking", "text": f"Round {round_n + 1}: retrying parse…"}
+
+        # ── Exhausted rounds — force final output ──────────────────────────────
+        yield {"type": "thinking", "text": "Reached round limit — requesting final output…"}
+        transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
+        raw = self._gen.generate(
+            self._AGENTIC_MAP_SYSTEM, transcript,
+            temperature=0.0, max_tokens=1200,
+        )
+        done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
+        try:
+            result = _parse_json(done_m.group(1) if done_m else raw)
+            if result.get("pipeline_stages"):
+                yield {"type": "result", "data": result}
+                return
+        except Exception:
+            pass
+
+        # Complete fallback: static snapshot Phase 1
+        yield {"type": "thinking", "text": "Agentic loop failed — falling back to static Phase 1"}
+        try:
+            result = self._phase_map(repo, readme_text)
+            yield {"type": "result", "data": result}
+        except Exception as e:
+            yield {"type": "result", "data": {}}
+
+    # ── Phase 1: Map (static fallback) ────────────────────────────────────────
 
     def _phase_map(self, repo: str, readme_text: str) -> dict:
         """
@@ -1130,19 +1399,34 @@ Rules:
                 "trace": {"type": "info", "text": "No README in index"},
             }
 
-        # ── Phase 1: Map ──────────────────────────────────────────────────────
+        # ── Phase 1: Agentic Map (ReAct loop) ────────────────────────────────
+        # The agent explores with list_directory + read_file tools, emitting
+        # trace events for the UI live-log panel as it reasons about the code.
         yield {
             "stage": "mapping", "progress": 0.15,
-            "message": "Mapping pipeline from README + imports…",
+            "message": "Exploring codebase with ReAct agent…",
             "trace": {"type": "thinking",
-                      "text": "Combining stated purpose with actual call graph…"},
+                      "text": "Starting agentic exploration: README → directories → key files…"},
         }
 
-        try:
-            pipeline_map = self._phase_map(repo, readme_text)
-        except Exception as e:
+        pipeline_map: dict = {}
+        react_prog = 0.15
+        for event in self._phase_map_agentic(repo, readme_text):
+            if event.get("type") == "result":
+                pipeline_map = event.get("data", {})
+                break
+            # Forward trace events to the UI; advance progress slightly each round
+            react_prog = min(react_prog + 0.015, 0.24)
+            yield {
+                "stage": "mapping",
+                "progress": react_prog,
+                "message": event.get("text", ""),
+                "trace": event,
+            }
+
+        if not pipeline_map.get("pipeline_stages"):
             yield {"stage": "error", "progress": 1.0,
-                   "error": f"Pipeline mapping failed: {e}"}
+                   "error": "Pipeline mapping failed — no stages found"}
             return
 
         stages = pipeline_map.get("pipeline_stages", [])
