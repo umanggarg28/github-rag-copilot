@@ -543,7 +543,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     const pct   = loadStage ? Math.round(loadStage.progress * 100) : 0;
     const label = loadStage?.message || "Building your guided tour…";
     return (
-      <div className="ec-loading" style={{ flexDirection: "column", alignItems: "stretch", gap: 16, maxWidth: 480 }}>
+      <div className="ec-loading" style={{ flexDirection: "column", alignItems: "stretch", gap: 16, maxWidth: 480, margin: "auto" }}>
         {/* Progress row */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span className="spinner" />
