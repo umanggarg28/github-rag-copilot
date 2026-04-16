@@ -499,6 +499,96 @@ def list_files(repo: str, path: str = "") -> str:
 
 
 @mcp.tool()
+def glob(repo: str, pattern: str) -> str:
+    """
+    List all indexed file paths in a repository that match a glob pattern.
+
+    PREFER THIS OVER list_files when:
+    - You want all files of a type across the whole repo at once ("**/*.py")
+    - You need to understand directory structure without drilling level by level
+    - You want to confirm whether certain file types / directories exist
+
+    PREFER list_files OVER THIS when:
+    - You need file sizes or want to see a single directory in detail
+    - The repo hasn't been indexed yet (glob uses the index, not GitHub API)
+
+    Uses fnmatch so standard glob patterns work:
+      glob("karpathy/micrograd", "**/*.py")   → all Python files
+      glob("karpathy/micrograd", "src/**/*")  → everything under src/
+      glob("karpathy/micrograd", "*.md")      → top-level markdown files
+
+    Args:
+        repo:    'owner/repo' (e.g. 'karpathy/micrograd')
+        pattern: Glob pattern matched against full file paths
+    """
+    import fnmatch
+    if _store is None:
+        return "Store not initialised."
+    chunks = _store.scroll_repo(repo)
+    seen: set[str] = set()
+    paths: list[str] = []
+    for c in chunks:
+        fp = c.get("filepath", "")
+        if fp and fp not in seen:
+            seen.add(fp)
+            paths.append(fp)
+    matched = sorted(p for p in paths if fnmatch.fnmatch(p, pattern))
+    if not matched:
+        return f"No indexed files match '{pattern}' in {repo}."
+    return f"Files matching '{pattern}' in {repo} ({len(matched)}):\n" + "\n".join(matched)
+
+
+@mcp.tool()
+def grep(repo: str, pattern: str) -> str:
+    """
+    Search all indexed source code in a repository for a regex pattern.
+
+    Returns up to 20 matches showing file path, chunk name, and the first
+    matching line — enough to decide which file to read_file() next without
+    reading everything.
+
+    PREFER THIS OVER read_file when:
+    - You need to find WHERE something is defined or used across the whole repo
+    - You're looking for an entry point (grep "def main|if __name__")
+    - You want to find all usages of a function or class name
+
+    PREFER search_symbol OVER THIS when:
+    - You already know the exact function/class name and want its definition
+
+    Args:
+        repo:    'owner/repo' (e.g. 'karpathy/micrograd')
+        pattern: Python regex pattern (case-insensitive). Use | for OR.
+                 Examples: "def main|__main__"  "class.*Model"  "TODO|FIXME"
+    """
+    import re
+    if _store is None:
+        return "Store not initialised."
+    try:
+        rx = re.compile(pattern, re.IGNORECASE)
+    except re.error:
+        return f"Invalid regex: '{pattern}'. Use a valid Python regex."
+
+    chunks  = _store.scroll_repo(repo)
+    results: list[str] = []
+    for c in chunks:
+        text = c.get("text", "")
+        for line in text.splitlines():
+            if rx.search(line):
+                fp   = c.get("filepath", "")
+                name = c.get("name", "")
+                label = f"{fp}  ({name})" if name else fp
+                results.append(f"{label}:\n  {line.strip()}")
+                break  # one match per chunk — keeps results scannable across files
+        if len(results) >= 20:
+            break
+
+    if not results:
+        return f"No matches for '{pattern}' in {repo}."
+    suffix = "\n\n(limit reached — refine pattern to narrow results)" if len(results) >= 20 else ""
+    return f"Matches for '{pattern}' in {repo} ({len(results)}):\n\n" + "\n\n".join(results) + suffix
+
+
+@mcp.tool()
 def note(key: str, value: str) -> str:
     """
     Save a key fact to working memory for this session.
