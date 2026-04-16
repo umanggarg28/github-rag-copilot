@@ -1078,13 +1078,15 @@ Rules:
         print(f"TourAgent.investigate_agentic [{stage_name}] round limit — forcing DONE")
         transcript += (
             "\nROUND LIMIT REACHED. Synthesise what you found into DONE:.\n"
-            "Output ONLY this compact JSON — omit key_functions to keep it short:\n"
-            "DONE: {\"name\":\"...\",\"subtitle\":\"...\",\"insight\":\"...\","
-            "\"naive_rejected\":\"...\",\"gaps\":\"...\"}\n"
+            "Output ONLY this JSON — each value must be 1-2 sentences, no lists:\n"
+            "DONE: {\"name\":\"<technique name>\",\"subtitle\":\"<one phrase>\","
+            "\"insight\":\"<1-2 sentences on the key insight>\","
+            "\"naive_rejected\":\"<1 sentence on simpler alternative that was rejected>\","
+            "\"gaps\":\"<1 sentence on what design rationale is not visible>\"}\n"
         )
         raw = self._gen.generate(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-            temperature=0.0, max_tokens=600,  # 5 short text fields fits easily in 600 tokens
+            temperature=0.0, max_tokens=900,  # 5 × 1-2 sentences; 600 truncates Gemma 4
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
@@ -1095,6 +1097,12 @@ Rules:
             result.setdefault("key_functions", [])
             result.setdefault("naive_rejected","")
             result.setdefault("gaps",          "")
+            # Sanitize: some models copy the placeholder verbatim ("..." or "<text>").
+            # Treat those as empty so the hollow-insight filter can discard them.
+            for field in ("insight", "subtitle", "naive_rejected", "gaps"):
+                v = result.get(field, "")
+                if v in ("...", "<your text>", "<insight>", "<text>", "None"):
+                    result[field] = ""
             return result
         except Exception:
             pass
@@ -1728,7 +1736,7 @@ Rules:
             prog      = base_prog + (i + 1) * stage_step
             gaps_text  = insight.get("gaps", "")
             trace_text = (insight.get("insight") or "")[:120]
-            if gaps_text and gaps_text.lower() != "none":
+            if gaps_text and gaps_text.lower() not in ("none", "...", ""):
                 trace_text += f" | gap: {gaps_text[:60]}"
             yield {
                 "stage": "investigating", "progress": prog,
@@ -1785,7 +1793,7 @@ Rules:
             tour = self._phase_synthesize(repo, pipeline_map, insights)
         except Exception as e:
             yield {"stage": "error", "progress": 1.0,
-                   "error": f"Synthesis failed: {e}"}
+                   "error": str(e)}
             return
 
         # ── Evaluator pass ────────────────────────────────────────────────────

@@ -304,10 +304,11 @@ class GenerationService:
                 base_url="https://api.cerebras.ai/v1",
                 timeout=_TIMEOUT, max_retries=0,
             )
-            self._model      = "llama-3.3-70b"  # Cerebras renamed slug (dash added)
-            # llama3.1-8b: ~8x smaller than 70B, adequate for 1-2 sentence enrichment.
-            self._fast_model = "llama-3.1-8b"
-            print("Generation: using Cerebras (llama-3.3-70b) — fast free tier")
+            # gpt-oss-120b: OpenAI's open-source 120B — best quality on Cerebras free tier.
+            # llama3.3-70b was removed from Cerebras public inference (404 as of Apr 2026).
+            self._model      = "gpt-oss-120b"
+            self._fast_model = "llama3.1-8b"   # 8B still available; adequate for short calls
+            print("Generation: using Cerebras (gpt-oss-120b) — free tier")
             return "cerebras"
         elif settings.anthropic_api_key:
             import anthropic
@@ -391,9 +392,10 @@ class GenerationService:
         if self.provider in ("gemini", "gemma4") and settings.cerebras_api_key:
             from openai import OpenAI
             self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1", timeout=30, max_retries=0)
-            self._model   = "llama-3.3-70b"  # Cerebras renamed slug: llama3.3-70b → llama-3.3-70b
+            # gpt-oss-120b: llama3.3-70b removed from Cerebras public inference Apr 2026
+            self._model   = "gpt-oss-120b"
             self.provider = "cerebras"
-            print("Generation: switched to Cerebras (llama-3.3-70b)")
+            print("Generation: switched to Cerebras (gpt-oss-120b)")
             return True
         if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
             from openai import OpenAI
