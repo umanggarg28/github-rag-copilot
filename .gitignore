@@ -8,6 +8,7 @@ repos/          # cloned repos (temp)
 repo_maps/      # runtime-generated repo maps (rebuilt from Qdrant on demand)
 diagrams/       # disk-cached diagrams and tours (regenerated on demand)
 readmes/        # disk-cached generated READMEs (regenerated on demand)
+backend/tour_feedback/  # runtime feedback corrections (persisted per-repo, not source)
 node_modules/
 dist/
 build/
