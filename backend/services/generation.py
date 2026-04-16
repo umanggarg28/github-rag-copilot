@@ -36,7 +36,7 @@ from typing import Iterator
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from backend.config import settings
 
-# DeepSeek-V3 via OpenRouter free tier — strong coding model, often beats GPT-4 on code tasks.
+# Qwen3-Coder via OpenRouter free tier — strong coding model from Alibaba (Apache 2.0 licence).
 # The `:free` suffix means OpenRouter serves it at no cost (rate limited but generous).
 _OPENROUTER_MODEL = "qwen/qwen3-coder:free"
 
@@ -292,8 +292,10 @@ class GenerationService:
                 base_url="https://api.sambanova.ai/v1",
                 timeout=_TIMEOUT, max_retries=0,
             )
-            # Llama 3.1 405B — largest model on any free tier, best quality after Gemini.
-            self._model      = "Meta-Llama-3.1-405B-Instruct"
+            # DeepSeek-V3.1 — best open-source model on SambaNova free tier (200K tok/day).
+            # Meta-Llama-3.1-405B-Instruct was deprecated Apr 2026; DeepSeek-V3.1 is the
+            # replacement and outperforms it on coding + reasoning benchmarks.
+            self._model      = "DeepSeek-V3.1"
             self._fast_model = self._model   # no lighter SambaNova tier available
             print("Generation: using SambaNova (DeepSeek-V3.1) — free tier")
             return "sambanova"
@@ -691,7 +693,7 @@ class GenerationService:
         "gemini":     65536,
         "gemma4":     32768,
         "cerebras":   16384,
-        "sambanova":  4096,   # Llama 3.1 405B free tier
+        "sambanova":  4096,   # DeepSeek-V3.1 free tier — conservative cap; fits Phase 3 synthesis (max_tokens=3000)
         "openrouter": 8192,   # conservative; varies by routed model
         "mistral":    32768,
         "groq":       32768,

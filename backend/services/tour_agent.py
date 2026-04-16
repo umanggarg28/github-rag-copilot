@@ -451,7 +451,7 @@ class TourAgent:
         imported_names: set[str] = set()
         for c in primary_chunks:
             for imp in c.get("imports", []):
-                # "from retrieval.store import X" → "store" as a keyword
+                # "from some.module import X" → extract module name components as keywords
                 parts = imp.replace("from ", "").replace("import ", "").split(".")
                 imported_names.update(p.strip() for p in parts if len(p) > 3)
 
@@ -486,9 +486,8 @@ class TourAgent:
         Group files by directory for Phase 1's structural overview.
 
         A flat list of 80 files gives no hint about the repo's layer architecture.
-        Grouped by directory, the LLM can immediately see "ingestion/ holds the
-        data intake logic, retrieval/ holds search, services/ holds orchestration"
-        — the same kind of structural signal that claude-code's get_architecture
+        Grouped by directory, the LLM can see which directories group related
+        concerns — the same structural signal that claude-code's get_architecture
         and list_directory tools provide.
         """
         from collections import defaultdict
@@ -571,24 +570,40 @@ class TourAgent:
         "FORMAT — output exactly two lines per turn:\n"
         "  THINK: [one sentence: what you learned and what to investigate next]\n"
         "  TOOL: tool_name(\"argument\")\n\n"
-        "  OR when you have covered ALL major directories and have 5-8 decisions:\n"
-        "  THINK: [confirm you have read files from every major directory]\n"
-        "  DONE: {\"entry_file\":\"...\",\"readme_summary\":\"...\","
+        "  OR when you have satisfied ALL five signals below:\n"
+        "  THINK: [for each signal, state what you found — or 'not found yet' if still missing]\n"
+        "  DONE: {\"entry_file\":\"...\",\"readme_summary\":\"...\",\"gaps\":\"...\","
         "\"pipeline_stages\":[{\"name\":\"...\",\"file\":\"...\",\"key_aspect\":\"...\"}]}\n\n"
-        "EXPLORATION STRATEGY — follow this order strictly:\n"
-        "  1. list_files(\"\") — see ALL top-level dirs, write down every directory name\n"
-        "  2. For EACH directory you found: read_file() at least one substantive source file\n"
-        "     (skip empty dirs, test dirs, and generated dirs like dist/ or __pycache__/)\n"
-        "  3. search_symbol() / find_callers() to trace how the interesting pieces connect\n"
-        "  4. DONE only after you have read at least one file from EVERY major directory\n"
-        "     You MUST NOT call DONE after seeing only 1-2 directories — keep exploring.\n\n"
+        "DONE SIGNALS — you must confirm all five before calling DONE:\n"
+        "  ① Entry point — which file/function starts the core execution path?\n"
+        "  ② Primary technique — the non-obvious algorithmic choice that defines what this system does\n"
+        "     (not a framework choice, not a config — the decision where a simpler path was rejected)\n"
+        "  ③ Key dependencies — from the manifest, which non-trivial libraries were chosen?\n"
+        "     Each non-trivial dependency = a design decision\n"
+        "  ④ Directory breadth — at least one file READ (not just listed) from every non-trivial\n"
+        "     top-level directory. Listing a directory without reading a file inside it does NOT count.\n"
+        "  ⑤ Gaps — what can the code NOT tell you? (rationale, why a library was chosen over another,\n"
+        "     design decisions that live only in commit history or the author's head)\n"
+        "     Write these in the 'gaps' field of DONE. 'None' is almost never the right answer.\n\n"
+        "EXPLORATION STRATEGY — follow this order:\n"
+        "  1. list_files(\"\") — identify ALL top-level directories before reading anything\n"
+        "  2. For EACH non-trivial top-level directory: list_files(that_dir) to see what's inside\n"
+        "     If it has subdirectories, list those too before reading\n"
+        "  3. Read the manifest file (package.json / Cargo.toml / pyproject.toml / go.mod / etc.)\n"
+        "     — this is the highest-signal file: dependencies reveal the tech choices directly\n"
+        "  4. Read one substantive source file from each directory you listed in step 2\n"
+        "     If a directory has many files, read 2 of the most substantive ones\n"
+        "  5. Use search_symbol() / find_callers() to trace connections across components\n"
+        "  6. Check all five DONE SIGNALS — if any are missing, keep reading\n\n"
+        "SKIP — never contain interesting decisions:\n"
+        "  test, tests, __pycache__, node_modules, dist, build, generated, docs, examples\n\n"
         "DIVERSITY RULE (critical):\n"
         "  Each stage in pipeline_stages MUST come from a DIFFERENT file.\n"
-        "  If you find 2+ interesting things in one file, pick only the most important —\n"
-        "  then keep exploring OTHER directories before calling DONE.\n\n"
+        "  If you find multiple interesting things in one directory, pick the best one per file —\n"
+        "  then keep reading files from other directories.\n\n"
         "STAGE NAME RULES (critical — every name is checked):\n"
         "  GOOD: names a technique, algorithm, or tradeoff (e.g. 'Lazy Evaluation Cache',\n"
-        "        'Hybrid Sparse-Dense Retrieval', 'Progressive Context Expansion')\n"
+        "        'Incremental Recomputation', 'Progressive Context Expansion')\n"
         "  BAD: any filename, class name, function name, or identifier with underscores\n"
         "  5-8 stages — cover the whole system, skip only pure infrastructure (config, health)\n"
         "  key_aspect: what simpler approach this replaces and the concrete cost of that\n\n"
@@ -969,7 +984,7 @@ Rules:
         "QUALITY RULES (enforced — the output is reviewed by an expert):\n"
         "  name: 3-5 words naming the TECHNIQUE, never a filename or class name\n"
         "  subtitle: the SPECIFIC failure/degradation if the simpler approach is used instead\n"
-        "    BAD: 'Improves performance'  GOOD: 'Sequential embedding halves throughput on 1000-file repos'\n"
+        "    BAD: 'Improves performance'  GOOD: 'Sequential writes reduce throughput 10x under concurrent load'\n"
         "  insight: 2-3 sentences — HOW it works (naming real functions) + WHAT surprises a reader\n"
         "  key_functions: VERBATIM names from the code — copy-paste from RESULT blocks\n"
         "  naive_rejected: name the simpler approach + its concrete failure mode\n"
@@ -1437,6 +1452,9 @@ Include EVERY concept id. Use "action": "keep" for concepts that pass all tests.
         stages       = pipeline_map.get("pipeline_stages", [])
         entry        = pipeline_map.get("entry_file", "")
         readme_summ  = pipeline_map.get("readme_summary", "")
+        # gaps = what Phase 1 MAP could NOT determine from code alone (rationale, library choices).
+        # Surfaced in Phase 3 so the tour's 'ask' fields can point readers toward these unknowns.
+        map_gaps     = pipeline_map.get("gaps", "")
 
         stages_text = "\n".join(
             f"  {i+1}. {s['name']} — {s['file']}: {s.get('key_aspect','')}"
@@ -1456,11 +1474,15 @@ Include EVERY concept id. Use "action": "keep" for concepts that pass all tests.
             f"What the README says this repo does:\n{readme_summ}\n\n"
             if readme_summ else ""
         )
+        gaps_section = (
+            f"What the code alone could NOT answer (use these in 'ask' fields):\n{map_gaps}\n\n"
+            if map_gaps else ""
+        )
 
         prompt = f"""Repository: {repo}
 Entry file: {entry}
 
-{readme_section}Pipeline traced in order:
+{readme_section}{gaps_section}Pipeline traced in order:
 {stages_text}
 
 Per-stage findings (use these verbatim — do NOT paraphrase):
