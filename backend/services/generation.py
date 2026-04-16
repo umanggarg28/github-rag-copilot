@@ -304,11 +304,11 @@ class GenerationService:
                 base_url="https://api.cerebras.ai/v1",
                 timeout=_TIMEOUT, max_retries=0,
             )
-            # gpt-oss-120b: OpenAI's open-source 120B — best quality on Cerebras free tier.
-            # llama3.3-70b was removed from Cerebras public inference (404 as of Apr 2026).
-            self._model      = "gpt-oss-120b"
-            self._fast_model = "llama3.1-8b"   # 8B still available; adequate for short calls
-            print("Generation: using Cerebras (gpt-oss-120b) — free tier")
+            # llama3.1-8b: only confirmed-available model on Cerebras free tier (Apr 2026).
+            # llama3.3-70b and gpt-oss-120b both return 404 on the free tier.
+            self._model      = "llama3.1-8b"
+            self._fast_model = "llama3.1-8b"
+            print("Generation: using Cerebras (llama3.1-8b) — free tier")
             return "cerebras"
         elif settings.anthropic_api_key:
             import anthropic
@@ -369,19 +369,14 @@ class GenerationService:
         failed = self.provider
         print(f"Generation: {failed} rate-limited — trying next provider")
 
-        # Quality-priority cascade order.
+        # Cascade order — Google tier first (same key), then SambaNova, then others.
+        # Gemma 4 is placed before SambaNova because it shares the Gemini API key:
+        # when Gemini 2.5 Flash exhausts, Gemma 4 31B is a free same-key extension.
+        # Only when both Google models are exhausted do we spend SambaNova quota.
         # _all must match this order exactly — the _all[:_all.index(X)] pattern
         # means "allow any provider that comes before X in _all" to fall through to X.
-        _all = ("gemini", "sambanova", "gemma4", "cerebras", "anthropic", "openrouter", "mistral", "groq")
+        _all = ("gemini", "gemma4", "sambanova", "cerebras", "anthropic", "openrouter", "mistral", "groq")
 
-        # SambaNova Llama 3.1 405B — 405B params, best quality after Gemini (200K tok/day free)
-        if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
-            from openai import OpenAI
-            self._client  = OpenAI(api_key=settings.sambanova_api_key, base_url="https://api.sambanova.ai/v1", timeout=30, max_retries=0)
-            self._model   = "Meta-Llama-3.1-405B-Instruct"
-            self.provider = "sambanova"
-            print("Generation: switched to SambaNova (Llama 3.1 405B)")
-            return True
         # Gemma 4 31B — same GEMINI_API_KEY, separate rate-limit bucket from Gemini 2.5 Flash
         if self.provider in _all[:_all.index("gemma4")] and settings.gemini_api_key:
             from openai import OpenAI
@@ -395,13 +390,22 @@ class GenerationService:
             self.provider    = "gemma4"
             print("Generation: switched to Gemma 4 31B (same Gemini key)")
             return True
+        # SambaNova Llama 3.1 405B — 405B params, best quality after Google tier (200K tok/day)
+        if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
+            from openai import OpenAI
+            self._client  = OpenAI(api_key=settings.sambanova_api_key, base_url="https://api.sambanova.ai/v1", timeout=30, max_retries=0)
+            self._model   = "Meta-Llama-3.1-405B-Instruct"
+            self.provider = "sambanova"
+            print("Generation: switched to SambaNova (Llama 3.1 405B)")
+            return True
         if self.provider in _all[:_all.index("cerebras")] and settings.cerebras_api_key:
             from openai import OpenAI
             self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1", timeout=30, max_retries=0)
-            # gpt-oss-120b: llama3.3-70b removed from Cerebras public inference Apr 2026
-            self._model   = "gpt-oss-120b"
+            # llama3.1-8b: only confirmed-available model on Cerebras free tier as of Apr 2026
+            # (llama3.3-70b and gpt-oss-120b both return 404 on free tier)
+            self._model   = "llama3.1-8b"
             self.provider = "cerebras"
-            print("Generation: switched to Cerebras (gpt-oss-120b)")
+            print("Generation: switched to Cerebras (llama3.1-8b)")
             return True
         if self.provider in _all[:_all.index("anthropic")] and settings.anthropic_api_key:
             import anthropic

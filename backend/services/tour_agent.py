@@ -1078,15 +1078,16 @@ Rules:
         print(f"TourAgent.investigate_agentic [{stage_name}] round limit — forcing DONE")
         transcript += (
             "\nROUND LIMIT REACHED. Synthesise what you found into DONE:.\n"
-            "Output ONLY this JSON — each value must be 1-2 sentences, no lists:\n"
+            "Output ONLY this JSON. STRICT LIMITS: name ≤40 chars, subtitle ≤60 chars, "
+            "insight ≤180 chars, naive_rejected ≤120 chars, gaps ≤120 chars. No lists.\n"
             "DONE: {\"name\":\"<technique name>\",\"subtitle\":\"<one phrase>\","
-            "\"insight\":\"<1-2 sentences on the key insight>\","
-            "\"naive_rejected\":\"<1 sentence on simpler alternative that was rejected>\","
-            "\"gaps\":\"<1 sentence on what design rationale is not visible>\"}\n"
+            "\"insight\":\"<what makes this design interesting>\","
+            "\"naive_rejected\":\"<simpler approach that was rejected>\","
+            "\"gaps\":\"<what is not visible in the code>\"}\n"
         )
         raw = self._gen.generate(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-            temperature=0.0, max_tokens=900,  # 5 × 1-2 sentences; 600 truncates Gemma 4
+            temperature=0.0, max_tokens=400,  # char limits above = ~520 chars total ≈ 130 tokens
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
