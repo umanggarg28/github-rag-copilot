@@ -363,9 +363,23 @@ class GenerationService:
         failed = self.provider
         print(f"Generation: {failed} rate-limited — trying next provider")
 
-        _all = ("gemini", "sambanova", "cerebras", "anthropic", "openrouter", "mistral", "groq")
+        _all = ("gemini", "gemma4", "sambanova", "cerebras", "anthropic", "openrouter", "mistral", "groq")
 
-        if self.provider == "gemini" and settings.cerebras_api_key:
+        # Gemma 4 31B — same GEMINI_API_KEY, same endpoint, more generous free limits.
+        # Falls back to this before trying other providers when Gemini 2.5 Flash is exhausted.
+        if self.provider == "gemini" and settings.gemini_api_key:
+            from openai import OpenAI
+            self._client  = OpenAI(
+                api_key=settings.gemini_api_key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            )
+            self._model   = "gemma-4-31b-it"
+            self._fast_model = "gemma-4-31b-it"
+            self.provider = "gemma4"
+            print("Generation: Gemini 2.5 Flash exhausted — switched to Gemma 4 31B (same key)")
+            return True
+
+        if self.provider in ("gemini", "gemma4") and settings.cerebras_api_key:
             from openai import OpenAI
             self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1")
             self._model   = "llama3.3-70b"
@@ -491,7 +505,7 @@ class GenerationService:
         if exhausted_until.get("gemini", 0) > now:
             # Gemini still rate-limited — stay on current fallback provider
             return
-        if self.provider != "gemini" and settings.gemini_api_key:
+        if self.provider not in ("gemini", "gemma4") and settings.gemini_api_key:
             from openai import OpenAI
             self._client  = OpenAI(
                 api_key=settings.gemini_api_key,
@@ -536,7 +550,7 @@ class GenerationService:
         params   = {"temperature": temperature, "max_tokens": max_tokens,
                     "json_mode": json_mode, "model": model}
         try:
-            if self.provider in ("cerebras", "groq", "gemini", "openrouter", "sambanova", "mistral"):
+            if self.provider in ("cerebras", "groq", "gemini", "gemma4", "openrouter", "sambanova", "mistral"):
                 return self._groq_complete(system, messages, params)
             else:
                 return self._anthropic_complete(system, messages, params)
@@ -565,7 +579,7 @@ class GenerationService:
         messages = _build_messages(question, context, history)
 
         try:
-            if self.provider in ("cerebras", "groq", "gemini", "openrouter"):
+            if self.provider in ("cerebras", "groq", "gemini", "gemma4", "openrouter", "sambanova", "mistral"):
                 return self._groq_complete(system, messages, params)
             else:
                 return self._anthropic_complete(system, messages, params)
@@ -598,7 +612,7 @@ class GenerationService:
         messages = _build_messages(question, context, history)
 
         try:
-            if self.provider in ("cerebras", "groq", "gemini", "openrouter"):
+            if self.provider in ("cerebras", "groq", "gemini", "gemma4", "openrouter", "sambanova", "mistral"):
                 raw = self._groq_stream(system, messages, params)
             else:
                 raw = self._anthropic_stream(system, messages, params)
@@ -623,6 +637,7 @@ class GenerationService:
     # the current provider allows.
     _MAX_OUTPUT: dict[str, int] = {
         "gemini":     65536,
+        "gemma4":     32768,
         "cerebras":   16384,
         "sambanova":  4096,   # Llama 3.1 405B free tier
         "openrouter": 8192,   # conservative; varies by routed model
@@ -645,7 +660,7 @@ class GenerationService:
         # Gemini's OpenAI-compat endpoint does NOT reliably honour it — when set, Gemini
         # truncates the output at ~100 tokens regardless of max_tokens (silent failure).
         # For Gemini we rely solely on the system prompt instruction ("Return ONLY JSON").
-        if params.get("json_mode") and self.provider != "gemini":
+        if params.get("json_mode") and self.provider not in ("gemini", "gemma4"):
             kwargs["response_format"] = {"type": "json_object"}
         response = self._client.chat.completions.create(**kwargs)
         choice = response.choices[0]
