@@ -1070,11 +1070,21 @@ Rules:
                 transcript += f"\n[No valid action in round {round_n + 1}. Output TOOL: or DONE:]\n"
 
         # ── Exhausted rounds — force final output ──────────────────────────────
+        # key_functions is omitted here — it causes the JSON to balloon to 8000+
+        # chars (verbatim function signatures), which truncates the output and
+        # breaks the parse. The core insight fields (name/subtitle/insight/
+        # naive_rejected/gaps) fit in ~400 tokens. key_functions defaults to []
+        # via result.setdefault below, so Phase 3 still gets a valid dict.
         print(f"TourAgent.investigate_agentic [{stage_name}] round limit — forcing DONE")
-        transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
+        transcript += (
+            "\nROUND LIMIT REACHED. Synthesise what you found into DONE:.\n"
+            "Output ONLY this compact JSON — omit key_functions to keep it short:\n"
+            "DONE: {\"name\":\"...\",\"subtitle\":\"...\",\"insight\":\"...\","
+            "\"naive_rejected\":\"...\",\"gaps\":\"...\"}\n"
+        )
         raw = self._gen.generate(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-            temperature=0.0, max_tokens=3000,  # logs: Gemma 4 outputs 8000-8600 chars of JSON; 3000 tok gives headroom
+            temperature=0.0, max_tokens=600,  # 5 short text fields fits easily in 600 tokens
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
