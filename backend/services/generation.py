@@ -295,7 +295,7 @@ class GenerationService:
             # Llama 3.1 405B — largest model on any free tier, best quality after Gemini.
             self._model      = "Meta-Llama-3.1-405B-Instruct"
             self._fast_model = self._model   # no lighter SambaNova tier available
-            print("Generation: using SambaNova (Llama 3.1 405B) — free tier")
+            print("Generation: using SambaNova (DeepSeek-V3.1) — free tier")
             return "sambanova"
         elif settings.cerebras_api_key:
             from openai import OpenAI
@@ -396,13 +396,13 @@ class GenerationService:
             return True
         if getattr(self, '_skip_thinking', False) and self.provider in _all[:_all.index("gemma4")] and settings.gemini_api_key:
             print("Generation: skipping Gemma 4 (thinking model) — falling through to SambaNova")
-        # SambaNova Llama 3.1 405B — 405B params, best quality after Google tier (200K tok/day)
+        # SambaNova DeepSeek-V3.1 — excellent at code, best quality after Google tier (200K tok/day)
         if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
             from openai import OpenAI
             self._client  = OpenAI(api_key=settings.sambanova_api_key, base_url="https://api.sambanova.ai/v1", timeout=30, max_retries=0)
-            self._model   = "Meta-Llama-3.1-405B-Instruct"
+            self._model   = "DeepSeek-V3.1"
             self.provider = "sambanova"
-            print("Generation: switched to SambaNova (Llama 3.1 405B)")
+            print("Generation: switched to SambaNova (DeepSeek-V3.1)")
             return True
         if self.provider in _all[:_all.index("cerebras")] and settings.cerebras_api_key:
             from openai import OpenAI
