@@ -469,6 +469,47 @@ class GenerationService:
         finally:
             self._skip_thinking = False
 
+    def generate_synthesis(self, system: str, prompt: str, **kwargs) -> str:
+        """
+        Like generate_non_thinking() but also resets Gemini's exhaustion window
+        before generating.
+
+        WHY THIS IS NEEDED
+        ──────────────────
+        Phase 1 MAP runs up to 16 ReAct rounds. Phase 2 INVESTIGATE runs 3 parallel
+        workers × 4 rounds = up to 12 more calls. Together they can exhaust Gemini's
+        free-tier RPM quota mid-tour, triggering a 60-second exhaustion window in
+        _try_fallback(). By the time Phase 3 synthesis runs, that window is still
+        active — so generate_non_thinking() falls through to SambaNova or, worse,
+        Cerebras llama3.1-8b. An 8B model writing 3000-token synthesis produces
+        shallow, low-quality concept cards.
+
+        The 60-second window exists to prevent 12 PARALLEL ReAct calls from all
+        hammering Gemini simultaneously. Synthesis is a single sequential call —
+        that protection purpose doesn't apply. Clearing the Gemini slot gives
+        synthesis the strongest available model without affecting the parallel-call
+        safety mechanism.
+
+        Provider priority for synthesis (in order):
+          1. Gemini 2.5 Flash  — primary, best quality
+          2. SambaNova DeepSeek-V3.1 — strong fallback (200K tok/day free)
+          3. Everything else  — last resort only
+        """
+        # Clear Gemini's exhaustion window so _reset_to_primary() inside generate()
+        # restores Gemini rather than staying on the weaker fallback from Phase 1/2.
+        # We also clear gemma4 so that if Gemini fails, the fallback chain goes to
+        # SambaNova (via the _skip_thinking bypass) rather than looping back to gemma4.
+        if hasattr(self, '_exhausted_until'):
+            self._exhausted_until.pop('gemini', None)
+            self._exhausted_until.pop('gemma4', None)
+
+        # Skip thinking models — Gemma 4's THINK block eats the 3000-token budget.
+        self._skip_thinking = True
+        try:
+            return self.generate(system, prompt, **kwargs)
+        finally:
+            self._skip_thinking = False
+
     def grade_answer(self, question: str, context: str, answer: str, query_type: str = "technical") -> dict:
         """
         Model-based grading: ask the LLM to evaluate the answer against the sources.

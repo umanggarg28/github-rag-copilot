@@ -1558,11 +1558,13 @@ Rules:
 - description for id=0: trace the full data flow — what enters (raw input), which stage file handles
   each transformation, what the user receives at the end. Name 3-4 key files in the flow.
 """
-        # Phase 3 synthesis is a 3000-token JSON call. Gemma 4 always times out on it
-        # (THINK block + 3000 token budget = ~2 min wall time). Use generate_non_thinking()
-        # so Gemma 4 is bypassed in the fallback chain and SambaNova handles synthesis.
-        raw = self._gen.generate_non_thinking(_SYNTHESIZE_SYSTEM, prompt,
-                                              temperature=0.0, json_mode=True, max_tokens=3000)
+        # Phase 3 synthesis must always use the strongest available model.
+        # generate_synthesis() clears Gemini's exhaustion window (set during Phase 1/2's
+        # high-volume ReAct calls) and skips Gemma 4 (whose THINK block eats the token
+        # budget). This ensures synthesis always gets Gemini 2.5 Flash or DeepSeek-V3.1,
+        # never the Cerebras 8B model that would otherwise receive it after quota is spent.
+        raw = self._gen.generate_synthesis(_SYNTHESIZE_SYSTEM, prompt,
+                                           temperature=0.0, json_mode=True, max_tokens=3000)
         try:
             tour = _parse_json(raw)
         except Exception as e:
