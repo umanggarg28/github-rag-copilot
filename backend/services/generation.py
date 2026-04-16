@@ -853,6 +853,10 @@ def _is_exhausted(e: Exception) -> bool:
         # provider rather than surfacing the error to the user. Happens when a
         # free-tier model is removed or renamed (e.g. Cerebras model slug changes).
         "404", "model_not_found", "does not exist",
+        # 500 internal server error — transient server-side failure, not a caller bug.
+        # Gemini returns this as {'code': 500, 'status': 'INTERNAL'} during overload.
+        # Fall through to the next provider rather than crashing the tour.
+        "500", "internal error", "internal_error",
     ))
 
 
