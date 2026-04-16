@@ -437,6 +437,29 @@ class GenerationService:
         print(f"Generation: all providers exhausted — no fallback available")
         return False
 
+    # Providers whose architecture emits a THINK/reasoning block before the answer.
+    # These are incompatible with compact-JSON tasks (forced DONE, short synthesis)
+    # because the thinking block consumes the entire token budget before the JSON starts.
+    _THINKING_PROVIDERS = frozenset({"gemma4"})
+
+    def skip_thinking_model(self) -> bool:
+        """
+        If the current provider is a thinking model (emits THINK blocks unconditionally),
+        switch to the next provider in the cascade.
+
+        Call this before any task that requires short, structured output — the THINK block
+        will consume the entire token budget and truncate the actual JSON response.
+
+        Returns True if a switch was made, False if provider was already non-thinking.
+        """
+        if self.provider not in self._THINKING_PROVIDERS:
+            return False
+        print(f"Generation: skipping {self.provider} (thinking model — incompatible with compact output)")
+        switched = self._try_fallback()
+        if not switched:
+            print("Generation: no non-thinking fallback available — proceeding with thinking model")
+        return switched
+
     def grade_answer(self, question: str, context: str, answer: str, query_type: str = "technical") -> dict:
         """
         Model-based grading: ask the LLM to evaluate the answer against the sources.
