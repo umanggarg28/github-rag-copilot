@@ -46,7 +46,7 @@ def _openrouter_client(api_key: str):
     return OpenAI(
         api_key=api_key,
         base_url="https://openrouter.ai/api/v1",
-        timeout=45,   # OpenRouter free tier sometimes queues indefinitely — cap it
+        timeout=45, max_retries=0,
         default_headers={
             "HTTP-Referer": "http://localhost:3000",
             "X-Title": "Cartographer",
@@ -276,7 +276,7 @@ class GenerationService:
             self._client = OpenAI(
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                timeout=_TIMEOUT,
+                timeout=_TIMEOUT, max_retries=0,
             )
             self._model      = "gemini-2.5-flash"
             # gemini-2.0-flash-lite: ~4x faster and lighter than 2.5-flash.
@@ -290,7 +290,7 @@ class GenerationService:
             self._client = OpenAI(
                 api_key=settings.sambanova_api_key,
                 base_url="https://api.sambanova.ai/v1",
-                timeout=_TIMEOUT,
+                timeout=_TIMEOUT, max_retries=0,
             )
             # Llama 3.1 405B — largest model on any free tier, best quality after Gemini.
             self._model      = "Meta-Llama-3.1-405B-Instruct"
@@ -302,7 +302,7 @@ class GenerationService:
             self._client = OpenAI(
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
-                timeout=_TIMEOUT,
+                timeout=_TIMEOUT, max_retries=0,
             )
             self._model      = "llama3.3-70b"
             # llama3.1-8b: ~8x smaller than 70B, adequate for 1-2 sentence enrichment.
@@ -311,7 +311,7 @@ class GenerationService:
             return "cerebras"
         elif settings.anthropic_api_key:
             import anthropic
-            self._client     = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+            self._client     = anthropic.Anthropic(api_key=settings.anthropic_api_key, max_retries=0)
             self._model      = "claude-haiku-4-5-20251001"
             self._fast_model = self._model   # haiku is already the fast Anthropic tier
             print(f"Generation: using Anthropic ({self._model})")
@@ -327,7 +327,7 @@ class GenerationService:
             self._client = OpenAI(
                 api_key=settings.mistral_api_key,
                 base_url="https://api.mistral.ai/v1",
-                timeout=_TIMEOUT,
+                timeout=_TIMEOUT, max_retries=0,
             )
             # mistral-small-latest: free tier, 1B tok/month, strong at structured output.
             self._model      = "mistral-small-latest"
@@ -377,7 +377,7 @@ class GenerationService:
             self._client  = OpenAI(
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                timeout=90,  # Gemma 4 31B is a large model — slow to stream long outputs
+                timeout=90, max_retries=0,  # Gemma 4 31B is slow; no SDK retries
             )
             self._model   = "gemma-4-31b-it"
             self._fast_model = "gemma-4-31b-it"
@@ -387,21 +387,21 @@ class GenerationService:
 
         if self.provider in ("gemini", "gemma4") and settings.cerebras_api_key:
             from openai import OpenAI
-            self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1", timeout=30)
+            self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1", timeout=30, max_retries=0)
             self._model   = "llama3.3-70b"
             self.provider = "cerebras"
             print("Generation: switched to Cerebras (llama3.3-70b)")
             return True
         if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
             from openai import OpenAI
-            self._client  = OpenAI(api_key=settings.sambanova_api_key, base_url="https://api.sambanova.ai/v1", timeout=30)
+            self._client  = OpenAI(api_key=settings.sambanova_api_key, base_url="https://api.sambanova.ai/v1", timeout=30, max_retries=0)
             self._model   = "Meta-Llama-3.1-405B-Instruct"
             self.provider = "sambanova"
             print("Generation: switched to SambaNova (Llama 3.1 405B)")
             return True
         if self.provider in _all[:_all.index("anthropic")] and settings.anthropic_api_key:
             import anthropic
-            self._client  = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+            self._client  = anthropic.Anthropic(api_key=settings.anthropic_api_key, max_retries=0)
             self._model   = "claude-haiku-4-5-20251001"
             self.provider = "anthropic"
             print("Generation: switched to Anthropic (claude-haiku-4-5)")
@@ -414,7 +414,7 @@ class GenerationService:
             return True
         if self.provider in _all[:_all.index("mistral")] and settings.mistral_api_key:
             from openai import OpenAI
-            self._client  = OpenAI(api_key=settings.mistral_api_key, base_url="https://api.mistral.ai/v1", timeout=30)
+            self._client  = OpenAI(api_key=settings.mistral_api_key, base_url="https://api.mistral.ai/v1", timeout=30, max_retries=0)
             self._model   = "mistral-small-latest"
             self.provider = "mistral"
             print("Generation: switched to Mistral (mistral-small-latest)")
@@ -516,7 +516,7 @@ class GenerationService:
             self._client  = OpenAI(
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                timeout=30,
+                timeout=30, max_retries=0,
             )
             self._model   = "gemini-2.5-flash"
             self.provider = "gemini"
@@ -755,6 +755,10 @@ def _is_exhausted(e: Exception) -> bool:
     return any(kw in msg for kw in (
         "credit", "billing", "quota", "rate_limit", "rate limit",
         "resource_exhausted", "daily limit", "429", "no content from model",
+        # Timeouts mean the provider is overloaded — try the next one rather than
+        # surfacing a confusing error. Confirmed from logs: Gemma 4 times out on
+        # Phase 3 synthesis (3000 tokens) while SDK retries eat 3+ minutes.
+        "timed out", "timeout", "read timeout",
         # 404 model-not-found: treat as exhausted so we fall through to the next
         # provider rather than surfacing the error to the user. Happens when a
         # free-tier model is removed or renamed (e.g. Cerebras model slug changes).

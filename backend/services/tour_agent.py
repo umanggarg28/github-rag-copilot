@@ -1074,7 +1074,7 @@ Rules:
         transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
         raw = self._gen.generate(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-            temperature=0.0, max_tokens=1500,  # logs showed Gemma 4 outputs 4866-8344 chars of JSON at 600
+            temperature=0.0, max_tokens=3000,  # logs: Gemma 4 outputs 8000-8600 chars of JSON; 3000 tok gives headroom
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
