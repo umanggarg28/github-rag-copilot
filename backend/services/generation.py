@@ -759,6 +759,8 @@ def _is_exhausted(e: Exception) -> bool:
         # surfacing a confusing error. Confirmed from logs: Gemma 4 times out on
         # Phase 3 synthesis (3000 tokens) while SDK retries eat 3+ minutes.
         "timed out", "timeout", "read timeout",
+        # 503 high demand / unavailable — treat same as rate limit, try next provider
+        "503", "unavailable", "high demand", "overloaded",
         # 404 model-not-found: treat as exhausted so we fall through to the next
         # provider rather than surfacing the error to the user. Happens when a
         # free-tier model is removed or renamed (e.g. Cerebras model slug changes).
