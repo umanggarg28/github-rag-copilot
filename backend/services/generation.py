@@ -270,11 +270,13 @@ class GenerationService:
 
         Priority: Gemini → Cerebras → Anthropic haiku → OpenRouter → Groq
         """
+        _TIMEOUT = 30  # seconds — prevents any provider from hanging indefinitely
         if settings.gemini_api_key:
             from openai import OpenAI
             self._client = OpenAI(
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                timeout=_TIMEOUT,
             )
             self._model      = "gemini-2.5-flash"
             # gemini-2.0-flash-lite: ~4x faster and lighter than 2.5-flash.
@@ -288,6 +290,7 @@ class GenerationService:
             self._client = OpenAI(
                 api_key=settings.sambanova_api_key,
                 base_url="https://api.sambanova.ai/v1",
+                timeout=_TIMEOUT,
             )
             # Llama 3.1 405B — largest model on any free tier, best quality after Gemini.
             self._model      = "Meta-Llama-3.1-405B-Instruct"
@@ -299,6 +302,7 @@ class GenerationService:
             self._client = OpenAI(
                 api_key=settings.cerebras_api_key,
                 base_url="https://api.cerebras.ai/v1",
+                timeout=_TIMEOUT,
             )
             self._model      = "llama3.3-70b"
             # llama3.1-8b: ~8x smaller than 70B, adequate for 1-2 sentence enrichment.
@@ -323,6 +327,7 @@ class GenerationService:
             self._client = OpenAI(
                 api_key=settings.mistral_api_key,
                 base_url="https://api.mistral.ai/v1",
+                timeout=_TIMEOUT,
             )
             # mistral-small-latest: free tier, 1B tok/month, strong at structured output.
             self._model      = "mistral-small-latest"
@@ -372,6 +377,7 @@ class GenerationService:
             self._client  = OpenAI(
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                timeout=30,
             )
             self._model   = "gemma-4-31b-it"
             self._fast_model = "gemma-4-31b-it"
@@ -381,14 +387,14 @@ class GenerationService:
 
         if self.provider in ("gemini", "gemma4") and settings.cerebras_api_key:
             from openai import OpenAI
-            self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1")
+            self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1", timeout=30)
             self._model   = "llama3.3-70b"
             self.provider = "cerebras"
             print("Generation: switched to Cerebras (llama3.3-70b)")
             return True
         if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
             from openai import OpenAI
-            self._client  = OpenAI(api_key=settings.sambanova_api_key, base_url="https://api.sambanova.ai/v1")
+            self._client  = OpenAI(api_key=settings.sambanova_api_key, base_url="https://api.sambanova.ai/v1", timeout=30)
             self._model   = "Meta-Llama-3.1-405B-Instruct"
             self.provider = "sambanova"
             print("Generation: switched to SambaNova (Llama 3.1 405B)")
@@ -408,7 +414,7 @@ class GenerationService:
             return True
         if self.provider in _all[:_all.index("mistral")] and settings.mistral_api_key:
             from openai import OpenAI
-            self._client  = OpenAI(api_key=settings.mistral_api_key, base_url="https://api.mistral.ai/v1")
+            self._client  = OpenAI(api_key=settings.mistral_api_key, base_url="https://api.mistral.ai/v1", timeout=30)
             self._model   = "mistral-small-latest"
             self.provider = "mistral"
             print("Generation: switched to Mistral (mistral-small-latest)")
@@ -510,6 +516,7 @@ class GenerationService:
             self._client  = OpenAI(
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                timeout=30,
             )
             self._model   = "gemini-2.5-flash"
             self.provider = "gemini"
