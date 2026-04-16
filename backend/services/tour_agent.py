@@ -1077,17 +1077,18 @@ Rules:
         # via result.setdefault below, so Phase 3 still gets a valid dict.
         print(f"TourAgent.investigate_agentic [{stage_name}] round limit — forcing DONE")
         transcript += (
-            "\nROUND LIMIT REACHED. Synthesise what you found into DONE:.\n"
-            "Output ONLY this JSON. STRICT LIMITS: name ≤40 chars, subtitle ≤60 chars, "
-            "insight ≤180 chars, naive_rejected ≤120 chars, gaps ≤120 chars. No lists.\n"
-            "DONE: {\"name\":\"<technique name>\",\"subtitle\":\"<one phrase>\","
-            "\"insight\":\"<what makes this design interesting>\","
-            "\"naive_rejected\":\"<simpler approach that was rejected>\","
-            "\"gaps\":\"<what is not visible in the code>\"}\n"
+            "\nROUND LIMIT REACHED.\n"
+            "DO NOT think or explain. Output EXACTLY one line starting with DONE: and nothing else.\n"
+            "Each JSON value must be SHORT: name≤40 chars, subtitle≤60, insight≤180, "
+            "naive_rejected≤120, gaps≤120.\n"
+            "DONE: {\"name\":\"<technique>\",\"subtitle\":\"<phrase>\","
+            "\"insight\":\"<one key insight>\","
+            "\"naive_rejected\":\"<simpler rejected approach>\","
+            "\"gaps\":\"<what code does not reveal>\"}\n"
         )
         raw = self._gen.generate(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-            temperature=0.0, max_tokens=400,  # char limits above = ~520 chars total ≈ 130 tokens
+            temperature=0.0, max_tokens=300,  # no THINK block → pure JSON fits in <150 tokens
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
