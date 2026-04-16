@@ -304,10 +304,10 @@ class GenerationService:
                 base_url="https://api.cerebras.ai/v1",
                 timeout=_TIMEOUT, max_retries=0,
             )
-            self._model      = "llama3.3-70b"
+            self._model      = "llama-3.3-70b"  # Cerebras renamed slug (dash added)
             # llama3.1-8b: ~8x smaller than 70B, adequate for 1-2 sentence enrichment.
-            self._fast_model = "llama3.1-8b"
-            print("Generation: using Cerebras (llama3.3-70b) — fast free tier")
+            self._fast_model = "llama-3.1-8b"
+            print("Generation: using Cerebras (llama-3.3-70b) — fast free tier")
             return "cerebras"
         elif settings.anthropic_api_key:
             import anthropic
@@ -368,7 +368,10 @@ class GenerationService:
         failed = self.provider
         print(f"Generation: {failed} rate-limited — trying next provider")
 
-        _all = ("gemini", "gemma4", "sambanova", "cerebras", "anthropic", "openrouter", "mistral", "groq")
+        # Cascade order matches intended quality priority.
+        # _all must match this order exactly — the _all[:_all.index(X)] pattern
+        # means "allow any provider that comes before X in _all" to fall through to X.
+        _all = ("gemini", "gemma4", "cerebras", "sambanova", "anthropic", "openrouter", "mistral", "groq")
 
         # Gemma 4 31B — same GEMINI_API_KEY, same endpoint, more generous free limits.
         # Falls back to this before trying other providers when Gemini 2.5 Flash is exhausted.
@@ -388,9 +391,9 @@ class GenerationService:
         if self.provider in ("gemini", "gemma4") and settings.cerebras_api_key:
             from openai import OpenAI
             self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1", timeout=30, max_retries=0)
-            self._model   = "llama3.3-70b"
+            self._model   = "llama-3.3-70b"  # Cerebras renamed slug: llama3.3-70b → llama-3.3-70b
             self.provider = "cerebras"
-            print("Generation: switched to Cerebras (llama3.3-70b)")
+            print("Generation: switched to Cerebras (llama-3.3-70b)")
             return True
         if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
             from openai import OpenAI
