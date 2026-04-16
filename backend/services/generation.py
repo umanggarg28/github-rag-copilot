@@ -350,19 +350,27 @@ class GenerationService:
         Returns True if a fallback was found and initialized, False if we're already
         on the last provider.
 
-        Priority: gemini (Gemma 4) → cerebras → openrouter → groq → anthropic
+        Records a 60-second exhaustion window for the failed provider so that
+        _reset_to_primary() doesn't immediately reset parallel calls back to it.
+        Without this, 12 parallel ReAct calls all 429 on Gemini simultaneously
+        and cascade all the way to Groq, exhausting its daily token budget.
         """
-        # Fallback chain ordered by quality: best models first.
-        # SambaNova 405B > Cerebras 70B in raw capability, so it comes first.
+        import time
+        # Mark the current provider as exhausted for 60 seconds
+        if not hasattr(self, '_exhausted_until'):
+            self._exhausted_until = {}
+        self._exhausted_until[self.provider] = time.monotonic() + 60
+        failed = self.provider
+        print(f"Generation: {failed} rate-limited — trying next provider")
+
         _all = ("gemini", "sambanova", "cerebras", "anthropic", "openrouter", "mistral", "groq")
-        _after = lambda p: _all[_all.index(p) + 1:] if p in _all else _all  # noqa: E731
 
         if self.provider == "gemini" and settings.cerebras_api_key:
             from openai import OpenAI
             self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1")
             self._model   = "llama3.3-70b"
             self.provider = "cerebras"
-            print("Generation: Gemini limit hit — switched to Cerebras (llama3.3-70b)")
+            print("Generation: switched to Cerebras (llama3.3-70b)")
             return True
         if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
             from openai import OpenAI
@@ -396,8 +404,9 @@ class GenerationService:
             self._client  = Groq(api_key=settings.groq_api_key)
             self._model   = "llama-3.3-70b-versatile"
             self.provider = "groq"
-            print("Generation: switched to Groq (llama-3.3-70b-versatile)")
+            print("Generation: switched to Groq (llama-3.3-70b-versatile) — last resort")
             return True
+        print(f"Generation: all providers exhausted — no fallback available")
         return False
 
     def grade_answer(self, question: str, context: str, answer: str, query_type: str = "technical") -> dict:
@@ -467,9 +476,21 @@ class GenerationService:
             return {"confidence": "unknown", "faithful": True, "note": ""}
 
     def _reset_to_primary(self) -> None:
-        """Reset to Gemma 4 (primary) so recovered rate limits get used again.
-        Called at the start of each public method — if Gemma 4 is still exhausted,
-        the fallback chain will kick in as normal."""
+        """Reset to Gemini (primary) so recovered rate limits get used again.
+
+        Called at the start of each public method — if Gemini is still in its
+        60-second exhaustion window (set by _try_fallback after a 429), we skip
+        the reset so parallel calls don't all hammer Gemini simultaneously.
+
+        Without the exhaustion window, 12 parallel ReAct calls all reset to Gemini,
+        all 429, all cascade to Groq — exhausting its daily token limit.
+        """
+        import time
+        now = time.monotonic()
+        exhausted_until = getattr(self, '_exhausted_until', {})
+        if exhausted_until.get("gemini", 0) > now:
+            # Gemini still rate-limited — stay on current fallback provider
+            return
         if self.provider != "gemini" and settings.gemini_api_key:
             from openai import OpenAI
             self._client  = OpenAI(
@@ -478,6 +499,7 @@ class GenerationService:
             )
             self._model   = "gemini-2.5-flash"
             self.provider = "gemini"
+            print(f"Generation: reset to Gemini (primary)")
 
     def generate(self, system: str, prompt: str, temperature: float = 0.2,
                  json_mode: bool = False, max_tokens: int = 2048,
@@ -509,6 +531,7 @@ class GenerationService:
         if not getattr(self, '_in_fallback', False):
             self._reset_to_primary()
         model    = getattr(self, '_fast_model', self._model) if fast else self._model
+        print(f"  [generate] provider={self.provider} model={model} max_tokens={max_tokens} json={json_mode}")
         messages = [{"role": "user", "content": prompt}]
         params   = {"temperature": temperature, "max_tokens": max_tokens,
                     "json_mode": json_mode, "model": model}
@@ -518,6 +541,7 @@ class GenerationService:
             else:
                 return self._anthropic_complete(system, messages, params)
         except Exception as e:
+            print(f"  [generate] {self.provider} failed: {str(e)[:120]}")
             if _is_exhausted(e) and self._try_fallback():
                 self._in_fallback = True
                 try:
