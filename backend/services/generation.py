@@ -377,8 +377,12 @@ class GenerationService:
         # means "allow any provider that comes before X in _all" to fall through to X.
         _all = ("gemini", "gemma4", "sambanova", "cerebras", "anthropic", "openrouter", "mistral", "groq")
 
-        # Gemma 4 31B — same GEMINI_API_KEY, separate rate-limit bucket from Gemini 2.5 Flash
-        if self.provider in _all[:_all.index("gemma4")] and settings.gemini_api_key:
+        # Gemma 4 31B — same GEMINI_API_KEY, separate rate-limit bucket from Gemini 2.5 Flash.
+        # Skipped when _skip_thinking=True: Gemma 4 is a reasoning model that prepends a THINK
+        # block to every response — this eats the entire token budget on compact-JSON tasks.
+        if (self.provider in _all[:_all.index("gemma4")]
+                and settings.gemini_api_key
+                and not getattr(self, '_skip_thinking', False)):
             from openai import OpenAI
             self._client  = OpenAI(
                 api_key=settings.gemini_api_key,
@@ -390,6 +394,8 @@ class GenerationService:
             self.provider    = "gemma4"
             print("Generation: switched to Gemma 4 31B (same Gemini key)")
             return True
+        if getattr(self, '_skip_thinking', False) and self.provider in _all[:_all.index("gemma4")] and settings.gemini_api_key:
+            print("Generation: skipping Gemma 4 (thinking model) — falling through to SambaNova")
         # SambaNova Llama 3.1 405B — 405B params, best quality after Google tier (200K tok/day)
         if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
             from openai import OpenAI
@@ -442,23 +448,24 @@ class GenerationService:
     # because the thinking block consumes the entire token budget before the JSON starts.
     _THINKING_PROVIDERS = frozenset({"gemma4"})
 
-    def skip_thinking_model(self) -> bool:
+    def generate_non_thinking(self, system: str, prompt: str, **kwargs) -> str:
         """
-        If the current provider is a thinking model (emits THINK blocks unconditionally),
-        switch to the next provider in the cascade.
+        Like generate() but skips thinking models (e.g. Gemma 4) in the entire fallback chain.
 
-        Call this before any task that requires short, structured output — the THINK block
-        will consume the entire token budget and truncate the actual JSON response.
+        Gemma 4 unconditionally prepends a THINK block to every response. This is architectural
+        — prompt instructions cannot suppress it. On compact-JSON tasks (forced DONE, synthesis)
+        the THINK block consumes the entire token budget before the JSON even starts.
 
-        Returns True if a switch was made, False if provider was already non-thinking.
+        This sets _skip_thinking=True for the duration of the call. _try_fallback() checks
+        this flag and bypasses Gemma 4, falling directly to SambaNova (or the next available
+        non-thinking provider). The flag is cleared in a finally block so it never leaks
+        into subsequent calls.
         """
-        if self.provider not in self._THINKING_PROVIDERS:
-            return False
-        print(f"Generation: skipping {self.provider} (thinking model — incompatible with compact output)")
-        switched = self._try_fallback()
-        if not switched:
-            print("Generation: no non-thinking fallback available — proceeding with thinking model")
-        return switched
+        self._skip_thinking = True
+        try:
+            return self.generate(system, prompt, **kwargs)
+        finally:
+            self._skip_thinking = False
 
     def grade_answer(self, question: str, context: str, answer: str, query_type: str = "technical") -> dict:
         """

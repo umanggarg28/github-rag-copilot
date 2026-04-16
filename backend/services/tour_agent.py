@@ -1076,10 +1076,6 @@ Rules:
         # naive_rejected/gaps) fit in ~400 tokens. key_functions defaults to []
         # via result.setdefault below, so Phase 3 still gets a valid dict.
         print(f"TourAgent.investigate_agentic [{stage_name}] round limit — forcing DONE")
-        # Gemma 4 and other thinking models emit a THINK block before every response.
-        # That block alone fills the entire token budget, truncating the JSON we need.
-        # Switch to the next provider so forced DONE gets a clean non-thinking model.
-        self._gen.skip_thinking_model()
         transcript += (
             "\nROUND LIMIT REACHED.\n"
             "DO NOT think or explain. Output EXACTLY one line starting with DONE: and nothing else.\n"
@@ -1090,9 +1086,11 @@ Rules:
             "\"naive_rejected\":\"<simpler rejected approach>\","
             "\"gaps\":\"<what code does not reveal>\"}\n"
         )
-        raw = self._gen.generate(
+        # generate_non_thinking() sets _skip_thinking=True for the entire call including
+        # fallbacks — Gemma 4 is bypassed in _try_fallback() and SambaNova is used instead.
+        raw = self._gen.generate_non_thinking(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-            temperature=0.0, max_tokens=300,  # no THINK block → pure JSON fits in <150 tokens
+            temperature=0.0, max_tokens=300,
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
@@ -1535,11 +1533,11 @@ Rules:
 - description for id=0: trace the full data flow — what enters (raw input), which stage file handles
   each transformation, what the user receives at the end. Name 3-4 key files in the flow.
 """
-        # Phase 3 synthesis is a 3000-token JSON call — thinking models time out on it.
-        # Switch to the next provider if we're on Gemma 4 before making this call.
-        self._gen.skip_thinking_model()
-        raw = self._gen.generate(_SYNTHESIZE_SYSTEM, prompt, temperature=0.0,
-                                  json_mode=True, max_tokens=3000)
+        # Phase 3 synthesis is a 3000-token JSON call. Gemma 4 always times out on it
+        # (THINK block + 3000 token budget = ~2 min wall time). Use generate_non_thinking()
+        # so Gemma 4 is bypassed in the fallback chain and SambaNova handles synthesis.
+        raw = self._gen.generate_non_thinking(_SYNTHESIZE_SYSTEM, prompt,
+                                              temperature=0.0, json_mode=True, max_tokens=3000)
         try:
             tour = _parse_json(raw)
         except Exception as e:
