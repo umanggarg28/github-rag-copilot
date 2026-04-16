@@ -55,6 +55,7 @@ All-at-once parallelism would hit the rate limiter on 6+ stage pipelines.
 
 from __future__ import annotations
 
+import fnmatch as _fnmatch
 import json as _json
 import re as _re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -574,6 +575,8 @@ class TourAgent:
         "this codebase confidently — the things you would explain in a 30-minute onboarding.\n\n"
         "TOOLS — call exactly one per turn:\n"
         "  list_files(path)            list files/dirs at a path (\"\" = repo root)\n"
+        "  glob(pattern)               find indexed files matching a pattern (e.g. \"**/*.py\", \"src/**/*.ts\")\n"
+        "  grep(pattern)               regex search across all indexed source text — returns file + matching line\n"
         "  read_file(filepath)         read a source file (imports, classes, functions)\n"
         "  search_symbol(name)         find a class or function definition by exact name\n"
         "  find_callers(name)          find all call sites of a function/class\n"
@@ -601,12 +604,14 @@ class TourAgent:
         "  1. list_files(\"\") — see all top-level directories and files\n"
         "  2. read_file() on the manifest immediately (package.json / Cargo.toml / pyproject.toml\n"
         "     / go.mod / requirements.txt / Makefile) — highest-signal file, reveals tech stack\n"
-        "  3. For each non-trivial top-level directory: list_files(that_dir) briefly, then\n"
+        "  3. grep(\"def main\\|if __name__\\|__main__\\|app =\\|cli =\") — find the entry point\n"
+        "     without reading every file. Use glob(\"**/*.py\") to confirm what source files exist.\n"
+        "  4. For each non-trivial top-level directory: list_files(that_dir) briefly, then\n"
         "     read_file() on the most substantive source file inside it.\n"
         "     Do NOT spend rounds listing every subdirectory — list once, then READ.\n"
-        "     If a file looks thin, read one more from the same directory.\n"
-        "  4. Use search_symbol() / find_callers() to trace connections once you have a hypothesis\n"
-        "  5. Check all five DONE SIGNALS — if any are missing, keep reading\n\n"
+        "  5. Use search_symbol() / find_callers() / grep() to trace connections once you have\n"
+        "     a hypothesis about the architecture\n"
+        "  6. Check all five DONE SIGNALS — if any are missing, keep reading\n\n"
         "SKIP — never contain interesting decisions:\n"
         "  test, tests, __pycache__, node_modules, dist, build, generated, docs, examples\n\n"
         "DIVERSITY RULE (critical):\n"
@@ -656,6 +661,58 @@ class TourAgent:
             for e in entries if e["type"] == "file"
         ])
         return f"# {repo}/{path or ''}\n" + "\n".join(dirs + files)
+
+    def _agentic_glob(self, repo: str, pattern: str) -> str:
+        """List indexed filepaths matching a glob pattern using cached chunk data.
+
+        Uses fnmatch so the agent can do glob("**/*.py") to find all Python files
+        without walking directories level by level. Zero extra network calls —
+        operates on the chunk cache already populated by Phase 0.
+        """
+        chunks = self._all_chunks(repo)
+        seen: set[str] = set()
+        paths: list[str] = []
+        for c in chunks:
+            fp = c.get("filepath", "")
+            if fp and fp not in seen:
+                seen.add(fp)
+                paths.append(fp)
+        matched = sorted(p for p in paths if _fnmatch.fnmatch(p, pattern))
+        if not matched:
+            return f"No indexed files match '{pattern}'."
+        return f"Files matching '{pattern}' ({len(matched)}):\n" + "\n".join(matched)
+
+    def _agentic_grep(self, repo: str, pattern: str) -> str:
+        """Search indexed chunk text for a regex pattern.
+
+        Returns up to 20 matches across all chunks — one match per chunk to avoid
+        flooding the context with repetition from large files. Each result shows
+        the filepath, chunk name, and the first matching line, so the agent can
+        decide which file to read_file() next without having to read everything.
+        """
+        try:
+            rx = _re.compile(pattern, _re.IGNORECASE)
+        except _re.error:
+            return f"Invalid regex: '{pattern}'. Use a valid Python regex."
+
+        chunks  = self._all_chunks(repo)
+        results: list[str] = []
+        for c in chunks:
+            text = c.get("text", "")
+            for line in text.splitlines():
+                if rx.search(line):
+                    fp   = c.get("filepath", "")
+                    name = c.get("name", "")
+                    label = f"{fp}  ({name})" if name else fp
+                    results.append(f"{label}:\n  {line.strip()}")
+                    break  # one match per chunk keeps results scannable
+            if len(results) >= 20:
+                break
+
+        if not results:
+            return f"No matches for '{pattern}' in indexed chunks."
+        suffix = "\n\n(limit reached — refine pattern to narrow results)" if len(results) >= 20 else ""
+        return f"Matches for '{pattern}' ({len(results)}):\n\n" + "\n\n".join(results) + suffix
 
     def _agentic_read_file(self, repo: str, filepath: str) -> str:
         """GitHub API file read, truncated to ~600 tokens — same as mcp_server.read_file."""
@@ -789,6 +846,12 @@ class TourAgent:
                 if tool_name == "list_files":
                     tool_result = self._agentic_list_files(repo, tool_arg)
                     display     = f"list_files(\"{tool_arg}\")"
+                elif tool_name == "glob":
+                    tool_result = self._agentic_glob(repo, tool_arg)
+                    display     = f"glob(\"{tool_arg}\")"
+                elif tool_name == "grep":
+                    tool_result = self._agentic_grep(repo, tool_arg)
+                    display     = f"grep(\"{tool_arg}\")"
                 elif tool_name == "read_file":
                     tool_result = self._agentic_read_file(repo, tool_arg)
                     display     = f"read_file(\"{tool_arg}\")"
@@ -802,7 +865,7 @@ class TourAgent:
                     tool_result = self._agentic_trace_calls(repo, tool_arg)
                     display     = f"trace_calls(\"{tool_arg}\")"
                 else:
-                    tool_result = f"(unknown tool '{tool_name}' — use: list_files, read_file, search_symbol, find_callers, trace_calls)"
+                    tool_result = f"(unknown tool '{tool_name}' — use: list_files, glob, grep, read_file, search_symbol, find_callers, trace_calls)"
                     display     = tool_name
 
                 # Emit a trace event for the UI live-log panel
@@ -989,6 +1052,8 @@ Rules:
         "Your goal: produce a 9/10 quality concept card by finding SPECIFIC, GROUNDED evidence.\n\n"
         "TOOLS — call exactly one per turn:\n"
         "  read_file(filepath)         read a source file (see imports, class/function bodies)\n"
+        "  grep(pattern)               regex search across all indexed text — find a string or pattern\n"
+        "                              without reading every file (e.g. grep(\"class Optimizer\"))\n"
         "  search_symbol(name)         find a class or function definition by exact name\n"
         "  find_callers(name)          find all call sites — reveals how this is used in practice\n"
         "  trace_calls(name)           trace call graph from an entry point (depth 3)\n\n"
@@ -1090,6 +1155,9 @@ Rules:
                 if tool_name == "read_file":
                     tool_result = self._agentic_read_file(repo, tool_arg)
                     display     = f"read_file(\"{tool_arg}\")"
+                elif tool_name == "grep":
+                    tool_result = self._agentic_grep(repo, tool_arg)
+                    display     = f"grep(\"{tool_arg}\")"
                 elif tool_name == "search_symbol":
                     tool_result = self._agentic_search_symbol(repo, tool_arg)
                     display     = f"search_symbol(\"{tool_arg}\")"
@@ -1101,7 +1169,7 @@ Rules:
                     display     = f"trace_calls(\"{tool_arg}\")"
                 else:
                     tool_result = (
-                        f"(unknown tool '{tool_name}' — use: read_file, search_symbol, "
+                        f"(unknown tool '{tool_name}' — use: read_file, grep, search_symbol, "
                         "find_callers, trace_calls)"
                     )
                     display = tool_name
