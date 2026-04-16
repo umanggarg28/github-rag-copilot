@@ -636,12 +636,12 @@ export default function App() {
     : "Ask about any indexed repo…";
 
   return (
+    <>
+    {/* Ambient background glow — outside the layout div so it is not trapped
+        under layout's z-index:1 stacking context. position:fixed keeps it
+        viewport-anchored. Drifts 4-6vw over 22s — barely perceptible. */}
+    <div className="bg-glow" aria-hidden="true" />
     <div className={`layout${sidebarCollapsed ? " layout-collapsed" : ""}`}>
-      {/* Ambient background glow — drifts slowly across the viewport.
-          Fixed so it persists across all views (chat, graph, diagram).
-          Separate from the body background-image so it can be transform-animated
-          (radial-gradient positions in background-image cannot be transitioned). */}
-      <div className="bg-glow" aria-hidden="true" />
 
       {/* Sidebar overlay for mobile — closes sidebar when clicking outside */}
       {sidebarOpen && (
@@ -1035,5 +1035,6 @@ export default function App() {
       </div>
 
     </div>
+    </>
   );
 }

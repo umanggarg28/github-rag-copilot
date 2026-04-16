@@ -590,9 +590,12 @@ class TourAgent:
         "\"pipeline_stages\":[{\"name\":\"...\",\"file\":\"...\",\"key_aspect\":\"...\"}]}\n\n"
         "DONE SIGNALS — you must confirm all five before calling DONE:\n"
         "  ① Entry point — which file/function starts the core execution path?\n"
-        "  ② Core concepts — what are the key algorithms, data structures, subsystems, or abstractions\n"
-        "     that define how this system works? A concept is worth including if not knowing it would\n"
-        "     leave a contributor confused or likely to break something.\n"
+        "  ② Concepts — you must have at least 8 concepts in pipeline_stages.\n"
+        "     A concept is one specific thing a junior developer needs to understand on its own.\n"
+        "     A rich file (e.g. one containing a core class + algorithm + data structure) can\n"
+        "     and should contribute 2-4 separate concepts — each a distinct card, not one dense card.\n"
+        "     Ask yourself: 'Can I explain this in 3 sentences without mentioning the other concepts\n"
+        "     from the same file?' If yes, it is a separate concept.\n"
         "  ③ Key dependencies — from the manifest, which non-trivial libraries were chosen?\n"
         "     Each non-trivial library choice reveals something about what the system does.\n"
         "  ④ Directory breadth — at least one file READ (not just listed) from every non-trivial\n"
@@ -615,23 +618,20 @@ class TourAgent:
         "  6. Check all five DONE SIGNALS — if any are missing, keep reading\n\n"
         "SKIP — never contain interesting decisions:\n"
         "  test, tests, __pycache__, node_modules, dist, build, generated, docs, examples\n\n"
-        "DIVERSITY RULE (critical):\n"
-        "  Each stage in pipeline_stages MUST come from a DIFFERENT file.\n"
-        "  If you find multiple interesting things in one directory, pick the best one per file —\n"
-        "  then keep reading files from other directories.\n\n"
-        "STAGE NAME RULES (critical — every name is checked):\n"
-        "  Think of each name as a CHAPTER TITLE in a book about this specific codebase.\n"
-        "  It names something a reader needs to understand: an algorithm, a core abstraction,\n"
-        "  a key subsystem, or a central data flow — something you can point to in the code.\n"
-        "  GOOD: specific to what THIS system does — name the actual mechanism,\n"
-        "        algorithm, or abstraction you found in the code.\n"
-        "  BAD: names ending in 'Strategy', 'Mechanism', 'Pattern', 'Architecture' —\n"
-        "       these are category labels, not concepts. They describe how something is\n"
-        "       classified, not what it actually does.\n"
-        "  BAD: any filename, class name, function name, or identifier with underscores\n"
-        "  5-8 stages — cover the whole system, skip only pure infrastructure (config, health)\n"
-        "  key_aspect: one sentence — what this concept does and why a new contributor\n"
-        "              must understand it before touching this part of the codebase\n\n"
+        "CONCEPT RULES:\n"
+        "  Each concept in pipeline_stages is ONE thing a junior developer can understand\n"
+        "  in 3 minutes of reading. If a concept requires understanding two unrelated things,\n"
+        "  split it into two entries — even if they live in the same file.\n"
+        "  GOOD split: 'Value Node Construction' and 'Backward Pass Algorithm' (both in engine.py\n"
+        "              but completely different things to learn)\n"
+        "  BAD merge:  'Engine Core' (covers the graph, the autodiff, and the grad accumulation\n"
+        "              all in one entry — a junior dev cannot absorb that in one sitting)\n\n"
+        "NAMING RULES:\n"
+        "  Name = CHAPTER TITLE in a book about THIS codebase. Name the specific thing.\n"
+        "  BAD: names ending in 'Strategy', 'Mechanism', 'Pattern', 'Architecture', 'System'\n"
+        "       — these are category labels. They say what kind of thing it is, not what it does.\n"
+        "  BAD: any filename, class name, or identifier with underscores\n"
+        "  key_aspect: one sentence — what this concept does, in plain language\n\n"
         "Return ONLY valid JSON in the DONE: line — no markdown fences, no explanation."
     )
 
@@ -1608,11 +1608,11 @@ Return ONLY this JSON:
   "concepts": [
     {{
       "id": 0,
-      "name": "End-to-end pipeline name (3-5 words)",
-      "subtitle": "What this pipeline does for the user",
+      "name": "3-5 words naming what a USER does with this system — the value it delivers, NOT an internal implementation name. Ground this in the README summary above, not in a specific file you read.",
+      "subtitle": "One sentence: what a user gives the system and what they get back",
       "file": "{entry}",
       "type": "module",
-      "description": "2-3 sentences: what enters, how each stage transforms it, what the user gets. Name the key files.",
+      "description": "2-3 sentences: what a user inputs, how the system transforms it stage by stage, and what they receive. Name the key files that own each stage. This is the map every other concept hangs off.",
       "key_items": ["entry_function", "other_function"],
       "depends_on": [],
       "reading_order": 1,
@@ -1624,7 +1624,7 @@ Return ONLY this JSON:
       "subtitle": "Use exact 'subtitle' from stage 1 findings",
       "file": "file from stage 1",
       "type": "class|function|module|algorithm",
-      "description": "3-4 sentences: what this concept IS and its role in the system, how it works mechanically (naming real functions), what a new contributor must know before touching this code, and what would break or degrade without it.",
+      "description": "2-3 short sentences a junior developer can understand: (1) what this is in plain language, (2) how it works — name one or two real functions from key_items, (3) what breaks if you get this wrong. No jargon without explanation.",
       "key_items": ["use exact key_functions from stage 1 findings"],
       "depends_on": [0],
       "reading_order": 2,
@@ -1634,7 +1634,8 @@ Return ONLY this JSON:
 }}
 
 Rules:
-- 6-8 concepts total (id=0 is pipeline overview, id=1..N are stage insights)
+- Target 8-12 concepts total (id=0 is pipeline overview, id=1..N are stage insights)
+- If findings contain fewer than 8 stages, split the richest insights into separate simpler cards
 - Use the EXACT name/subtitle/insight/key_functions from findings — do not paraphrase
 - All concepts except id=0 must have depends_on non-empty
 - Most should have depends_on: [0] — add deeper deps only when genuinely required
@@ -1774,25 +1775,11 @@ Rules:
             removed = [s["name"] for s in stages if _is_artifact_stage_name(s.get("name", ""))]
             print(f"TourAgent: filtered {len(removed)} artifact stage(s) from Phase 1: {removed}")
 
-        # ── Phase 1 diversity filter ──────────────────────────────────────────
-        # If Phase 1 returned multiple stages from the same file, keep only the
-        # first. A good tour covers different parts of the codebase — same-file
-        # duplicates mean the agent didn't explore broadly enough. Keeping one
-        # preserves the best finding and avoids redundant Phase 2 calls.
-        seen_files: set[str] = set()
-        diverse_stages: list[dict] = []
-        duplicate_stages: list[str] = []
-        for s in clean_stages:
-            f = s.get("file", "")
-            if f and f in seen_files:
-                duplicate_stages.append(s["name"])
-                continue
-            seen_files.add(f)
-            diverse_stages.append(s)
-        if duplicate_stages:
-            print(f"TourAgent: deduped {len(duplicate_stages)} same-file stage(s): {duplicate_stages}")
-        clean_stages = diverse_stages if diverse_stages else clean_stages
-        stages = clean_stages or stages  # keep originals if everything got filtered
+        # NOTE: same-file stages are intentionally kept.
+        # A rich file (e.g. engine.py in micrograd) can have 3-4 distinct concepts
+        # that each deserve their own card. Deduplicating by file was the primary
+        # cause of tours with 3 cards instead of 8-12.
+        stages = clean_stages or stages
 
         yield {
             "stage": "mapping", "progress": 0.25,

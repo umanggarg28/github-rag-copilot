@@ -151,7 +151,8 @@ body {
    body background-image so it can drift via transform (gradient positions
    cannot be CSS-transitioned). Moves 4-6% of viewport width over 22s,
    alternating direction — barely perceptible but alive.
-   z-index: -1 keeps it behind the dot grid and all content. */
+   Rendered OUTSIDE .layout so it is not trapped under layout's z-index:1
+   stacking context. z-index: 0 puts it below .layout (z-index:1) naturally. */
 .bg-glow {
   position: fixed;
   top: -20%;
@@ -162,7 +163,7 @@ body {
   background: radial-gradient(ellipse, rgba(20, 60, 160, 0.28) 0%, rgba(10, 30, 120, 0.10) 55%, transparent 72%);
   filter: blur(72px);
   pointer-events: none;
-  z-index: -1;
+  z-index: 0;
   animation: bg-glow-drift 22s ease-in-out infinite alternate;
   will-change: transform;
 }
