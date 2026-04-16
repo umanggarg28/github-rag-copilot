@@ -576,11 +576,16 @@ class TourAgent:
         "  DONE: {\"entry_file\":\"...\",\"readme_summary\":\"...\","
         "\"pipeline_stages\":[{\"name\":\"...\",\"file\":\"...\",\"key_aspect\":\"...\"}]}\n\n"
         "EXPLORATION STRATEGY:\n"
-        "  1. list_files(\"\") — see top-level repo structure\n"
+        "  1. list_files(\"\") — see top-level repo structure, identify ALL major directories\n"
         "  2. read_file() key manifests (package.json, pyproject.toml, go.mod, Cargo.toml)\n"
-        "  3. read_file() the most interesting implementation files the README mentions\n"
+        "  3. read_file() at least one file from each major directory you found in step 1\n"
         "  4. search_symbol() / find_callers() to trace how key components connect\n"
-        "  5. DONE when you can name 4-6 real decisions grounded in what you read\n\n"
+        "  5. DONE only after reading files from multiple directories — never after one\n\n"
+        "DIVERSITY RULE (critical):\n"
+        "  Each stage in pipeline_stages MUST come from a DIFFERENT file.\n"
+        "  If you find 2+ interesting things in one file, pick only the most important one —\n"
+        "  then keep exploring OTHER directories before calling DONE.\n"
+        "  A DONE with multiple stages pointing to the same file will be rejected.\n\n"
         "STAGE NAME RULES (critical — every name is checked):\n"
         "  GOOD: names a technique, algorithm, or tradeoff (e.g. 'Lazy Evaluation Cache',\n"
         "        'Hybrid Sparse-Dense Retrieval', 'Progressive Context Expansion')\n"
@@ -1621,6 +1626,25 @@ Rules:
         if len(clean_stages) < len(stages):
             removed = [s["name"] for s in stages if _is_artifact_stage_name(s.get("name", ""))]
             print(f"TourAgent: filtered {len(removed)} artifact stage(s) from Phase 1: {removed}")
+
+        # ── Phase 1 diversity filter ──────────────────────────────────────────
+        # If Phase 1 returned multiple stages from the same file, keep only the
+        # first. A good tour covers different parts of the codebase — same-file
+        # duplicates mean the agent didn't explore broadly enough. Keeping one
+        # preserves the best finding and avoids redundant Phase 2 calls.
+        seen_files: set[str] = set()
+        diverse_stages: list[dict] = []
+        duplicate_stages: list[str] = []
+        for s in clean_stages:
+            f = s.get("file", "")
+            if f and f in seen_files:
+                duplicate_stages.append(s["name"])
+                continue
+            seen_files.add(f)
+            diverse_stages.append(s)
+        if duplicate_stages:
+            print(f"TourAgent: deduped {len(duplicate_stages)} same-file stage(s): {duplicate_stages}")
+        clean_stages = diverse_stages if diverse_stages else clean_stages
         stages = clean_stages or stages  # keep originals if everything got filtered
 
         yield {
