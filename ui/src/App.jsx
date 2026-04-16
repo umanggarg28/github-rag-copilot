@@ -636,11 +636,6 @@ export default function App() {
     : "Ask about any indexed repo…";
 
   return (
-    <>
-    {/* Ambient background glow — outside the layout div so it is not trapped
-        under layout's z-index:1 stacking context. position:fixed keeps it
-        viewport-anchored. Drifts 4-6vw over 22s — barely perceptible. */}
-    <div className="bg-glow" aria-hidden="true" />
     <div className={`layout${sidebarCollapsed ? " layout-collapsed" : ""}`}>
 
       {/* Sidebar overlay for mobile — closes sidebar when clicking outside */}
@@ -1035,6 +1030,5 @@ export default function App() {
       </div>
 
     </div>
-    </>
   );
 }

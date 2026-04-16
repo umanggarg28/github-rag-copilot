@@ -139,40 +139,13 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Static counter-blooms — depth through colour variance.
-     The main top-left bloom is now in .bg-glow (animated separately). */
+  /* Atmospheric bloom — blueprint blue at top-left, barely perceptible.
+     Linear/Vercel principle: depth is felt, not seen. */
   background-image:
+    radial-gradient(ellipse 65% 55% at -5% 0%,   rgba(20, 60, 160, 0.30) 0%, transparent 65%),
     radial-gradient(ellipse 45% 40% at 105% 100%, rgba(10, 30, 90,  0.18) 0%, transparent 60%),
     radial-gradient(ellipse 30% 25% at 50% 0%,   rgba(91, 143, 249, 0.05) 0%, transparent 50%);
   animation: page-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-/* Animated ambient glow — the main top-left blue bloom, extracted from
-   body background-image so it can drift via transform (gradient positions
-   cannot be CSS-transitioned). Moves 4-6% of viewport width over 22s,
-   alternating direction — barely perceptible but alive.
-   Rendered OUTSIDE .layout so it is not trapped under layout's z-index:1
-   stacking context. z-index: 0 puts it below .layout (z-index:1) naturally. */
-.bg-glow {
-  position: fixed;
-  top: -20%;
-  left: -20%;
-  width: 75vw;
-  height: 70vh;
-  border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(20, 60, 160, 0.28) 0%, rgba(10, 30, 120, 0.10) 55%, transparent 72%);
-  filter: blur(72px);
-  pointer-events: none;
-  z-index: 0;
-  animation: bg-glow-drift 22s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-@keyframes bg-glow-drift {
-  0%   { transform: translate(0,    0);    }
-  25%  { transform: translate(4vw,  2vh);  }
-  60%  { transform: translate(2vw,  5vh);  }
-  100% { transform: translate(6vw,  3vh);  }
 }
 
 /* Signature dot grid — blueprint-tinted, masked to center, creates spatial texture.
