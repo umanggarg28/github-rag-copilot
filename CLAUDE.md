@@ -66,6 +66,21 @@ Never hardcode colours that duplicate a CSS variable.
 - No LangChain, no LlamaIndex — build from scratch so concepts are visible
 - Write comments explaining **why**, not what
 
+## LLM Prompt Rules (enforce strictly — violations have happened repeatedly)
+
+**No domain-specific terms in agent/tour prompts.**
+Every rule in a prompt must work for ANY repo: a game engine, a compiler, a math library, a CLI tool.
+If a term only makes sense for RAG/web apps, remove it.
+
+- BAD: "look for ingestion, embedding, retrieval stages"
+- BAD: "decisions spread across ingestion/data loading, retrieval/search, output/API"
+- GOOD: "each stage must come from a different file"
+- GOOD: "explore multiple directories before calling DONE"
+
+Test: would this prompt produce sensible output on `karpathy/micrograd`? If not, it has hardcoded assumptions.
+
+Reference: `notes/004-claude-code-learnings.md` — Section 2.
+
 ## File Hygiene (enforce strictly)
 
 - **Delete superseded files immediately** when a module is replaced or renamed — don't leave orphans
@@ -73,6 +88,19 @@ Never hardcode colours that duplicate a CSS variable.
 - **One canonical location per concern** — if two files do the same thing, one must go
 - **Before creating a file**, check whether an existing file can be extended instead
 - After any refactor, run `find . -name "*.py" | grep -v __pycache__ | grep -v .venv` and confirm every file is still imported or is a valid entry point
+
+## Runtime Data — always gitignore, never commit
+
+Directories written at runtime must be in `.gitignore`. Check before first commit of any new feature:
+
+| Directory | What it holds |
+|---|---|
+| `backend/diagrams/` | Cached tour + diagram JSON (regenerated on demand) |
+| `backend/readmes/` | Cached generated READMEs |
+| `backend/tour_feedback/` | Persisted concept name corrections |
+| `repo_maps/` | Runtime repo maps rebuilt from Qdrant |
+
+If a new feature writes files to disk, add that directory to `.gitignore` immediately.
 
 ---
 
