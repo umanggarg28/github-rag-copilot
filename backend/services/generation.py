@@ -572,6 +572,13 @@ class GenerationService:
                     return self.generate(system, prompt, temperature, json_mode, max_tokens, fast)
                 finally:
                     self._in_fallback = False
+            if _is_exhausted(e):
+                # All providers exhausted — raise a clean message instead of the raw API
+                # error (which leaks provider names, org IDs, and 429 HTTP details)
+                raise RuntimeError(
+                    "All LLM providers are currently rate-limited or unavailable. "
+                    "Please wait a few minutes and try again."
+                ) from None
             raise
 
     def answer(self, question: str, context: str, query_type: str, history: list[dict] | None = None) -> str:
