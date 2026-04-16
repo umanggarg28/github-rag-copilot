@@ -637,6 +637,12 @@ export default function App() {
 
   return (
     <div className={`layout${sidebarCollapsed ? " layout-collapsed" : ""}`}>
+      {/* Ambient background glow — drifts slowly across the viewport.
+          Fixed so it persists across all views (chat, graph, diagram).
+          Separate from the body background-image so it can be transform-animated
+          (radial-gradient positions in background-image cannot be transitioned). */}
+      <div className="bg-glow" aria-hidden="true" />
+
       {/* Sidebar overlay for mobile — closes sidebar when clicking outside */}
       {sidebarOpen && (
         <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
