@@ -369,40 +369,39 @@ class GenerationService:
         failed = self.provider
         print(f"Generation: {failed} rate-limited — trying next provider")
 
-        # Cascade order matches intended quality priority.
+        # Quality-priority cascade order.
         # _all must match this order exactly — the _all[:_all.index(X)] pattern
         # means "allow any provider that comes before X in _all" to fall through to X.
-        _all = ("gemini", "gemma4", "cerebras", "sambanova", "anthropic", "openrouter", "mistral", "groq")
+        _all = ("gemini", "sambanova", "gemma4", "cerebras", "anthropic", "openrouter", "mistral", "groq")
 
-        # Gemma 4 31B — same GEMINI_API_KEY, same endpoint, more generous free limits.
-        # Falls back to this before trying other providers when Gemini 2.5 Flash is exhausted.
-        if self.provider == "gemini" and settings.gemini_api_key:
-            from openai import OpenAI
-            self._client  = OpenAI(
-                api_key=settings.gemini_api_key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                timeout=90, max_retries=0,  # Gemma 4 31B is slow; no SDK retries
-            )
-            self._model   = "gemma-4-31b-it"
-            self._fast_model = "gemma-4-31b-it"
-            self.provider = "gemma4"
-            print("Generation: Gemini 2.5 Flash exhausted — switched to Gemma 4 31B (same key)")
-            return True
-
-        if self.provider in ("gemini", "gemma4") and settings.cerebras_api_key:
-            from openai import OpenAI
-            self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1", timeout=30, max_retries=0)
-            # gpt-oss-120b: llama3.3-70b removed from Cerebras public inference Apr 2026
-            self._model   = "gpt-oss-120b"
-            self.provider = "cerebras"
-            print("Generation: switched to Cerebras (gpt-oss-120b)")
-            return True
+        # SambaNova Llama 3.1 405B — 405B params, best quality after Gemini (200K tok/day free)
         if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
             from openai import OpenAI
             self._client  = OpenAI(api_key=settings.sambanova_api_key, base_url="https://api.sambanova.ai/v1", timeout=30, max_retries=0)
             self._model   = "Meta-Llama-3.1-405B-Instruct"
             self.provider = "sambanova"
             print("Generation: switched to SambaNova (Llama 3.1 405B)")
+            return True
+        # Gemma 4 31B — same GEMINI_API_KEY, separate rate-limit bucket from Gemini 2.5 Flash
+        if self.provider in _all[:_all.index("gemma4")] and settings.gemini_api_key:
+            from openai import OpenAI
+            self._client  = OpenAI(
+                api_key=settings.gemini_api_key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                timeout=90, max_retries=0,  # Gemma 4 31B is slow; no SDK retries
+            )
+            self._model      = "gemma-4-31b-it"
+            self._fast_model = "gemma-4-31b-it"
+            self.provider    = "gemma4"
+            print("Generation: switched to Gemma 4 31B (same Gemini key)")
+            return True
+        if self.provider in _all[:_all.index("cerebras")] and settings.cerebras_api_key:
+            from openai import OpenAI
+            self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1", timeout=30, max_retries=0)
+            # gpt-oss-120b: llama3.3-70b removed from Cerebras public inference Apr 2026
+            self._model   = "gpt-oss-120b"
+            self.provider = "cerebras"
+            print("Generation: switched to Cerebras (gpt-oss-120b)")
             return True
         if self.provider in _all[:_all.index("anthropic")] and settings.anthropic_api_key:
             import anthropic
