@@ -228,11 +228,13 @@ def _is_artifact_stage_name(name: str) -> bool:
 # ── System prompts ─────────────────────────────────────────────────────────────
 
 _MAP_SYSTEM = (
-    "You are a senior engineer mapping an unfamiliar codebase for the first time. "
+    "You are a senior engineer who just read through an unfamiliar codebase. "
+    "Your job: identify the key concepts a new contributor must understand to work on it. "
     "You have the repo's README (what it claims to do) AND the module-level imports "
-    "and signatures of every non-bootstrap file (what the code actually does). Use both. "
-    "Trace the main pipeline — the sequence of files that execute the system's primary job. "
-    "NEVER list every file. Focus on the critical path only. "
+    "and signatures of every file (what the code actually does). Use both. "
+    "Think of your output as a table of contents for a book about this codebase: "
+    "concept 0 is the overall pipeline, concepts 1-N are the building blocks. "
+    "NEVER list every file. Focus only on what a contributor must understand. "
     "Return ONLY valid JSON, no markdown, no explanation."
 )
 
@@ -251,30 +253,39 @@ _INVESTIGATE_SYSTEM = (
 )
 
 _SYNTHESIZE_SYSTEM = (
-    "You are a senior engineer writing the guided tour you wished existed before "
-    "reading this codebase. You have traced the full pipeline and investigated each stage. "
+    "You are a senior engineer writing the guided tour you wished existed on your first day "
+    "reading this codebase. Think of it as a table of contents: each concept is a chapter "
+    "a new contributor must read to understand how the system works.\n"
     "DEPENDENCY RULE: depends_on means 'cannot understand B without A' — NOT execution order. "
     "Most concepts are independent of each other; they share only concept 0 as a prerequisite. "
-    "A chain A→B→C→D→E is almost always wrong. A fan-out from concept 0 is almost always right. "
-    "NAME RULE: concept names MUST be technique/decision names — never artifacts. "
-    "A BAD name identifies an artifact: any filename, any class name, any function name. "
-    "A GOOD name identifies a decision or mechanism that exists regardless of what it is called: "
-    "'Lazy Initialisation', 'Request-Response Lifecycle', 'Two-Phase Commit', 'Optimistic Locking'. "
+    "A chain A→B→C→D→E is almost always wrong. A fan-out from concept 0 is almost always right.\n"
+    "NAME RULE: each concept name must sound like a chapter title in a book about THIS codebase. "
+    "It names something specific a reader needs to understand — an algorithm, a core abstraction, "
+    "a key subsystem, a central data flow. "
+    "BAD: names ending in 'Strategy', 'Mechanism', 'Pattern', 'Architecture' — these are category "
+    "labels that say HOW something is classified, not WHAT it is or does. "
+    "BAD: any filename, class name, function name, or identifier with underscores. "
+    "GOOD: names something concrete in this specific codebase that a reader can look up and read.\n"
     "ASK RULE: each 'ask' MUST name a specific function from key_items and describe a concrete "
-    "failure mode. Generic asks ('Why was X rejected?', 'What would happen without this?') are "
-    "forbidden — they convey no information and waste the reader's time. "
+    "failure mode or edge case. Generic asks ('Why was X rejected?', 'What would happen without this?') "
+    "are forbidden — they convey no information and waste the reader's time. "
     "Return ONLY valid JSON, no markdown, no explanation."
 )
 
 _VALIDATE_SYSTEM = (
     "You are a strict quality reviewer for codebase concept tours. "
-    "Your ONLY job: check whether concept names are technique/decision names or artifact names. "
-    "ARTIFACT (BAD): any file path, class name, function name, or identifier from the code. "
-    "Signs of artifacts: ends in .py/.ts/.js, contains underscores, is CamelCase matching a class, "
-    "matches a module name, or reads like a variable (e.g. 'health', 'config', 'utils', 'main'). "
-    "TECHNIQUE (GOOD): a name that describes a design decision or mechanism — it could exist "
-    "in any codebase with a similar purpose: 'Two-Phase Execution', 'Lazy Initialisation', "
-    "'Connection Pooling', 'Request Fan-Out', 'Idempotent Retry'. "
+    "Your ONLY job: check whether concept names are concrete, specific concept names or vague labels. "
+    "There are TWO failure modes to catch:\n\n"
+    "FAILURE MODE 1 — ARTIFACT: name is a code identifier, not a concept. "
+    "Signs: ends in .py/.ts/.js, contains underscores, is CamelCase matching a class, "
+    "matches a module name, or reads like a variable (e.g. 'health', 'config', 'utils', 'main').\n\n"
+    "FAILURE MODE 2 — CATEGORY LABEL: name ends in 'Strategy', 'Mechanism', 'Pattern', "
+    "'Architecture', 'System', 'Layer', 'Framework', or 'Approach'. "
+    "These are classification words, not concepts. They describe how something is categorised, "
+    "not what it actually does. A good name describes the specific thing itself — "
+    "what it computes, transforms, decides, or stores.\n\n"
+    "GOOD name: specific, nameable in the code, describes the actual mechanism. "
+    "It could only describe THIS system's particular approach, not any system.\n\n"
     "Return ONLY valid JSON."
 )
 
@@ -558,9 +569,9 @@ class TourAgent:
     # connected to our MCP server.
 
     _AGENTIC_MAP_SYSTEM = (
-        "You are a senior engineer exploring an unfamiliar codebase to map its key "
-        "ARCHITECTURAL DECISIONS — the non-obvious choices where a simpler alternative "
-        "was deliberately rejected.\n\n"
+        "You are a senior engineer who just finished reading an unfamiliar codebase. "
+        "Your goal: identify the KEY CONCEPTS a new contributor must understand to work on "
+        "this codebase confidently — the things you would explain in a 30-minute onboarding.\n\n"
         "TOOLS — call exactly one per turn:\n"
         "  list_files(path)            list files/dirs at a path (\"\" = repo root)\n"
         "  read_file(filepath)         read a source file (imports, classes, functions)\n"
@@ -576,25 +587,26 @@ class TourAgent:
         "\"pipeline_stages\":[{\"name\":\"...\",\"file\":\"...\",\"key_aspect\":\"...\"}]}\n\n"
         "DONE SIGNALS — you must confirm all five before calling DONE:\n"
         "  ① Entry point — which file/function starts the core execution path?\n"
-        "  ② Primary technique — the non-obvious algorithmic choice that defines what this system does\n"
-        "     (not a framework choice, not a config — the decision where a simpler path was rejected)\n"
+        "  ② Core concepts — what are the key algorithms, data structures, subsystems, or abstractions\n"
+        "     that define how this system works? A concept is worth including if not knowing it would\n"
+        "     leave a contributor confused or likely to break something.\n"
         "  ③ Key dependencies — from the manifest, which non-trivial libraries were chosen?\n"
-        "     Each non-trivial dependency = a design decision\n"
+        "     Each non-trivial library choice reveals something about what the system does.\n"
         "  ④ Directory breadth — at least one file READ (not just listed) from every non-trivial\n"
         "     top-level directory. Listing a directory without reading a file inside it does NOT count.\n"
         "  ⑤ Gaps — what can the code NOT tell you? (rationale, why a library was chosen over another,\n"
         "     design decisions that live only in commit history or the author's head)\n"
         "     Write these in the 'gaps' field of DONE. 'None' is almost never the right answer.\n\n"
         "EXPLORATION STRATEGY — follow this order:\n"
-        "  1. list_files(\"\") — identify ALL top-level directories before reading anything\n"
-        "  2. For EACH non-trivial top-level directory: list_files(that_dir) to see what's inside\n"
-        "     If it has subdirectories, list those too before reading\n"
-        "  3. Read the manifest file (package.json / Cargo.toml / pyproject.toml / go.mod / etc.)\n"
-        "     — this is the highest-signal file: dependencies reveal the tech choices directly\n"
-        "  4. Read one substantive source file from each directory you listed in step 2\n"
-        "     If a directory has many files, read 2 of the most substantive ones\n"
-        "  5. Use search_symbol() / find_callers() to trace connections across components\n"
-        "  6. Check all five DONE SIGNALS — if any are missing, keep reading\n\n"
+        "  1. list_files(\"\") — see all top-level directories and files\n"
+        "  2. read_file() on the manifest immediately (package.json / Cargo.toml / pyproject.toml\n"
+        "     / go.mod / requirements.txt / Makefile) — highest-signal file, reveals tech stack\n"
+        "  3. For each non-trivial top-level directory: list_files(that_dir) briefly, then\n"
+        "     read_file() on the most substantive source file inside it.\n"
+        "     Do NOT spend rounds listing every subdirectory — list once, then READ.\n"
+        "     If a file looks thin, read one more from the same directory.\n"
+        "  4. Use search_symbol() / find_callers() to trace connections once you have a hypothesis\n"
+        "  5. Check all five DONE SIGNALS — if any are missing, keep reading\n\n"
         "SKIP — never contain interesting decisions:\n"
         "  test, tests, __pycache__, node_modules, dist, build, generated, docs, examples\n\n"
         "DIVERSITY RULE (critical):\n"
@@ -602,11 +614,18 @@ class TourAgent:
         "  If you find multiple interesting things in one directory, pick the best one per file —\n"
         "  then keep reading files from other directories.\n\n"
         "STAGE NAME RULES (critical — every name is checked):\n"
-        "  GOOD: names a technique, algorithm, or tradeoff (e.g. 'Lazy Evaluation Cache',\n"
-        "        'Incremental Recomputation', 'Progressive Context Expansion')\n"
+        "  Think of each name as a CHAPTER TITLE in a book about this specific codebase.\n"
+        "  It names something a reader needs to understand: an algorithm, a core abstraction,\n"
+        "  a key subsystem, or a central data flow — something you can point to in the code.\n"
+        "  GOOD: specific to what THIS system does — name the actual mechanism,\n"
+        "        algorithm, or abstraction you found in the code.\n"
+        "  BAD: names ending in 'Strategy', 'Mechanism', 'Pattern', 'Architecture' —\n"
+        "       these are category labels, not concepts. They describe how something is\n"
+        "       classified, not what it actually does.\n"
         "  BAD: any filename, class name, function name, or identifier with underscores\n"
         "  5-8 stages — cover the whole system, skip only pure infrastructure (config, health)\n"
-        "  key_aspect: what simpler approach this replaces and the concrete cost of that\n\n"
+        "  key_aspect: one sentence — what this concept does and why a new contributor\n"
+        "              must understand it before touching this part of the codebase\n\n"
         "Return ONLY valid JSON in the DONE: line — no markdown fences, no explanation."
     )
 
@@ -805,9 +824,15 @@ class TourAgent:
                 yield {"type": "thinking", "text": f"Round {round_n + 1}: retrying parse…"}
 
         # ── Exhausted rounds — force final output ──────────────────────────────
+        # Use generate_synthesis() not generate_non_thinking() — the transcript is now
+        # 16 rounds × 400-token tool results = ~6400 tokens. An 8B model (Cerebras)
+        # cannot produce structured JSON from a context that large; it either truncates
+        # or produces malformed output, causing parse failure and fallback to static Phase 1.
+        # generate_synthesis() blocks Cerebras and clears Gemini's exhaustion window,
+        # ensuring forced DONE uses at minimum SambaNova DeepSeek-V3.1.
         yield {"type": "thinking", "text": "Reached round limit — requesting final output…"}
         transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
-        raw = self._gen.generate_non_thinking(
+        raw = self._gen.generate_synthesis(
             self._AGENTIC_MAP_SYSTEM, transcript,
             temperature=0.0, max_tokens=700,
         )
@@ -884,22 +909,22 @@ class TourAgent:
 Module-level imports and signatures:
 {chunk_text}
 
-Task: identify the KEY DESIGN DECISIONS in this codebase.
+Task: identify the KEY CONCEPTS a new contributor must understand to work on this codebase.
 
-A design decision is a non-obvious choice — there was a simpler alternative
-that was deliberately rejected. Design decisions are the concepts a new engineer
-must understand to work on this system effectively.
+Think of it as writing the table of contents for a book about this codebase.
+A concept is worth including if not knowing it would leave someone confused
+or likely to break something when working on this system.
 
 How to find them:
-1. The README often names them explicitly (look for technique names, library
-   choices framed as decisions, or "why X instead of Y" language).
-2. The manifest dependencies reveal which libraries were chosen — each choice
-   of a non-trivial library is a decision.
-3. The module imports reveal which file implements each technique.
+1. The README often names them explicitly — look for what the authors considered
+   important enough to document.
+2. The manifest dependencies reveal what non-trivial libraries were chosen — each
+   one signals a major capability the system is built around.
+3. The module imports and signatures reveal which file implements each concept.
 
-For each decision, find the single file where it is most directly implemented.
-Infrastructure files (database wrappers, config loaders, HTTP plumbing) are
-not design decisions — skip them.
+For each concept, find the single file where it lives most directly.
+Skip pure infrastructure: config loaders, HTTP plumbing, health checks, logging —
+these are present in every codebase and teach nothing specific about this one.
 
 Return ONLY this JSON:
 {{
@@ -907,9 +932,9 @@ Return ONLY this JSON:
   "readme_summary": "1-2 sentences: what the README says this repo does",
   "pipeline_stages": [
     {{
-      "name": "The technique or decision name (3-5 words)",
+      "name": "Concept name — a chapter title (3-5 words, specific to this codebase)",
       "file": "path/to/file (must appear in the file structure above)",
-      "key_aspect": "One sentence: what simpler approach this replaces and why that matters"
+      "key_aspect": "One sentence: what this concept does and why a contributor must understand it"
     }}
   ]
 }}
@@ -979,19 +1004,22 @@ Rules:
         "  2. search_symbol(key_class_or_function) — find the exact implementation\n"
         "  3. find_callers(key_function) — see how it's invoked (reveals the design contract)\n"
         "  4. trace_calls(entry_point) — follow the call chain to see what it depends on\n"
-        "  5. DONE when you can answer: WHY (failure without it), HOW (mechanism), "
-        "WHERE (entry point), WHAT (non-obvious aspect)\n\n"
+        "  5. DONE when you can answer: WHAT (what this component IS), HOW (its mechanism), "
+        "WHERE (entry point into it), WHY (what a new contributor must know before touching it)\n\n"
         "QUALITY RULES (enforced — the output is reviewed by an expert):\n"
-        "  name: 3-5 words naming the TECHNIQUE, never a filename or class name\n"
-        "  subtitle: the SPECIFIC failure/degradation if the simpler approach is used instead\n"
-        "    BAD: 'Improves performance'  GOOD: 'Sequential writes reduce throughput 10x under concurrent load'\n"
-        "  insight: 2-3 sentences — HOW it works (naming real functions) + WHAT surprises a reader\n"
+        "  name: 3-5 words naming the CONCEPT — not a filename, class name, or category label\n"
+        "       (category labels end in 'Strategy', 'Mechanism', 'Pattern', 'Architecture')\n"
+        "  subtitle: one specific phrase — what this concept does in the system\n"
+        "    BAD: 'Improves performance'  GOOD: 'Batches writes to amortise disk flush overhead'\n"
+        "  insight: 2-3 sentences — HOW it works (naming real functions) + WHAT a new contributor\n"
+        "           would not expect when reading this code for the first time\n"
         "  key_functions: VERBATIM names from the code — copy-paste from RESULT blocks\n"
-        "  naive_rejected: name the simpler approach + its concrete failure mode\n"
+        "  naive_rejected: if there's a simpler approach this replaces, name it and its failure;\n"
+        "                  if not applicable, write 'None'\n"
         "  gaps: what design rationale is NOT visible in the code (or 'None')\n"
-        "  If the file is pure infrastructure with no interesting technique: "
+        "  If the file is pure infrastructure with no interesting concept: "
         "name='Infrastructure: [what it does]', subtitle='', insight='', key_functions=[], "
-        "naive_rejected='', gaps=''\n"
+        "naive_rejected='None', gaps='None'\n"
         "Return ONLY valid JSON in the DONE: line."
     )
 
@@ -1098,17 +1126,16 @@ Rules:
         transcript += (
             "\nROUND LIMIT REACHED.\n"
             "Output ONLY the DONE: line below, nothing else. No explanation, no preamble.\n"
-            "DONE: {\"name\":\"<technique name>\",\"subtitle\":\"<one phrase: what problem it solves>\","
-            "\"insight\":\"<2-3 sentences: the mechanism, why this design over the naive alternative, "
-            "what would break if removed>\","
-            "\"naive_rejected\":\"<1 sentence: what simpler approach was rejected and why>\","
-            "\"gaps\":\"<1 sentence: what design rationale is not visible in the code>\"}\n"
+            "DONE: {\"name\":\"<concept name: 3-5 words, what this IS>\",\"subtitle\":\"<one phrase: what it does in the system>\","
+            "\"insight\":\"<2-3 sentences: how it works mechanically + what a new contributor would not expect>\","
+            "\"naive_rejected\":\"<simpler approach it replaces and why that fails, or 'None'>\","
+            "\"gaps\":\"<design rationale not visible in the code, or 'None'>\"}\n"
         )
-        # generate_non_thinking() sets _skip_thinking=True for the entire call including
-        # fallbacks — Gemma 4 is bypassed in _try_fallback() and SambaNova is used instead.
-        raw = self._gen.generate_non_thinking(
+        # Same reasoning as Phase 1 forced DONE: large transcript + 8B model = parse failure.
+        # generate_synthesis() blocks Cerebras and clears Gemini's exhaustion window.
+        raw = self._gen.generate_synthesis(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-            temperature=0.0, max_tokens=600,  # 2-3 sentences per field fits in 600 tokens
+            temperature=0.0, max_tokens=600,
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
@@ -1185,7 +1212,7 @@ Rules:
 
         prompt = f"""Repository: {repo}
 Concept to investigate: {stage_name}
-What this replaces: {stage_aspect}
+What to understand: {stage_aspect}
 
 System context:
 {pipeline_context}
@@ -1200,21 +1227,20 @@ Answer these questions using ONLY evidence visible in the code above.
 Quote actual function names, class names, or docstring text to ground your answers.
 If the code does not contain enough evidence to answer a question, say so — do not invent.
 
-1. WHY: What specific failure or degradation occurs if this technique is removed
-   and the simpler alternative is used instead?
+1. WHAT: What IS this component — what is its role in the system?
 2. HOW: What does the code actually do to implement this? Name the key functions
    or classes and describe their role.
-3. WHERE: Which function or class is the entry point a new engineer should read first?
-4. WHAT: What makes this non-obvious? What would a developer assume before reading
-   this code that turns out to be wrong?
+3. WHERE: Which function or class is the entry point a new contributor should read first?
+4. WHY: What must a new contributor understand about this before touching this code?
+   What would they assume that turns out to be wrong?
 
 Return ONLY this JSON:
 {{
-  "name": "3-5 words — the technique name, grounded in what the code actually does",
-  "subtitle": "One sentence from WHY: the specific failure the simpler approach causes",
-  "insight": "2-3 sentences from HOW and WHAT: how it works and what surprises a reader",
+  "name": "3-5 words — the concept name, specific to what this system does",
+  "subtitle": "One sentence: what this concept does in the system",
+  "insight": "2-3 sentences from HOW and WHY: how it works + what would surprise a new contributor",
   "key_functions": ["exact_function_or_class_name_from_code", "another_exact_name"],
-  "naive_rejected": "One sentence: the simpler approach and its concrete failure mode",
+  "naive_rejected": "If a simpler approach was replaced, name it and why it fails — otherwise 'None'",
   "gaps": "One sentence: what rationale is NOT visible in this code (or 'None')"
 }}
 
@@ -1529,11 +1555,11 @@ Return ONLY this JSON:
       "subtitle": "Use exact 'subtitle' from stage 1 findings",
       "file": "file from stage 1",
       "type": "class|function|module|algorithm",
-      "description": "3-4 sentences elaborating on the insight from stage 1: explain the specific mechanism, why this approach was chosen over the naive alternative, and what would break if it were removed.",
+      "description": "3-4 sentences: what this concept IS and its role in the system, how it works mechanically (naming real functions), what a new contributor must know before touching this code, and what would break or degrade without it.",
       "key_items": ["use exact key_functions from stage 1 findings"],
       "depends_on": [0],
       "reading_order": 2,
-      "ask": "MUST NAME a function from key_items and its specific failure: 'What breaks in [key_function] if [specific simpler behaviour] is used instead?'"
+      "ask": "MUST NAME a function from key_items and a specific constraint a new contributor would need to know: 'How does [key_function] handle [specific edge case or constraint]?'"
     }}
   ]
 }}
