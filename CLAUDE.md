@@ -89,6 +89,12 @@ Reference: `notes/004-claude-code-learnings.md` — Section 2.
 - **Before creating a file**, check whether an existing file can be extended instead
 - After any refactor, run `find . -name "*.py" | grep -v __pycache__ | grep -v .venv` and confirm every file is still imported or is a valid entry point
 
+## Provider Client Rule
+
+Every `OpenAI(...)` client instantiation MUST have `timeout=30` (or use `_TIMEOUT`).
+A client without a timeout will hang indefinitely on a slow/unresponsive provider — verified incident with Gemma 4.
+OpenRouter uses its own helper `_openrouter_client()` which already sets `timeout=45`.
+
 ## Runtime Data — always gitignore, never commit
 
 Directories written at runtime must be in `.gitignore`. Check before first commit of any new feature:
