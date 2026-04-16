@@ -717,11 +717,11 @@ class TourAgent:
             transcript += f"Manifest files (dependencies / entry points):\n{manifest_text}\n\n"
         transcript += "Begin exploration. Start with list_files(\"\") to see the top-level repo structure.\n"
 
-        max_rounds = 6  # 6 rounds × ~400 tokens ≈ 2400 tokens for Phase 1
+        max_rounds = 6  # 6 rounds × ~700 tokens ≈ 4200 tokens for Phase 1
         for round_n in range(max_rounds):
             raw = self._gen.generate(
                 self._AGENTIC_MAP_SYSTEM, transcript,
-                temperature=0.0, max_tokens=400,  # THINK + TOOL fits in 400 tokens
+                temperature=0.0, max_tokens=700,  # Gemma 4 needs ~700 for verbose THINK+TOOL
             )
 
             # Parse THINK + TOOL or DONE from the LLM's response
@@ -790,7 +790,7 @@ class TourAgent:
         transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
         raw = self._gen.generate(
             self._AGENTIC_MAP_SYSTEM, transcript,
-            temperature=0.0, max_tokens=900,
+            temperature=0.0, max_tokens=700,  # pipeline_stages JSON — 700 is enough, generates faster
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
@@ -1005,11 +1005,11 @@ Rules:
             f"Begin investigation. Start with read_file(\"{stage_file}\") to see the full picture.\n"
         )
 
-        max_rounds = 4  # 4 rounds × ~400 tokens × N stages — keep daily budget sane
+        max_rounds = 4  # 4 rounds × ~700 tokens × N stages — keep daily budget sane
         for round_n in range(max_rounds):
             raw = self._gen.generate(
                 self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-                temperature=0.0, max_tokens=400,  # THINK + TOOL fits in 400 tokens
+                temperature=0.0, max_tokens=700,  # Gemma 4 needs ~700 for verbose THINK+TOOL
             )
 
             # Parse THINK + TOOL or DONE
@@ -1074,7 +1074,7 @@ Rules:
         transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
         raw = self._gen.generate(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-            temperature=0.0, max_tokens=800,
+            temperature=0.0, max_tokens=600,  # JSON output only — 600 is enough, generates faster
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:

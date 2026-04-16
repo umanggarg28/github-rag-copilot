@@ -377,7 +377,7 @@ class GenerationService:
             self._client  = OpenAI(
                 api_key=settings.gemini_api_key,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                timeout=30,
+                timeout=90,  # Gemma 4 31B is a large model — slow to stream long outputs
             )
             self._model   = "gemma-4-31b-it"
             self._fast_model = "gemma-4-31b-it"
