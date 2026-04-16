@@ -471,8 +471,7 @@ class GenerationService:
 
     def generate_synthesis(self, system: str, prompt: str, **kwargs) -> str:
         """
-        Like generate_non_thinking() but also resets Gemini's exhaustion window
-        before generating.
+        Like generate_non_thinking() but engineered for Phase 3 synthesis quality.
 
         WHY THIS IS NEEDED
         ──────────────────
@@ -480,35 +479,49 @@ class GenerationService:
         workers × 4 rounds = up to 12 more calls. Together they can exhaust Gemini's
         free-tier RPM quota mid-tour, triggering a 60-second exhaustion window in
         _try_fallback(). By the time Phase 3 synthesis runs, that window is still
-        active — so generate_non_thinking() falls through to SambaNova or, worse,
-        Cerebras llama3.1-8b. An 8B model writing 3000-token synthesis produces
-        shallow, low-quality concept cards.
+        active — so the call falls through the entire cascade and lands on
+        Cerebras llama3.1-8b. An 8B model writing 3000-token structured JSON either
+        truncates mid-object or produces malformed output → tour crash or shallow cards.
 
-        The 60-second window exists to prevent 12 PARALLEL ReAct calls from all
-        hammering Gemini simultaneously. Synthesis is a single sequential call —
-        that protection purpose doesn't apply. Clearing the Gemini slot gives
-        synthesis the strongest available model without affecting the parallel-call
-        safety mechanism.
+        TWO INTERVENTIONS
+        ─────────────────
+        1. Reset Gemini's exhaustion window: The 60-second throttle prevents parallel
+           burst calls from all hammering Gemini simultaneously. Synthesis is a single
+           sequential call — that protection purpose doesn't apply here.
 
-        Provider priority for synthesis (in order):
-          1. Gemini 2.5 Flash  — primary, best quality
-          2. SambaNova DeepSeek-V3.1 — strong fallback (200K tok/day free)
-          3. Everything else  — last resort only
+        2. Block Cerebras for this call only: llama3.1-8b (8B parameters) cannot
+           reliably produce 3000-token structured JSON. We temporarily mark Cerebras
+           as exhausted and restore its state in the finally block so Phase 1/2 tool
+           calls can still use it. Groq llama-3.3-70b (70B) is acceptable; 8B is not.
+
+        Acceptable synthesis providers in priority order:
+          Gemini 2.5 Flash → SambaNova DeepSeek-V3.1 → Anthropic Haiku →
+          OpenRouter Qwen3-Coder → Mistral Small → Groq llama-3.3-70b
+          (Cerebras llama3.1-8b: blocked for synthesis)
         """
-        # Clear Gemini's exhaustion window so _reset_to_primary() inside generate()
-        # restores Gemini rather than staying on the weaker fallback from Phase 1/2.
-        # We also clear gemma4 so that if Gemini fails, the fallback chain goes to
-        # SambaNova (via the _skip_thinking bypass) rather than looping back to gemma4.
-        if hasattr(self, '_exhausted_until'):
-            self._exhausted_until.pop('gemini', None)
-            self._exhausted_until.pop('gemma4', None)
+        import time
+        if not hasattr(self, '_exhausted_until'):
+            self._exhausted_until = {}
 
-        # Skip thinking models — Gemma 4's THINK block eats the 3000-token budget.
+        # 1. Reset Google providers so synthesis gets Gemini if it has recovered.
+        self._exhausted_until.pop('gemini', None)
+        self._exhausted_until.pop('gemma4', None)
+
+        # 2. Block Cerebras 8B for this call only — save current state, restore after.
+        saved_cerebras = self._exhausted_until.get('cerebras')
+        self._exhausted_until['cerebras'] = time.monotonic() + 3600  # effectively infinite
+
+        # 3. Skip thinking models — Gemma 4's THINK block eats the 3000-token budget.
         self._skip_thinking = True
         try:
             return self.generate(system, prompt, **kwargs)
         finally:
             self._skip_thinking = False
+            # Restore Cerebras for Phase 1/2 tool calls
+            if saved_cerebras is None:
+                self._exhausted_until.pop('cerebras', None)
+            else:
+                self._exhausted_until['cerebras'] = saved_cerebras
 
     def grade_answer(self, question: str, context: str, answer: str, query_type: str = "technical") -> dict:
         """
