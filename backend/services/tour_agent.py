@@ -559,7 +559,7 @@ class TourAgent:
     # connected to our MCP server.
 
     _AGENTIC_MAP_SYSTEM = (
-        "You are a senior engineer exploring an unfamiliar codebase to identify its key "
+        "You are a senior engineer exploring an unfamiliar codebase to map its key "
         "ARCHITECTURAL DECISIONS — the non-obvious choices where a simpler alternative "
         "was deliberately rejected.\n\n"
         "TOOLS — call exactly one per turn:\n"
@@ -571,26 +571,26 @@ class TourAgent:
         "FORMAT — output exactly two lines per turn:\n"
         "  THINK: [one sentence: what you learned and what to investigate next]\n"
         "  TOOL: tool_name(\"argument\")\n\n"
-        "  OR when you have identified 4-6 decisions:\n"
-        "  THINK: [why you have enough information now]\n"
+        "  OR when you have covered ALL major directories and have 5-8 decisions:\n"
+        "  THINK: [confirm you have read files from every major directory]\n"
         "  DONE: {\"entry_file\":\"...\",\"readme_summary\":\"...\","
         "\"pipeline_stages\":[{\"name\":\"...\",\"file\":\"...\",\"key_aspect\":\"...\"}]}\n\n"
-        "EXPLORATION STRATEGY:\n"
-        "  1. list_files(\"\") — see top-level repo structure, identify ALL major directories\n"
-        "  2. read_file() key manifests (package.json, pyproject.toml, go.mod, Cargo.toml)\n"
-        "  3. read_file() at least one file from each major directory you found in step 1\n"
-        "  4. search_symbol() / find_callers() to trace how key components connect\n"
-        "  5. DONE only after reading files from multiple directories — never after one\n\n"
+        "EXPLORATION STRATEGY — follow this order strictly:\n"
+        "  1. list_files(\"\") — see ALL top-level dirs, write down every directory name\n"
+        "  2. For EACH directory you found: read_file() at least one substantive source file\n"
+        "     (skip empty dirs, test dirs, and generated dirs like dist/ or __pycache__/)\n"
+        "  3. search_symbol() / find_callers() to trace how the interesting pieces connect\n"
+        "  4. DONE only after you have read at least one file from EVERY major directory\n"
+        "     You MUST NOT call DONE after seeing only 1-2 directories — keep exploring.\n\n"
         "DIVERSITY RULE (critical):\n"
         "  Each stage in pipeline_stages MUST come from a DIFFERENT file.\n"
-        "  If you find 2+ interesting things in one file, pick only the most important one —\n"
-        "  then keep exploring OTHER directories before calling DONE.\n"
-        "  A DONE with multiple stages pointing to the same file will be rejected.\n\n"
+        "  If you find 2+ interesting things in one file, pick only the most important —\n"
+        "  then keep exploring OTHER directories before calling DONE.\n\n"
         "STAGE NAME RULES (critical — every name is checked):\n"
         "  GOOD: names a technique, algorithm, or tradeoff (e.g. 'Lazy Evaluation Cache',\n"
         "        'Hybrid Sparse-Dense Retrieval', 'Progressive Context Expansion')\n"
         "  BAD: any filename, class name, function name, or identifier with underscores\n"
-        "  4-6 stages only — core decisions, skip infrastructure (routing, config, health)\n"
+        "  5-8 stages — cover the whole system, skip only pure infrastructure (config, health)\n"
         "  key_aspect: what simpler approach this replaces and the concrete cost of that\n\n"
         "Return ONLY valid JSON in the DONE: line — no markdown fences, no explanation."
     )
@@ -717,7 +717,11 @@ class TourAgent:
             transcript += f"Manifest files (dependencies / entry points):\n{manifest_text}\n\n"
         transcript += "Begin exploration. Start with list_files(\"\") to see the top-level repo structure.\n"
 
-        max_rounds = 6  # 6 rounds × ~700 tokens ≈ 4200 tokens for Phase 1
+        # Safety ceiling — the model calls DONE when satisfied; this prevents infinite loops.
+        # Rule of thumb: 1 round to list root + 2 rounds per major directory (read + trace).
+        # We don't know the directory count yet, so cap at 16 (enough for any real repo).
+        # The model's DONE judgment, not this counter, should be the binding constraint.
+        max_rounds = 16
         for round_n in range(max_rounds):
             raw = self._gen.generate(
                 self._AGENTIC_MAP_SYSTEM, transcript,
@@ -774,7 +778,7 @@ class TourAgent:
                        "text":  f"THINK: {think_text} → {display}"}
 
                 # Truncate tool output so the transcript doesn't balloon
-                tool_result = _token_budget(tool_result, max_tokens=300)
+                tool_result = _token_budget(tool_result, max_tokens=400)
                 transcript += (
                     f"\nTHINK: {think_text}\n"
                     f"TOOL: {display}\n"
@@ -788,9 +792,9 @@ class TourAgent:
         # ── Exhausted rounds — force final output ──────────────────────────────
         yield {"type": "thinking", "text": "Reached round limit — requesting final output…"}
         transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
-        raw = self._gen.generate(
+        raw = self._gen.generate_non_thinking(
             self._AGENTIC_MAP_SYSTEM, transcript,
-            temperature=0.0, max_tokens=700,  # pipeline_stages JSON — 700 is enough, generates faster
+            temperature=0.0, max_tokens=700,
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
@@ -1078,19 +1082,18 @@ Rules:
         print(f"TourAgent.investigate_agentic [{stage_name}] round limit — forcing DONE")
         transcript += (
             "\nROUND LIMIT REACHED.\n"
-            "DO NOT think or explain. Output EXACTLY one line starting with DONE: and nothing else.\n"
-            "Each JSON value must be SHORT: name≤40 chars, subtitle≤60, insight≤180, "
-            "naive_rejected≤120, gaps≤120.\n"
-            "DONE: {\"name\":\"<technique>\",\"subtitle\":\"<phrase>\","
-            "\"insight\":\"<one key insight>\","
-            "\"naive_rejected\":\"<simpler rejected approach>\","
-            "\"gaps\":\"<what code does not reveal>\"}\n"
+            "Output ONLY the DONE: line below, nothing else. No explanation, no preamble.\n"
+            "DONE: {\"name\":\"<technique name>\",\"subtitle\":\"<one phrase: what problem it solves>\","
+            "\"insight\":\"<2-3 sentences: the mechanism, why this design over the naive alternative, "
+            "what would break if removed>\","
+            "\"naive_rejected\":\"<1 sentence: what simpler approach was rejected and why>\","
+            "\"gaps\":\"<1 sentence: what design rationale is not visible in the code>\"}\n"
         )
         # generate_non_thinking() sets _skip_thinking=True for the entire call including
         # fallbacks — Gemma 4 is bypassed in _try_fallback() and SambaNova is used instead.
         raw = self._gen.generate_non_thinking(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-            temperature=0.0, max_tokens=300,
+            temperature=0.0, max_tokens=600,  # 2-3 sentences per field fits in 600 tokens
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
@@ -1504,7 +1507,7 @@ Return ONLY this JSON:
       "subtitle": "Use exact 'subtitle' from stage 1 findings",
       "file": "file from stage 1",
       "type": "class|function|module|algorithm",
-      "description": "Use exact 'insight' from stage 1 findings",
+      "description": "3-4 sentences elaborating on the insight from stage 1: explain the specific mechanism, why this approach was chosen over the naive alternative, and what would break if it were removed.",
       "key_items": ["use exact key_functions from stage 1 findings"],
       "depends_on": [0],
       "reading_order": 2,
