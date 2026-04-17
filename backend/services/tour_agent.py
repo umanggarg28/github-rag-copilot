@@ -58,7 +58,7 @@ from __future__ import annotations
 import fnmatch as _fnmatch
 import json as _json
 import re as _re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, wait as _futures_wait, FIRST_COMPLETED
 from pathlib import Path
 from typing import Generator
 
@@ -873,15 +873,15 @@ class TourAgent:
                 yield {"type": "thinking", "text": f"Round {round_n + 1}: retrying parse…"}
 
         # ── Exhausted rounds — force final output ──────────────────────────────
-        # Use generate_synthesis() not generate_non_thinking() — the transcript is now
-        # 16 rounds × 400-token tool results = ~6400 tokens. An 8B model (Cerebras)
-        # cannot produce structured JSON from a context that large; it either truncates
-        # or produces malformed output, causing parse failure and fallback to static Phase 1.
-        # generate_synthesis() blocks Cerebras and clears Gemini's exhaustion window,
-        # ensuring forced DONE uses at minimum SambaNova DeepSeek-V3.1.
+        # Use generate_non_thinking() here, not generate_synthesis().
+        # Phase 1 forced DONE outputs max_tokens=700 — small enough for Cerebras 8B.
+        # generate_synthesis() (which blocks Cerebras via _synthesis_depth) is reserved
+        # exclusively for Phase 3's 3000-token JSON where model quality is critical.
+        # Using it here would also block Cerebras for concurrent Phase 2 workers,
+        # causing unnecessary cascade failures in those workers.
         yield {"type": "thinking", "text": "Reached round limit — requesting final output…"}
         transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
-        raw = self._gen.generate_synthesis(
+        raw = self._gen.generate_non_thinking(
             self._AGENTIC_MAP_SYSTEM, transcript,
             temperature=0.0, max_tokens=700,
         )
@@ -1105,7 +1105,12 @@ Rules:
 
         max_rounds = 4  # 4 rounds × ~700 tokens × N stages — keep daily budget sane
         for round_n in range(max_rounds):
-            raw = self._gen.generate(
+            # Phase 2 investigations MUST use a quality model. Cerebras 8B does not
+            # faithfully report tool call results — it hallucinates file paths and
+            # function names. generate_quality() blocks Cerebras and waits for strong
+            # providers (Gemini, SambaNova) to recover if rate-limited. A skipped
+            # investigation from RuntimeError is better than a hallucinated one.
+            raw = self._gen.generate_quality(
                 self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
                 temperature=0.0, max_tokens=700,  # Gemma 4 needs ~700 for verbose THINK+TOOL
             )
@@ -1185,9 +1190,10 @@ Rules:
             "\"naive_rejected\":\"<simpler approach it replaces and why that fails, or 'None'>\","
             "\"gaps\":\"<design rationale not visible in the code, or 'None'>\"}\n"
         )
-        # Same reasoning as Phase 1 forced DONE: large transcript + 8B model = parse failure.
-        # generate_synthesis() blocks Cerebras and clears Gemini's exhaustion window.
-        raw = self._gen.generate_synthesis(
+        # Phase 2 forced DONE writes the final investigation summary — this is where
+        # Cerebras hallucinated file paths and function names. Must use generate_quality()
+        # to ensure the summary is grounded in actual tool call results.
+        raw = self._gen.generate_quality(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
             temperature=0.0, max_tokens=600,
         )
@@ -1304,8 +1310,11 @@ Rules:
 - If the code is pure infrastructure with no interesting technique, set
   name to "Infrastructure: [what it does]" so Phase 3 can skip it
 """
-        raw = self._gen.generate(_INVESTIGATE_SYSTEM, prompt, temperature=0.0,
-                                  json_mode=True, max_tokens=900)
+        # Use generate_quality() so the static fallback also blocks Cerebras 8B.
+        # The agentic loop already required quality — when it falls back to static,
+        # the same quality requirement applies.
+        raw = self._gen.generate_quality(_INVESTIGATE_SYSTEM, prompt, temperature=0.0,
+                                         json_mode=True, max_tokens=900)
         try:
             result = _parse_json(raw)
             result.setdefault("name",          stage_name)
@@ -1660,6 +1669,19 @@ Rules:
                     d for d in c.get("depends_on", [])
                     if d in valid_ids and d != c["id"]
                 ]
+
+        # Normalise reading_order — LLMs (especially non-Gemini fallbacks) sometimes
+        # start at 2 instead of 1, skip values, or use non-sequential numbering.
+        # Re-assign reading_order deterministically: sort by the LLM's original order
+        # (preserves relative sequence), then renumber 1..N.
+        if "concepts" in tour and tour["concepts"]:
+            sorted_by_order = sorted(
+                tour["concepts"],
+                key=lambda c: (c.get("reading_order") or 999, c["id"])
+            )
+            for i, c in enumerate(sorted_by_order):
+                c["reading_order"] = i + 1
+
         return tour
 
     # ── Main entry point ──────────────────────────────────────────────────────
@@ -1786,7 +1808,12 @@ Rules:
         n_stages   = len(stages)
         base_prog  = 0.25
         stage_step = 0.55 / max(n_stages, 1)
-        _INV_WORKERS = 3
+        # 2 workers instead of 3: each investigation calls generate_quality() which
+        # blocks Cerebras and uses Gemini/SambaNova/Mistral. 3 workers exhausted ALL
+        # free-tier providers within Phase 2, leaving Phase 3 synthesis with nothing.
+        # 2 workers still parallelises the slowest bottleneck (API latency) while
+        # reducing provider pressure enough for Gemini's 15 RPM to sustain across runs.
+        _INV_WORKERS = 2
 
         # Emit "start" events for all stages before the pool runs — the pool
         # runs synchronously from the generator's perspective, so we can't
@@ -1810,42 +1837,79 @@ Rules:
                       "text": f"Running {n_stages} investigations with {_INV_WORKERS} workers…"},
         }
 
-        # Run investigations in parallel; collect results keyed by stage index.
-        # Uses _phase_investigate_agentic — each worker runs a ReAct loop
-        # (up to 6 rounds) with read_file/search_symbol/find_callers/trace_calls.
+        # Run investigations in parallel, yielding progress continuously.
+        #
+        # WHY polling instead of as_completed():
+        #   as_completed() blocks the generator until a FULL investigation finishes.
+        #   Each investigation takes 2-5 minutes, so the progress bar freezes for
+        #   long stretches (30% → 82% with no movement). Users see a dead UI.
+        #
+        #   wait(timeout=6) lets us yield a heartbeat tick every 6 seconds while
+        #   workers are busy, so the progress bar moves steadily. When an investigation
+        #   finishes, we emit its "found" event immediately (instead of batching all
+        #   results at the end), so the trace panel also updates in real time.
         insights: list[dict | None] = [None] * n_stages
+        completed = 0
         with ThreadPoolExecutor(max_workers=_INV_WORKERS) as pool:
             future_to_idx = {
                 pool.submit(self._phase_investigate_agentic, repo, stage, pipeline_context): i
                 for i, stage in enumerate(stages)
             }
-            for future in as_completed(future_to_idx):
-                i = future_to_idx[future]
-                try:
-                    insights[i] = future.result()
-                except Exception as e:
-                    print(f"TourAgent: investigation failed for stage {i}: {e}")
-                    insights[i] = {
-                        "name": stages[i].get("name", ""),
-                        "subtitle": stages[i].get("key_aspect", ""),
-                        "insight": "", "key_functions": [],
-                        "naive_rejected": "", "gaps": "",
-                    }
+            pending     = set(future_to_idx.keys())
+            heartbeat_n = 0
 
-        # Emit "found" events in pipeline order after all are complete
-        for i, (stage, insight) in enumerate(zip(stages, insights)):
-            prog      = base_prog + (i + 1) * stage_step
-            gaps_text  = insight.get("gaps", "")
-            trace_text = (insight.get("insight") or "")[:120]
-            if gaps_text and gaps_text.lower() not in ("none", "...", ""):
-                trace_text += f" | gap: {gaps_text[:60]}"
-            yield {
-                "stage": "investigating", "progress": prog,
-                "message": f"Found: {insight.get('name', stage['name'])}",
-                "trace": {"type": "finding",
-                          "name": insight.get("name", ""),
-                          "text": trace_text},
-            }
+            while pending:
+                done, pending = _futures_wait(pending, timeout=6,
+                                              return_when=FIRST_COMPLETED)
+
+                if not done:
+                    # 6-second timeout — no investigation finished yet.
+                    # Advance the progress bar a small tick so the user knows
+                    # work is happening. Cap at 90% of the next milestone to
+                    # avoid "completing" a stage before it actually finishes.
+                    heartbeat_n += 1
+                    tick_prog = base_prog + stage_step * min(
+                        completed + heartbeat_n * 0.10,
+                        completed + 0.90,
+                    )
+                    yield {
+                        "stage": "investigating",
+                        "progress": tick_prog,
+                        "message": f"Investigating… ({completed}/{n_stages} done)",
+                        "trace": {"type": "thinking",
+                                  "text": f"{n_stages - completed} investigation(s) still running…"},
+                    }
+                    continue
+
+                # One or more investigations just finished — reset heartbeat counter
+                # for the next wait window, then process each completed future.
+                heartbeat_n = 0
+                for future in done:
+                    i = future_to_idx[future]
+                    try:
+                        insights[i] = future.result()
+                    except Exception as e:
+                        print(f"TourAgent: investigation failed for stage {i}: {e}")
+                        insights[i] = {
+                            "name": stages[i].get("name", ""),
+                            "subtitle": stages[i].get("key_aspect", ""),
+                            "insight": "", "key_functions": [],
+                            "naive_rejected": "", "gaps": "",
+                        }
+                    completed += 1
+                    insight    = insights[i]
+                    gaps_text  = insight.get("gaps", "")
+                    trace_text = (insight.get("insight") or "")[:120]
+                    if gaps_text and gaps_text.lower() not in ("none", "...", ""):
+                        trace_text += f" | gap: {gaps_text[:60]}"
+                    yield {
+                        "stage": "investigating",
+                        "progress": base_prog + completed * stage_step,
+                        "message": f"Found: {insight.get('name', stages[i]['name'])}",
+                        "trace": {"type": "finding",
+                                  "name": insight.get("name", ""),
+                                  "text": trace_text},
+                    }
 
         # Filter out infrastructure concepts Phase 2 flagged.
         # Phase 2 sets name="Infrastructure: ..." when a file has no interesting

@@ -585,10 +585,12 @@ class DiagramService:
         from backend.services.tour_agent import TourAgent
 
         if force:
+            # Bust in-memory cache so TourAgent runs fresh.
+            # We do NOT delete the disk file here — if generation fails
+            # (e.g. all providers rate-limited), the old disk file is still
+            # valid and will be served on the next non-forced visit.
+            # The disk file is overwritten only after a successful "done" event.
             self._tour_cache.pop(repo, None)
-            disk_path = self._tour_path(repo)
-            if disk_path.exists():
-                disk_path.unlink()
         else:
             if repo in self._tour_cache:
                 yield {"stage": "done", "progress": 1.0, **self._tour_cache[repo]}
@@ -605,7 +607,14 @@ class DiagramService:
                 tour = {k: v for k, v in event.items()
                         if k not in ("stage", "progress", "message", "trace")}
                 self._tour_cache[repo] = tour
-                self._save_tour(repo, tour)
+                self._save_tour(repo, tour)  # overwrites old disk file on success
+            elif event.get("stage") == "error" and force:
+                # Generation failed — fall back to the old disk cache if available
+                # so the user sees stale-but-valid data instead of a hard error
+                old = self._load_tour(repo)
+                if old is not None:
+                    yield {"stage": "done", "progress": 1.0, **old}
+                    return
             yield event
 
     def build_diagram_stream(self, repo: str, diagram_type: str, force: bool = False):
@@ -631,11 +640,9 @@ class DiagramService:
         cache_key = (repo, diagram_type)
 
         if force:
-            # Bust both caches so a fresh diagram is generated
+            # Bust in-memory cache only — disk file is overwritten on success,
+            # so it stays as a fallback if generation fails mid-stream.
             self._cache.pop(cache_key, None)
-            disk_path = self._diagram_path(repo, diagram_type)
-            if disk_path.exists():
-                disk_path.unlink()
         else:
             if cache_key in self._cache:
                 yield {"stage": "done", "progress": 1.0,

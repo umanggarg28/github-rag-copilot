@@ -68,14 +68,18 @@ function styleFor(type) {
 }
 
 // ── Card geometry ─────────────────────────────────────────────────────────────
-const CARD_W        = 220;  // card width in canvas px
-const CARD_H        = 172;  // collapsed card height
-const COL_GAP       = 110;  // horizontal gap between columns
-const ROW_GAP       = 36;   // vertical gap between rows in the same column
-const EXPANSION_H   = 195;  // extra px a card grows when expanded (desc + items + padding)
+const CARD_W      = 220;  // card width in canvas px
+const CARD_H      = 172;  // collapsed card height
+const COL_GAP     = 100;  // horizontal gap between cards in the same row
+const ROW_GAP     = 72;   // vertical gap between rows
+const EXPANSION_H = 195;  // extra px a card grows when expanded (desc + items + padding)
 
-// When a card is expanded, push all cards BELOW it in the same column down
-// by EXPANSION_H so they don't overlap. Returns { [id]: yOffset }.
+// How many concepts appear in each horizontal row.
+// With 12 concepts and PER_ROW=4: 3 rows of 4, reads like a book.
+const PER_ROW = 4;
+
+// When a card is expanded, push all cards in rows BELOW it down by EXPANSION_H
+// so the expanded content doesn't overlap them. Returns { [id]: yOffset }.
 function expansionOffsets(selectedId, concepts, basePositions) {
   if (selectedId === null) return {};
   const sel = basePositions[selectedId];
@@ -84,134 +88,60 @@ function expansionOffsets(selectedId, concepts, basePositions) {
   concepts.forEach(c => {
     if (c.id === selectedId) return;
     const p = basePositions[c.id];
-    // Same column (same x) and strictly below the expanded card
-    if (p && p.x === sel.x && p.y > sel.y) offsets[c.id] = EXPANSION_H;
+    // Any card in a row strictly below the expanded card's row
+    if (p && p.y > sel.y) offsets[c.id] = EXPANSION_H;
   });
   return offsets;
 }
 
-// ── Layout: topological column assignment with overflow wrapping ───────────────
-// Returns { [conceptId]: { x, y } } in canvas coordinates.
+// ── Layout: row-major reading order ───────────────────────────────────────────
+// Concepts are placed left-to-right by reading_order, wrapping to the next row
+// after PER_ROW concepts — exactly like reading text.
 //
-// Two kinds of overflow:
+//   1 → 2 → 3 → 4
+//   ↓
+//   5 → 6 → 7 → 8
+//   ↓
+//   9 → 10 → 11 → 12
 //
-// 1. Same-depth overflow (fan-out): many nodes at depth 1 (e.g. 5 children of
-//    the pipeline overview). MAX_PER_COL = 3 caps per column and overflows into
-//    the next column, then the next depth starts in the column after that.
-//
-// 2. Too-many-columns overflow (linear chain): a sequential A→B→C→D→E→F→G
-//    produces 7 columns — too wide for the screen. MAX_COLS = 4 caps the total
-//    horizontal width. After column 3, nodes wrap into a second visual band
-//    (row), placed below the first band. This turns a 7-wide layout into a
-//    2-band layout (cols 0-3 top, cols 4-6 bottom), which fits the viewport.
-const MAX_PER_COL = 3;
-const MAX_COLS    = 4;   // wrap into a second band after this many visual columns
-const BAND_GAP    = 80;  // extra vertical gap between bands
-
+// This avoids the "spreadsheet" feel of column-major layouts where the eye
+// must scan down a column then jump back to the top of the next column.
 function computeLayout(concepts) {
   if (!concepts.length) return {};
 
-  // Step 1: compute depth = longest path from any root (O(n²) is fine for 8 nodes)
-  const depthCache = {};
-  function depth(id) {
-    if (id in depthCache) return depthCache[id];
-    const c = concepts.find(x => x.id === id);
-    if (!c || !c.depends_on?.length) return (depthCache[id] = 0);
-    depthCache[id] = 1 + Math.max(...c.depends_on.map(depth));
-    return depthCache[id];
-  }
-  concepts.forEach(c => depth(c.id));
-
-  // Step 2: group by depth-column, sort within column by reading_order
-  const depthCols = {};
-  concepts.forEach(c => {
-    const col = depthCache[c.id] ?? 0;
-    if (!depthCols[col]) depthCols[col] = [];
-    depthCols[col].push(c);
-  });
-  Object.values(depthCols).forEach(arr =>
-    arr.sort((a, b) => (a.reading_order ?? 99) - (b.reading_order ?? 99))
+  const sorted = [...concepts].sort((a, b) =>
+    (a.reading_order ?? 999) - (b.reading_order ?? 999)
   );
 
-  // Step 3: assign visual columns, capping at MAX_PER_COL items per column.
-  const colAssign = {};
-  let nextCol = 0;
-
-  const sortedDepths = Object.keys(depthCols).map(Number).sort((a, b) => a - b);
-  sortedDepths.forEach(d => {
-    const nodes = depthCols[d];
-    let col = nextCol;
-    let count = 0;
-    nodes.forEach(node => {
-      if (count >= MAX_PER_COL) { col++; count = 0; }
-      colAssign[node.id] = col;
-      count++;
-    });
-    nextCol = col + 1;
-  });
-
-  // Step 4: wrap columns past MAX_COLS into bands.
-  // band = Math.floor(colIndex / MAX_COLS), wrappedCol = colIndex % MAX_COLS
-  // This maps e.g. columns [0,1,2,3,4,5,6] to band 0: [0,1,2,3], band 1: [0,1,2]
-  const bandAssign = {};
-  const wrappedColAssign = {};
-  Object.entries(colAssign).forEach(([id, col]) => {
-    bandAssign[id]      = Math.floor(col / MAX_COLS);
-    wrappedColAssign[id] = col % MAX_COLS;
-  });
-
-  // Step 5: assign pixel positions — group by (band, wrappedCol)
-  // Compute each band's total height first so we can stack bands vertically.
-  const bandColGroups = {};   // { band_wrappedCol: [concept, ...] }
-  const bandHeights   = {};   // { band: maxColumnHeight }
-
-  concepts.forEach(c => {
-    const band = bandAssign[c.id] ?? 0;
-    const wc   = wrappedColAssign[c.id] ?? 0;
-    const key  = `${band}_${wc}`;
-    if (!bandColGroups[key]) bandColGroups[key] = [];
-    bandColGroups[key].push(c);
-  });
-
-  Object.entries(bandColGroups).forEach(([key, nodes]) => {
-    nodes.sort((a, b) => (a.reading_order ?? 99) - (b.reading_order ?? 99));
-    const [band] = key.split("_").map(Number);
-    const h = nodes.length * (CARD_H + ROW_GAP);
-    bandHeights[band] = Math.max(bandHeights[band] ?? 0, h);
-  });
-
-  // Cumulative Y offsets per band
-  const bandStartY = {};
-  let cumY = 48;
-  const numBands = Math.max(...Object.values(bandAssign)) + 1;
-  for (let b = 0; b < numBands; b++) {
-    bandStartY[b] = cumY;
-    cumY += (bandHeights[b] ?? 0) + BAND_GAP;
-  }
-
-  // Within each band, center columns relative to the tallest column in that band
   const positions = {};
-  Object.entries(bandColGroups).forEach(([key, nodes]) => {
-    const [band, wc] = key.split("_").map(Number);
-    const x = wc * (CARD_W + COL_GAP) + 48;
-    const maxH = bandHeights[band] ?? 0;
-    const colH = nodes.length * (CARD_H + ROW_GAP) - ROW_GAP;
-    const startY = bandStartY[band] + (maxH - colH) / 2;
-    nodes.forEach((node, row) => {
-      positions[node.id] = { x, y: startY + row * (CARD_H + ROW_GAP) };
-    });
+  sorted.forEach((c, i) => {
+    const row = Math.floor(i / PER_ROW);
+    const col = i % PER_ROW;
+    positions[c.id] = {
+      x: col * (CARD_W + COL_GAP) + 48,
+      y: row * (CARD_H + ROW_GAP) + 48,
+    };
   });
   return positions;
 }
 
-// ── Arrow: cubic bezier from right-edge of source to left-edge of target ──────
+// ── Arrow: cubic bezier between source and target ─────────────────────────────
+// Normally left-to-right (right edge → left edge). If the dependency arrow
+// goes backwards (prerequisite placed to the right due to reading_order layout),
+// flip to exit from the left edge and enter the right edge instead.
 function bezierPath(fromPos, toPos) {
-  const x1 = fromPos.x + CARD_W;
+  const fromCenterX = fromPos.x + CARD_W / 2;
+  const toCenterX   = toPos.x   + CARD_W / 2;
+  const leftToRight = toCenterX >= fromCenterX;
+
+  const x1 = leftToRight ? fromPos.x + CARD_W : fromPos.x;
   const y1 = fromPos.y + CARD_H / 2;
-  const x2 = toPos.x;
+  const x2 = leftToRight ? toPos.x             : toPos.x + CARD_W;
   const y2 = toPos.y + CARD_H / 2;
-  const tension = Math.max((x2 - x1) * 0.55, 60);
-  return `M ${x1} ${y1} C ${x1 + tension} ${y1}, ${x2 - tension} ${y2}, ${x2} ${y2}`;
+
+  const tension = Math.max(Math.abs(x2 - x1) * 0.55, 60);
+  const dir = leftToRight ? 1 : -1;
+  return `M ${x1} ${y1} C ${x1 + dir * tension} ${y1}, ${x2 - dir * tension} ${y2}, ${x2} ${y2}`;
 }
 
 // ── ConceptCard ────────────────────────────────────────────────────────────────
@@ -680,13 +610,11 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   const concepts      = data.concepts || [];
   const basePositions = computeLayout(concepts);
 
-  // Visual sequence numbers: left-to-right columns, top-to-bottom within each
-  // column — so the badge always matches how your eye travels across the canvas.
-  // The LLM's reading_order only controls sort-within-column; we override the
-  // displayed number here so it always matches visual position.
+  // Visual sequence numbers: row-first then column — matches the left-to-right,
+  // top-to-bottom reading order of the row-major layout.
   const visualNumber = {};
   Object.entries(basePositions)
-    .sort(([, a], [, b]) => a.x !== b.x ? a.x - b.x : a.y - b.y)
+    .sort(([, a], [, b]) => a.y !== b.y ? a.y - b.y : a.x - b.x)
     .forEach(([id], i) => { visualNumber[Number(id)] = i + 1; });
 
   // When a card is expanded push the cards below it in the same column down
@@ -769,8 +697,43 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
               <marker id="ec-arrow-hi" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
                 <polygon points="0 0, 7 2.5, 0 5" fill="#7DABFF" />
               </marker>
+              {/* Amber arrowhead for sequential reading-path arrows */}
+              <marker id="ec-arrow-seq" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+                <polygon points="0 0, 7 2.5, 0 5" fill="rgba(245,158,11,0.75)" />
+              </marker>
             </defs>
 
+            {/* ── Sequential reading-path arrows (amber) ──────────────────
+                 Connect concept N → N+1 in reading order so the learning
+                 path is visually explicit. These are the primary navigation
+                 guide; dependency arrows (blue) are supporting context. */}
+            {(() => {
+              const seq = [...concepts].sort((a, b) =>
+                (a.reading_order ?? 999) - (b.reading_order ?? 999)
+              );
+              return seq.slice(0, -1).map((c, i) => {
+                const next = seq[i + 1];
+                const from = getPosFor(c.id);
+                const to   = getPosFor(next.id);
+                if (!from || !to) return null;
+                const d = bezierPath(from, to);
+                const isDim = connectedIds && !connectedIds.has(c.id) && !connectedIds.has(next.id);
+                return (
+                  <path
+                    key={`seq-${c.id}→${next.id}`}
+                    d={d}
+                    stroke="rgba(245,158,11,0.50)"
+                    strokeWidth="1.5"
+                    fill="none"
+                    markerEnd="url(#ec-arrow-seq)"
+                    strokeDasharray="5 3"
+                    style={{ opacity: isDim ? 0.06 : 1, transition: "opacity 0.15s" }}
+                  />
+                );
+              });
+            })()}
+
+            {/* ── Dependency arrows (blue) — prerequisite relationships ── */}
             {concepts.map(c =>
               (c.depends_on ?? []).map(depId => {
                 const from = getPosFor(depId);

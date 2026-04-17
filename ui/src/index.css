@@ -139,13 +139,37 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Atmospheric bloom — blueprint blue at top-left, barely perceptible.
-     Linear/Vercel principle: depth is felt, not seen. */
+  /* Atmospheric bloom — bottom-right and top-center static glows.
+     The top-left blue glow is extracted to body::after so it can drift. */
   background-image:
-    radial-gradient(ellipse 65% 55% at -5% 0%,   rgba(20, 60, 160, 0.30) 0%, transparent 65%),
     radial-gradient(ellipse 45% 40% at 105% 100%, rgba(10, 30, 90,  0.18) 0%, transparent 60%),
     radial-gradient(ellipse 30% 25% at 50% 0%,   rgba(91, 143, 249, 0.05) 0%, transparent 50%);
   animation: page-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Animated top-left glow — the main blueprint blue bloom drifts slowly.
+   Extracted from body background-image so transform: translate() can animate it.
+   CSS cannot animate positions inside radial-gradient() directly; a pseudo-element
+   that you translate is the only pure-CSS path.
+   body::before is taken (dot grid), so we use body::after.
+   z-index: 0 keeps it below .layout (z-index: 1) but above the static body background. */
+body::after {
+  content: '';
+  position: fixed;
+  top: -30%;
+  left: -15%;
+  width: 55%;
+  height: 65%;
+  background: radial-gradient(ellipse at 50% 50%, rgba(30, 80, 200, 0.45) 0%, rgba(20, 60, 160, 0.18) 45%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: glow-drift 10s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes glow-drift {
+  from { transform: translate(0,   0); }
+  to   { transform: translate(70%, 55%); }
 }
 
 /* Signature dot grid — blueprint-tinted, masked to center, creates spatial texture.

@@ -31,10 +31,19 @@ System prompt structure:
 
 from pathlib import Path
 import sys
+import threading
 from typing import Iterator
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from backend.config import settings
+
+# Thread-local storage for the "quality-only" flag.
+# When generate_quality() or generate_synthesis() is active on a thread,
+# this flag tells _try_fallback() to skip Cerebras 8B for THAT thread only.
+# Using threading.local() instead of a shared counter eliminates a race
+# condition where concurrent Phase 2 workers could decrement each other's
+# counter to zero mid-cascade, accidentally unblocking Cerebras.
+_quality_local = threading.local()
 
 # Qwen3-Coder via OpenRouter free tier — strong coding model from Alibaba (Apache 2.0 licence).
 # The `:free` suffix means OpenRouter serves it at no cost (rate limited but generous).
@@ -362,6 +371,11 @@ class GenerationService:
         _reset_to_primary() doesn't immediately reset parallel calls back to it.
         Without this, 12 parallel ReAct calls all 429 on Gemini simultaneously
         and cascade all the way to Groq, exhausting its daily token budget.
+
+        Each candidate provider is checked against _exhausted_until before being
+        selected. This allows generate_synthesis() to block specific providers
+        (e.g. Cerebras 8B) for a single high-stakes call by writing a far-future
+        timestamp into the dict — without needing a separate code path.
         """
         import time
         # Mark the current provider as exhausted for 60 seconds
@@ -379,11 +393,20 @@ class GenerationService:
         # means "allow any provider that comes before X in _all" to fall through to X.
         _all = ("gemini", "gemma4", "sambanova", "cerebras", "anthropic", "openrouter", "mistral", "groq")
 
+        # Helper: is a provider currently blocked by an exhaustion window?
+        # This is what allows generate_synthesis() to block Cerebras (or any provider)
+        # for a single call by writing to _exhausted_until — without this check,
+        # _try_fallback() blindly switches to it regardless.
+        now = time.monotonic()
+        def _is_blocked(name: str) -> bool:
+            return self._exhausted_until.get(name, 0) > now
+
         # Gemma 4 31B — same GEMINI_API_KEY, separate rate-limit bucket from Gemini 2.5 Flash.
         # Skipped when _skip_thinking=True: Gemma 4 is a reasoning model that prepends a THINK
         # block to every response — this eats the entire token budget on compact-JSON tasks.
         if (self.provider in _all[:_all.index("gemma4")]
                 and settings.gemini_api_key
+                and not _is_blocked("gemma4")
                 and not getattr(self, '_skip_thinking', False)):
             from openai import OpenAI
             self._client  = OpenAI(
@@ -399,14 +422,20 @@ class GenerationService:
         if getattr(self, '_skip_thinking', False) and self.provider in _all[:_all.index("gemma4")] and settings.gemini_api_key:
             print("Generation: skipping Gemma 4 (thinking model) — falling through to SambaNova")
         # SambaNova DeepSeek-V3.1 — excellent at code, best quality after Google tier (200K tok/day)
-        if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key:
+        if self.provider in _all[:_all.index("sambanova")] and settings.sambanova_api_key and not _is_blocked("sambanova"):
             from openai import OpenAI
             self._client  = OpenAI(api_key=settings.sambanova_api_key, base_url="https://api.sambanova.ai/v1", timeout=30, max_retries=0)
             self._model   = "DeepSeek-V3.1"
             self.provider = "sambanova"
             print("Generation: switched to SambaNova (DeepSeek-V3.1)")
             return True
-        if self.provider in _all[:_all.index("cerebras")] and settings.cerebras_api_key:
+        # Cerebras llama3.1-8b is blocked during generate_quality() and generate_synthesis() calls.
+        # _quality_local.quality_only is a per-thread boolean set by those methods.
+        # Using threading.local() instead of a shared counter eliminates a race condition
+        # where Worker B finishing its quality call would decrement a shared counter to 0
+        # while Worker A is still mid-cascade, accidentally unblocking Cerebras for A.
+        _in_synthesis = getattr(_quality_local, 'quality_only', False)
+        if self.provider in _all[:_all.index("cerebras")] and settings.cerebras_api_key and not _is_blocked("cerebras") and not _in_synthesis:
             from openai import OpenAI
             self._client  = OpenAI(api_key=settings.cerebras_api_key, base_url="https://api.cerebras.ai/v1", timeout=30, max_retries=0)
             # llama3.1-8b: only confirmed-available model on Cerebras free tier as of Apr 2026
@@ -415,27 +444,29 @@ class GenerationService:
             self.provider = "cerebras"
             print("Generation: switched to Cerebras (llama3.1-8b)")
             return True
-        if self.provider in _all[:_all.index("anthropic")] and settings.anthropic_api_key:
+        if (_is_blocked("cerebras") or _in_synthesis) and self.provider in _all[:_all.index("cerebras")]:
+            print("Generation: skipping Cerebras (blocked for synthesis) — falling through")
+        if self.provider in _all[:_all.index("anthropic")] and settings.anthropic_api_key and not _is_blocked("anthropic"):
             import anthropic
             self._client  = anthropic.Anthropic(api_key=settings.anthropic_api_key, max_retries=0)
             self._model   = "claude-haiku-4-5-20251001"
             self.provider = "anthropic"
             print("Generation: switched to Anthropic (claude-haiku-4-5)")
             return True
-        if self.provider in _all[:_all.index("openrouter")] and settings.openrouter_api_key:
+        if self.provider in _all[:_all.index("openrouter")] and settings.openrouter_api_key and not _is_blocked("openrouter"):
             self._client  = _openrouter_client(settings.openrouter_api_key)
             self._model   = _OPENROUTER_MODEL
             self.provider = "openrouter"
             print(f"Generation: switched to OpenRouter ({_OPENROUTER_MODEL})")
             return True
-        if self.provider in _all[:_all.index("mistral")] and settings.mistral_api_key:
+        if self.provider in _all[:_all.index("mistral")] and settings.mistral_api_key and not _is_blocked("mistral"):
             from openai import OpenAI
             self._client  = OpenAI(api_key=settings.mistral_api_key, base_url="https://api.mistral.ai/v1", timeout=30, max_retries=0)
             self._model   = "mistral-small-latest"
             self.provider = "mistral"
             print("Generation: switched to Mistral (mistral-small-latest)")
             return True
-        if self.provider in _all[:_all.index("groq")] and settings.groq_api_key:
+        if self.provider in _all[:_all.index("groq")] and settings.groq_api_key and not _is_blocked("groq"):
             from groq import Groq
             self._client  = Groq(api_key=settings.groq_api_key)
             self._model   = "llama-3.3-70b-versatile"
@@ -449,6 +480,64 @@ class GenerationService:
     # These are incompatible with compact-JSON tasks (forced DONE, short synthesis)
     # because the thinking block consumes the entire token budget before the JSON starts.
     _THINKING_PROVIDERS = frozenset({"gemma4"})
+
+    def generate_quality(self, system: str, prompt: str, **kwargs) -> str:
+        """
+        Quality-gated generation: blocks Cerebras llama3.1-8b and waits for strong
+        providers to recover rather than falling through to a weak model.
+
+        WHY THIS EXISTS
+        ───────────────
+        Phase 2 investigations ask the model to summarise tool call results (read_file,
+        grep, search_symbol) into a coherent concept description. An 8B model (Cerebras)
+        does not faithfully report what the tools returned — it hallucinates file paths,
+        function names, and behaviours not present in the code. The tour then contains
+        fabricated content that looks plausible but is completely wrong.
+
+        The right response when only a weak model is available is to wait for a strong
+        model to recover, not to produce fast but hallucinated output. A slow correct
+        tour is better than a fast wrong one.
+
+        BEHAVIOUR
+        ─────────
+        1. Waits for Gemini's rate-limit window to expire if it is currently blocked
+           (same logic as generate_synthesis).
+        2. Clears Gemini/SambaNova exhaustion windows so they are retried fresh.
+        3. Sets _quality_local.quality_only=True (per-thread) so _try_fallback() skips Cerebras 8B.
+        4. Skips thinking models (Gemma 4) since the THINK block wastes budget.
+        5. If all quality providers are exhausted (Gemini, SambaNova, Anthropic,
+           OpenRouter, Mistral, Groq), raises RuntimeError rather than using Cerebras.
+           The caller should treat this as a skipped investigation, not a crash.
+        """
+        import time
+        if not hasattr(self, '_exhausted_until'):
+            self._exhausted_until = {}
+
+        # Wait for Gemini to recover if its window is still active.
+        gemini_wait = self._exhausted_until.get('gemini', 0) - time.monotonic()
+        if gemini_wait > 0:
+            wait = min(gemini_wait + 2, 65)
+            print(f"Generation: quality call waiting {wait:.0f}s for Gemini to recover…")
+            time.sleep(wait)
+
+        # Clear windows so the cascade retries strong providers.
+        self._exhausted_until.pop('gemini', None)
+        self._exhausted_until.pop('gemma4', None)
+        self._exhausted_until.pop('sambanova', None)
+
+        # Block Cerebras for this thread via the thread-local flag.
+        # Using _quality_local (threading.local) instead of a shared counter ensures
+        # that each concurrent Phase 2 worker blocks Cerebras independently.
+        # A shared counter races: Worker B finishing its call decrements to 0 while
+        # Worker A is mid-cascade, accidentally unblocking Cerebras for Worker A.
+        old_quality = getattr(_quality_local, 'quality_only', False)
+        _quality_local.quality_only = True
+        self._skip_thinking = True
+        try:
+            return self.generate(system, prompt, **kwargs)
+        finally:
+            self._skip_thinking = False
+            _quality_local.quality_only = old_quality
 
     def generate_non_thinking(self, system: str, prompt: str, **kwargs) -> str:
         """
@@ -475,53 +564,101 @@ class GenerationService:
 
         WHY THIS IS NEEDED
         ──────────────────
-        Phase 1 MAP runs up to 16 ReAct rounds. Phase 2 INVESTIGATE runs 3 parallel
-        workers × 4 rounds = up to 12 more calls. Together they can exhaust Gemini's
-        free-tier RPM quota mid-tour, triggering a 60-second exhaustion window in
-        _try_fallback(). By the time Phase 3 synthesis runs, that window is still
-        active — so the call falls through the entire cascade and lands on
-        Cerebras llama3.1-8b. An 8B model writing 3000-token structured JSON either
-        truncates mid-object or produces malformed output → tour crash or shallow cards.
+        Phase 1 MAP runs up to 16 ReAct rounds. Phase 2 INVESTIGATE runs up to 11
+        parallel investigations with 3 workers, each up to 4 rounds. Together they
+        exhaust Gemini's 15 RPM free-tier quota, triggering a 60-second exhaustion
+        window in _try_fallback(). If Phase 3 synthesis runs while that window is
+        still active, the call cascades all the way to Cerebras llama3.1-8b — an
+        8B model that cannot reliably produce 3000-token structured JSON.
 
-        TWO INTERVENTIONS
-        ─────────────────
-        1. Reset Gemini's exhaustion window: The 60-second throttle prevents parallel
-           burst calls from all hammering Gemini simultaneously. Synthesis is a single
-           sequential call — that protection purpose doesn't apply here.
+        THREE INTERVENTIONS
+        ───────────────────
+        1. Wait for Gemini/SambaNova to recover: simply clearing the exhaustion window
+           doesn't help — Gemini still 429s on the next call if it hasn't recovered.
+           We sleep until the window expires (max 65s) so the strongest model is
+           genuinely available when synthesis starts.
 
-        2. Block Cerebras for this call only: llama3.1-8b (8B parameters) cannot
-           reliably produce 3000-token structured JSON. We temporarily mark Cerebras
-           as exhausted and restore its state in the finally block so Phase 1/2 tool
-           calls can still use it. Groq llama-3.3-70b (70B) is acceptable; 8B is not.
+        2. Block Cerebras for this call only: llama3.1-8b cannot reliably write 3000-
+           token JSON. We mark it exhausted for 3600s and restore it in finally so
+           Phase 1/2 tool calls can still use it. _try_fallback() now checks
+           _exhausted_until for ALL providers (not just Gemini) so the block takes
+           effect in the cascade.
+
+        3. Skip thinking models: Gemma 4's THINK block eats the token budget before
+           the JSON even starts. _skip_thinking=True causes _try_fallback() to jump
+           over Gemma 4 to SambaNova.
 
         Acceptable synthesis providers in priority order:
           Gemini 2.5 Flash → SambaNova DeepSeek-V3.1 → Anthropic Haiku →
           OpenRouter Qwen3-Coder → Mistral Small → Groq llama-3.3-70b
-          (Cerebras llama3.1-8b: blocked for synthesis)
+          (Cerebras llama3.1-8b: blocked; Gemma 4: skipped — thinking model)
         """
         import time
         if not hasattr(self, '_exhausted_until'):
             self._exhausted_until = {}
 
-        # 1. Reset Google providers so synthesis gets Gemini if it has recovered.
+        # 1. Wait for Gemini to recover if it's in a short exhaustion window.
+        #    Phase 1/2 can exhaust Gemini's 15 RPM free tier across parallel calls.
+        #    Synthesis is ONE sequential call — waiting up to 65s here is acceptable
+        #    and ensures we get the strongest model rather than silently falling to 8B.
+        #    We don't simply clear the window: clearing it and immediately retrying
+        #    still 429s if Gemini hasn't actually recovered yet, which sends the call
+        #    down the entire cascade again.
+        gemini_blocked_until = self._exhausted_until.get('gemini', 0)
+        wait_secs = gemini_blocked_until - time.monotonic()
+        if wait_secs > 0:
+            wait_secs = min(wait_secs + 2, 65)  # 2s buffer; cap at 65s
+            print(f"Generation: synthesis waiting {wait_secs:.0f}s for Gemini to recover…")
+            time.sleep(wait_secs)
+
+        # Similarly wait for SambaNova if it's our only strong fallback after Gemini.
+        # SambaNova DeepSeek-V3.1 is the best option after Gemini; waiting for it is
+        # preferable to falling to an 8B model.
+        # After the Gemini wait (if any), check SambaNova — only wait if Gemini is
+        # now clear (its timestamp is in the past) so we don't double-wait.
+        gemini_still_blocked = self._exhausted_until.get('gemini', 0) > time.monotonic()
+        sambanova_blocked_until = self._exhausted_until.get('sambanova', 0)
+        wait_secs = sambanova_blocked_until - time.monotonic()
+        if wait_secs > 0 and not gemini_still_blocked:
+            wait_secs = min(wait_secs + 2, 65)
+            print(f"Generation: synthesis waiting {wait_secs:.0f}s for SambaNova to recover…")
+            time.sleep(wait_secs)
+
+        # 2. Clear Google exhaustion windows (we either waited them out or they expired).
         self._exhausted_until.pop('gemini', None)
         self._exhausted_until.pop('gemma4', None)
+        self._exhausted_until.pop('sambanova', None)
 
-        # 2. Block Cerebras 8B for this call only — save current state, restore after.
-        saved_cerebras = self._exhausted_until.get('cerebras')
-        self._exhausted_until['cerebras'] = time.monotonic() + 3600  # effectively infinite
+        # 3. Block Cerebras for this thread using threading.local().
+        #    WHY threading.local() instead of a shared counter: Phase 3 synthesis is
+        #    sequential, but generate_quality() calls from Phase 2 workers also set this
+        #    flag concurrently. A shared counter would race: Worker B finishing its call
+        #    decrements to 0 while Worker A is mid-cascade, unblocking Cerebras for A.
+        #    threading.local() is per-thread — each thread's flag is independent.
+        old_quality = getattr(_quality_local, 'quality_only', False)
+        _quality_local.quality_only = True
 
-        # 3. Skip thinking models — Gemma 4's THINK block eats the 3000-token budget.
+        # 4. Skip thinking models — Gemma 4's THINK block eats the 3000-token budget.
         self._skip_thinking = True
         try:
-            return self.generate(system, prompt, **kwargs)
+            # 5. Retry loop: if all providers are exhausted (Phase 2 burned through all
+            #    60s windows right before synthesis runs), wait one full window cycle and
+            #    retry. Synthesis is the ONE place where a 67s wait is acceptable — it's
+            #    a single sequential call and "all providers exhausted" is recoverable.
+            for attempt in range(3):
+                try:
+                    return self.generate(system, prompt, **kwargs)
+                except RuntimeError as e:
+                    if "rate-limited" not in str(e).lower() or attempt >= 2:
+                        raise
+                    wait = 67  # 60s window + 7s buffer — enough for ALL providers to clear
+                    print(f"Generation: synthesis all-exhausted — waiting {wait}s for providers to recover (attempt {attempt + 1}/3)…")
+                    time.sleep(wait)
+                    # Clear every exhaustion window; they've all expired by now.
+                    self._exhausted_until.clear()
         finally:
             self._skip_thinking = False
-            # Restore Cerebras for Phase 1/2 tool calls
-            if saved_cerebras is None:
-                self._exhausted_until.pop('cerebras', None)
-            else:
-                self._exhausted_until['cerebras'] = saved_cerebras
+            _quality_local.quality_only = old_quality
 
     def grade_answer(self, question: str, context: str, answer: str, query_type: str = "technical") -> dict:
         """
@@ -770,14 +907,33 @@ class GenerationService:
         # For Gemini we rely solely on the system prompt instruction ("Return ONLY JSON").
         if params.get("json_mode") and self.provider not in ("gemini", "gemma4"):
             kwargs["response_format"] = {"type": "json_object"}
+        # Gemini 2.5 Flash has adaptive thinking enabled by default. Thinking tokens count
+        # against the output token budget (max_tokens). For a synthesis call with
+        # max_tokens=3000, Gemini can spend ~2500 tokens on thinking and only ~500 on actual
+        # output — producing a truncated JSON. The simplest fix: request enough tokens that
+        # thinking + actual output both fit. max_tokens=8192 gives Gemini ~5-6k for output
+        # even after spending 2-3k on thinking. _MAX_OUTPUT['gemini']=65536 so this is fine.
+        # NOTE: the OpenAI-compat extra_body field for thinking config is NOT "thinking_config"
+        # (that is the native REST API name). Until we confirm the compat field name, use
+        # a generous max_tokens instead.
+        if getattr(self, '_skip_thinking', False) and self.provider == "gemini" and params.get("json_mode"):
+            # Bump the token budget so thinking tokens don't crowd out the JSON output.
+            max_out = min(8192, self._MAX_OUTPUT.get(self.provider, 8192))
+            kwargs["max_tokens"] = max_out
         response = self._client.chat.completions.create(**kwargs)
         choice = response.choices[0]
         finish = choice.finish_reason
         content = choice.message.content or ""
         if finish == "length":
-            # Output was cut short by max_tokens. Log so we can tune the budget.
             print(f"  [gen] finish_reason=length provider={self.provider} model={self._model} "
                   f"max_tokens={params['max_tokens']} output_len={len(content)}")
+            # For large JSON budgets (synthesis at 2000+ tokens), truncation is a hard failure:
+            # the JSON will be incomplete and unparseable. Raise to trigger the fallback cascade.
+            # For small budgets (<2000 tokens, e.g. Phase 1 map at 1024 or investigation at 900),
+            # truncation may be benign — the caller handles partial output gracefully. Don't raise.
+            # The threshold is 2000: synthesis uses max_tokens=3000-8192; small calls use ≤1024.
+            if params.get("json_mode") and params.get("max_tokens", 0) >= 2000:
+                raise RuntimeError(f"output truncated (finish_reason=length) — trying next provider")
         return content
 
     def _groq_stream(self, system: str, messages: list[dict], params: dict) -> Iterator[str]:
@@ -870,6 +1026,10 @@ def _is_exhausted(e: Exception) -> bool:
         # Gemini returns this as {'code': 500, 'status': 'INTERNAL'} during overload.
         # Fall through to the next provider rather than crashing the tour.
         "500", "internal error", "internal_error",
+        # finish_reason=length on a JSON call means the output was truncated mid-JSON
+        # and is unusable. Fall to the next provider (SambaNova) which doesn't have
+        # Gemini's thinking-token overhead that causes this truncation.
+        "output truncated (finish_reason=length)",
     ))
 
 

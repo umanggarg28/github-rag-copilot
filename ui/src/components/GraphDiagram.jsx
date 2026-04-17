@@ -59,7 +59,10 @@ function bezierPath(from, to) {
 function computeLayout(rawNodes, rawEdges) {
   if (!rawNodes?.length) return { nodes: [], edges: [], posMap: {} };
 
-  const MAX_PER_COL = 4;
+  // 6 nodes per column: a fan-out graph (many nodes → same root) with 8-11 children
+  // was splitting into two sub-columns, forcing the root to draw long arrows that
+  // crossed the first sub-column. 6 keeps most fan-outs in one column.
+  const MAX_PER_COL = 6;
 
   // BFS to assign column depth to each node
   const inDegree = {};
