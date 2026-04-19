@@ -124,6 +124,24 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     fetchMcpStatus().then(setMcpInfo).catch(() => setMcpInfo({ connected: false }));
   }, []);
 
+  // Landing hero → Sidebar bridge. The hero lives in the main pane and
+  // has no reference to this component's state, so it asks us to ingest
+  // by dispatching a window-level event. We pre-fill the URL, expand the
+  // sidebar (so the user can watch the progress steps), and submit.
+  useEffect(() => {
+    function onExternalIngest(e) {
+      const repo = e.detail?.repo;
+      if (!repo) return;
+      setUrl(repo);
+      // defer to next tick so the controlled input has flushed
+      setTimeout(() => {
+        document.querySelector('.ingest-form')?.requestSubmit();
+      }, 0);
+    }
+    window.addEventListener("cartographer:ingest", onExternalIngest);
+    return () => window.removeEventListener("cartographer:ingest", onExternalIngest);
+  }, []);
+
   function handleIngest(e) {
     e.preventDefault();
     if (!url.trim() || isIngesting) return;

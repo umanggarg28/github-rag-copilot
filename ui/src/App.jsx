@@ -4,6 +4,8 @@ import Sidebar from "./components/Sidebar";
 import Message from "./components/Message";
 import DiagramView from "./components/DiagramView";
 import ReadmeView from "./components/ReadmeView";
+import CustomCursor from "./components/CustomCursor";
+import LandingHero from "./components/LandingHero";
 import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpPrompt, fetchAgentModels } from "./api";
 
 // ── Suggestion card icons ────────────────────────────────────────────────────
@@ -53,6 +55,11 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('ghrc_sidebarCollapsed') === 'true'
   );
+  // Landing forces the sidebar collapsed so the hero gets the whole viewport,
+  // but the user can still click the arrow to expand it. When they do, we
+  // record that override here so our landing-default doesn't fight them.
+  // null = follow the landing default; boolean = user took control.
+  const [landingSidebarOverride, setLandingSidebarOverride] = useState(null);
   // Prompt autocomplete: shown when input starts with "/"
   const [prompts, setPrompts]         = useState([]);      // MCP prompt list
   const [promptMenu, setPromptMenu]   = useState(false);   // dropdown visible
@@ -219,6 +226,16 @@ export default function App() {
   }
 
   function toggleSidebarCollapse() {
+    // On landing, toggle only flips the ephemeral override so the user's
+    // persisted preference isn't changed by playing with the landing arrow.
+    // Off landing, toggle the real preference (persisted).
+    if (isLanding) {
+      // Effective collapsed state when the override is null is "true" (landing default);
+      // flipping from that perspective means override becomes false (expand).
+      const effective = landingSidebarOverride ?? true;
+      setLandingSidebarOverride(!effective);
+      return;
+    }
     const next = !sidebarCollapsed;
     setSidebarCollapsed(next);
     localStorage.setItem('ghrc_sidebarCollapsed', String(next));
@@ -635,8 +652,62 @@ export default function App() {
     ? `Ask about ${activeRepo}… (type / for AI prompts)`
     : "Ask about any indexed repo…";
 
+  // Landing mode = a fresh user with nowhere else to be. We dedicate the
+  // whole viewport to the hero in this state — sidebar collapses to an icon
+  // strip, the chat input hides, and the landing layout takes over. "All
+  // repos" selected with zero indexed counts as landing too (nothing to do).
+  const isLanding =
+    !showReadme &&
+    view === "chat" &&
+    messages.length === 0 &&
+    (!activeRepo || (activeRepo === "all" && repos.length === 0));
+
+  // Effective collapsed state. On landing, the sidebar defaults to collapsed
+  // (the hero wants the room) but the user can still pop it open with the
+  // expand arrow — that flips `landingSidebarOverride`. Off landing, use the
+  // persisted preference.
+  const effectiveCollapsed = isLanding
+    ? (landingSidebarOverride ?? true)
+    : sidebarCollapsed;
+
+  // Reset the landing override the moment we leave landing, so the user's
+  // persisted sidebar preference takes over cleanly on the next visit.
+  useEffect(() => {
+    if (!isLanding && landingSidebarOverride !== null) {
+      setLandingSidebarOverride(null);
+    }
+  }, [isLanding, landingSidebarOverride]);
+
+  // Landing → Sidebar bridge helpers. Tiles and the hero URL input both
+  // route through the same "external ingest" event so the Sidebar's existing
+  // ingestion flow (progress stream + success handling) owns the UX.
+  function handleLandingPick(slug) {
+    posthog.capture("landing_tile_clicked", { slug });
+    const indexed = repos.find(r => r.slug === slug);
+    if (indexed) {
+      setActiveRepo(slug);
+      setShowReadme(false);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("cartographer:ingest", {
+      detail: { repo: `github.com/${slug}` },
+    }));
+  }
+  function handleLandingUrl(raw) {
+    posthog.capture("landing_url_submitted", { input: raw });
+    const clean = raw.includes("/") ? raw : null;
+    if (!clean) return;
+    const withHost = clean.startsWith("github.com/") || clean.startsWith("http")
+      ? clean
+      : `github.com/${clean}`;
+    window.dispatchEvent(new CustomEvent("cartographer:ingest", {
+      detail: { repo: withHost },
+    }));
+  }
+
   return (
-    <div className={`layout${sidebarCollapsed ? " layout-collapsed" : ""}`}>
+    <div className={`layout${effectiveCollapsed ? " layout-collapsed" : ""}${isLanding ? " layout-landing" : ""}`}>
+      <CustomCursor />
 
       {/* Sidebar overlay for mobile — closes sidebar when clicking outside */}
       {sidebarOpen && (
@@ -660,7 +731,7 @@ export default function App() {
         onRenameSession={handleRenameSession}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
-        collapsed={sidebarCollapsed}
+        collapsed={effectiveCollapsed}
         onToggleCollapse={toggleSidebarCollapse}
         onGenerateReadme={(repo) => { setActiveRepo(repo); setShowReadme(true); posthog.capture("readme_opened", { repo }); }}
       />
@@ -757,6 +828,15 @@ export default function App() {
         {!showReadme && view === "chat" && (
           <>
             {messages.length === 0 ? (
+              isLanding ? (
+                // Full-bleed landing — LandingHero owns its own layout
+                <div className="landing-root view-switch-in">
+                  <LandingHero
+                    onPickRepo={handleLandingPick}
+                    onPasteUrl={handleLandingUrl}
+                  />
+                </div>
+              ) : (
               <div
                 className="empty-state has-cursor-glow"
                 // Shared --mx/--my channel: one mousemove feeds both the
@@ -798,44 +878,6 @@ export default function App() {
                           </button>
                         );
                       })}
-                    </div>
-                  </div>
-                ) : !activeRepo || activeRepo === "all" ? (
-                  // No repo selected yet (landing), or All repos selected but nothing indexed
-                  <div className="onboarding-steps constellation-bg">
-                    <div className="onboarding-header">
-                      <svg width="72" height="72" viewBox="0 0 24 24" fill="none"
-                        style={{ marginBottom: 12, filter: "drop-shadow(0 0 8px rgba(91,143,249,0.70))" }}>
-                        {/* N — pulses bright */}
-                        <path className="compass-north" d="M12 2 L14.5 7 L12 12 L9.5 7 Z" fill="var(--accent)"/>
-                        {/* S — delayed fade */}
-                        <path className="compass-south" d="M12 22 L13.5 17 L12 12 L10.5 17 Z" fill="var(--accent)"/>
-                        {/* E — delayed fade */}
-                        <path className="compass-east" d="M22 12 L17 10.5 L12 12 L17 13.5 Z" fill="var(--accent)"/>
-                        {/* W — delayed fade */}
-                        <path className="compass-west" d="M2 12 L7 10.5 L12 12 L7 13.5 Z" fill="var(--accent)"/>
-                        {/* Center */}
-                        <circle cx="12" cy="12" r="1.5" fill="white"/>
-                      </svg>
-                      <div className="onboarding-headline">Map <em>any</em> codebase</div>
-                      <div className="onboarding-sub">Index any public repo and ask questions about the code — architecture, data flow, classes, functions, and more.</div>
-                    </div>
-                    <div className="suggestions" style={{ marginBottom: 0 }}>
-                      {[
-                        { icon: "github",  title: "Paste a GitHub URL",    body: "Index any public repo — every function and class." },
-                        { icon: "chat",    title: "Ask about the code",    body: "\"How does the main loop work?\" — finds and explains it." },
-                        { icon: "explore", title: "Explore the structure", body: "Concept map of key components and how they connect." },
-                      ].map(({ icon, title, body }, i) => (
-                        <div key={title} className="suggestion-btn"
-                          style={{ animationDelay: `${150 + i * 180}ms`, cursor: "default" }}>
-                          <span className="suggestion-icon">{ICONS[icon]}</span>
-                          <span className="suggestion-content">
-                            <span className="suggestion-title">{title}</span>
-                            <span className="suggestion-body">{body}</span>
-                          </span>
-                          <svg className="suggestion-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.2 }}><path d="M3 8h10M9 4l4 4-4 4"/></svg>
-                        </div>
-                      ))}
                     </div>
                   </div>
                 ) : (
@@ -914,6 +956,7 @@ export default function App() {
                   </div>
                 )}
               </div>
+              )
             ) : (
               <div
                 className="messages"
@@ -941,7 +984,8 @@ export default function App() {
               </div>
             )}
 
-            {/* Input */}
+            {/* Input — hidden on landing (there's no repo to chat about yet) */}
+            {!isLanding && (
             <div className="input-bar">
               {/* Prompt autocomplete dropdown — shown when input starts with "/" */}
               {promptMenu && prompts.length > 0 && (() => {
@@ -1043,6 +1087,7 @@ export default function App() {
                 </div>
               )}
             </div>
+            )}
           </>
         )}
       </div>

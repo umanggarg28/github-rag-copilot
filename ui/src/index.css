@@ -345,6 +345,45 @@ body::before {
 }
 .constellation-bg > * { position: relative; z-index: 1; }
 
+/* .custom-cursor — companion dot that rides alongside the OS cursor.
+   Position is driven by --x / --y set on the element itself (no React
+   state), so movement is paint-only. Visibility and "active" state
+   (near an interactive element) flip via data attributes. */
+.custom-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 9999;
+  /* centre the dot on the pointer */
+  transform: translate3d(calc(var(--x, -100px) - 50%), calc(var(--y, -100px) - 50%), 0);
+  background: var(--accent-soft);
+  box-shadow: 0 0 12px rgba(91, 143, 249, 0.55);
+  opacity: 0;
+  transition:
+    opacity       var(--dur-fast) ease,
+    width         var(--dur-fast) var(--ease-spring-snap),
+    height        var(--dur-fast) var(--ease-spring-snap),
+    background    var(--dur-fast) ease,
+    box-shadow    var(--dur-fast) ease;
+  /* Hint the compositor — this element repaints on every mousemove. */
+  will-change: transform;
+}
+.custom-cursor[data-visible="1"] { opacity: 0.85; }
+/* Over interactive targets: grow into a hollow ring. Communicates
+   "this is clickable" without needing a hand-cursor. */
+.custom-cursor[data-active="1"] {
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  box-shadow:
+    0 0 0 1.5px var(--accent-soft),
+    0 0 18px rgba(91, 143, 249, 0.45);
+}
+
 /* Respect the user. Disable motion where requested. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -392,6 +431,23 @@ textarea:focus-visible {
 .layout.layout-collapsed {
   grid-template-columns: 52px 1fr;
 }
+/* Landing mode — whole viewport belongs to the hero. We keep the sidebar
+   column alive (so brand + repo shortcuts remain accessible) but let the
+   main pane bleed visually. The default collapsed strip is enough chrome
+   for a first-time visitor. */
+.layout.layout-landing .main {
+  /* Remove the bottom padding so LandingHero's own spacing dominates.
+     Also disable the inherited dot grid on body::before to avoid two
+     textures competing with the hero stage. */
+  background: transparent;
+}
+/* The "All indexed repos" breadcrumb reads as chrome on a landing pitch —
+   a first-time visitor has no repos to navigate yet, so the header is pure
+   distraction and steals vertical space (forcing the hero to scroll).
+   Remove it outright; it reappears the moment any repo is indexed. */
+.layout.layout-landing .chat-header,
+.layout.layout-landing .messages-header,
+.layout.layout-landing .main-header { display: none; }
 
 /* ══════════════════════════════════════════════════════════
    SIDEBAR
@@ -1467,6 +1523,286 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
 }
+
+/* ══════════════════════════════════════════════════════════
+   LANDING HERO — full-bleed first impression
+   ══════════════════════════════════════════════════════════
+   The landing hero performs the product: a concept graph draws itself
+   while the user reads. Composition: headline → live stage → repo tiles
+   → URL input. Centred, generous whitespace, one focal colour per demo. */
+.landing-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  /* Center the hero vertically — on tall viewports it floats, on short
+     ones it hugs the top. overflow: hidden enforces no-scroll (the whole
+     pitch is designed to fit the first fold). */
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+  /* Gentle vignette — keeps eyes centred on the stage without the heavy
+     blue blobs that competed with the constellation backdrop before. */
+  background: radial-gradient(ellipse at 50% 35%, rgba(91, 143, 249, 0.10) 0%, transparent 55%);
+}
+.lh-root {
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+  /* Vertical rhythm is a clamp so the hero breathes on tall screens but
+     collapses tight on laptop viewports — everything must stay above the
+     fold. Horizontal padding is fixed; vertical padding and gap scale with
+     available height. */
+  padding: clamp(16px, 3vh, 48px) 32px clamp(14px, 2.5vh, 36px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(12px, 2.2vh, 24px);
+}
+
+.lh-title-wrap {
+  text-align: center;
+  max-width: 720px;
+  animation: onboardIn var(--dur-slow) var(--ease-spring) both;
+}
+.lh-title {
+  /* Also scale with viewport height — on short screens we want the
+     headline to compress vertically, not just squish horizontally. */
+  font-size: clamp(40px, min(6vw, 9vh), 78px);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  margin: 0 0 clamp(6px, 1.2vh, 14px);
+  color: #FFFFFF;
+  /* The serif already communicates "craft"; avoid extra weight. */
+  font-weight: 300;
+}
+.lh-title em {
+  font-style: italic;
+  background: linear-gradient(110deg, #BAD4FF 0%, #7DABFF 40%, #5B8FF9 75%, #818CF8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 28px rgba(91,143,249,0.70));
+}
+.lh-sub {
+  font-size: clamp(13px, 1.6vh, 15px);
+  color: var(--text-2);
+  line-height: 1.55;
+  letter-spacing: -0.01em;
+  margin: 0 auto;
+  max-width: 560px;
+}
+
+/* The stage — aspect-ratio preserves the composition, but we also cap its
+   height so short viewports never push the tiles/URL input off-screen.
+   The stage is the most compressible element on this page — shrinking it
+   preserves the headline and CTAs. */
+.lh-stage {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  aspect-ratio: 680 / 340;
+  max-height: 38vh;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(14, 18, 34, 0.75), rgba(8, 10, 22, 0.95));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--demo-accent, #5B8FF9) 22%, transparent),
+    0 30px 90px rgba(0, 0, 16, 0.55),
+    0 0 120px color-mix(in srgb, var(--demo-accent, #5B8FF9) 14%, transparent);
+  animation: onboardIn var(--dur-slow) var(--ease-spring) 120ms both;
+  transition: box-shadow var(--dur-slow) var(--ease-spring);
+}
+.lh-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Edges draw themselves via stroke-dasharray + dashoffset. The length
+   doesn't need to be precise — 1000 is larger than any curve on this
+   canvas, so animating to 0 reveals the whole line. */
+.lh-edge {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: lh-edge-draw 900ms var(--ease-spring) both;
+}
+@keyframes lh-edge-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.lh-node {
+  opacity: 0;
+  transform: scale(0.6);
+  animation: lh-node-in 520ms var(--ease-spring-snap) both;
+}
+@keyframes lh-node-in {
+  from { opacity: 0; transform: scale(0.4); }
+  70%  { opacity: 1; transform: scale(1.08); }
+  to   { opacity: 1; transform: scale(1);   }
+}
+.lh-label {
+  opacity: 0;
+  animation: lh-label-in 500ms ease both;
+}
+@keyframes lh-label-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+.lh-stage-meta {
+  position: absolute;
+  bottom: 12px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-2);
+  background: rgba(8, 10, 22, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.lh-stage-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+}
+.lh-stage-slug { color: var(--text); }
+.lh-stage-dash { opacity: 0.4; }
+.lh-stage-tagline { opacity: 0.7; }
+
+/* Tiles — real CTAs, not decoration. Three-up grid; on narrow screens stacks. */
+.lh-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  width: 100%;
+  max-width: 760px;
+}
+.lh-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  /* hover-lift primitive provides the translate; we extend it with a
+     border-accent reveal tied to this tile's demo accent. */
+  animation: onboardIn var(--dur-slow) var(--ease-spring) 240ms both;
+}
+.lh-tile:hover {
+  border-color: color-mix(in srgb, var(--tile-accent, #5B8FF9) 55%, transparent);
+  background: color-mix(in srgb, var(--tile-accent, #5B8FF9) 8%, rgba(255,255,255,0.03));
+}
+.lh-tile.is-active {
+  border-color: color-mix(in srgb, var(--tile-accent, #5B8FF9) 65%, transparent);
+  background: color-mix(in srgb, var(--tile-accent, #5B8FF9) 10%, rgba(255,255,255,0.03));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tile-accent, #5B8FF9) 35%, transparent);
+}
+.lh-tile-kicker {
+  font-size: 10px;
+  font-family: var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tile-accent, var(--accent-soft));
+  opacity: 0.85;
+}
+.lh-tile-name {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+  line-height: 1.2;
+  color: var(--text);
+  margin-top: 2px;
+}
+.lh-tile-tagline {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.lh-tile-arrow {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  opacity: 0.35;
+  color: var(--text-2);
+  transition: transform var(--dur-fast) var(--ease-spring-snap), opacity var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+.lh-tile:hover .lh-tile-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+  color: var(--tile-accent, var(--accent-soft));
+}
+
+/* URL input — reads as a mono terminal prompt. Single primary action
+   with a big "Map it" affordance on the right. */
+.lh-url {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  max-width: 560px;
+  background: rgba(12, 14, 28, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: var(--radius);
+  padding: 4px 4px 4px 14px;
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+  animation: onboardIn var(--dur-slow) var(--ease-spring) 320ms both;
+}
+.lh-url:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+.lh-url-prefix {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+  align-self: center;
+  user-select: none;
+}
+.lh-url-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 10px 8px;
+  outline: none;
+}
+.lh-url-input::placeholder { color: var(--muted); }
+.lh-url-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  background: var(--accent);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-spring-snap), background var(--dur-fast) ease;
+}
+.lh-url-btn:hover { background: #4c7ee8; transform: translateX(1px); }
+.lh-url-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
 /* ══════════════════════════════════════════════════════════
    EMPTY STATE & ONBOARDING
