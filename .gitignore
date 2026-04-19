@@ -1,19 +1,44 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
+
+# Secrets
 .env
 .env.*
+
+# Runtime caches (regenerated on demand — never commit)
 chroma_db/
-repos/          # cloned repos (temp)
-repo_maps/      # runtime-generated repo maps (rebuilt from Qdrant on demand)
-diagrams/       # disk-cached diagrams and tours (regenerated on demand)
-readmes/        # disk-cached generated READMEs (regenerated on demand)
-backend/tour_feedback/  # runtime feedback corrections (persisted per-repo, not source)
+repos/
+repo_maps/
+readmes/
+backend/diagrams/
+backend/readmes/
+backend/tour_feedback/
+
+# Node / Vite
 node_modules/
 dist/
 build/
-*.egg-info/
+
+# OS + editor
 .DS_Store
 .vercel
+
+# Fonts fetched at runtime, not checked in
 ui/public/fonts/
+
+# Claude Code local state (keep .claude/commands/ tracked, ignore the rest)
+.claude/skills/
+.claude/settings.local.json
+.claude/worktrees/
+
+# Learning journal — for the maintainer, not the repo
 LEARN.md
+
+# Local exploration artefacts (screenshots, MCP output, ad-hoc reports)
+# Leading slash anchors the match so ui/src/assets/*.png stays tracked.
+/*.png
+.playwright-mcp/
+posthog-setup-report.md
