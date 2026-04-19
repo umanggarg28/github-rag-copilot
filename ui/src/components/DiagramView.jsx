@@ -322,7 +322,13 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
           e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
         }}
       >
-        <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>
+        {/* Keyed wrapper — replays .view-switch-in when the diagram type changes,
+            so Explore/Architecture/Class tab switches share the app's motion language. */}
+        <div
+          key={diagramType}
+          className="view-switch-in"
+          style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}
+        >
           {isExplore ? (
             <ExploreView repo={repo} onAskAbout={onAskAbout} onRegenerateRef={exploreRegenRef} />
           ) : (

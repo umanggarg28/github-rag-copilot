@@ -697,6 +697,13 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
         )}
       </div>
 
+      {/* Keyed flex wrapper — remounts on mode change so .view-switch-in replays.
+          display:flex + flex:1 so Canvas/Story still fill the container. */}
+      <div
+        key={mode}
+        className="view-switch-in"
+        style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}
+      >
       {mode === "story" ? (
         <TourStory data={data} repo={repo} onAskAbout={onAskAbout} />
       ) : (
@@ -872,6 +879,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
       </div>
       </>
       )}
+      </div>
     </div>
   );
 }

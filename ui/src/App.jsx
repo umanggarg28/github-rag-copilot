@@ -735,17 +735,22 @@ export default function App() {
         )}
 
         {/* ── Diagram view ── */}
+        {/* Keyed to activeRepo so switching repos (or from chat→diagram) replays
+            .view-switch-in. Matches the tab transition inside DiagramView and
+            the mode transition inside ExploreView. */}
         {!showReadme && view === "graph" && activeRepo && (
-          <DiagramView
-            repo={activeRepo}
-            focusFiles={focusFiles}
-            onAskAbout={(question) => {
-              setView("chat");
-              setFocusFiles(null);
-              setInput(question);
-              setTimeout(() => textareaRef.current?.focus(), 50);
-            }}
-          />
+          <div key={`diag-${activeRepo}`} className="view-switch-in app-view-host">
+            <DiagramView
+              repo={activeRepo}
+              focusFiles={focusFiles}
+              onAskAbout={(question) => {
+                setView("chat");
+                setFocusFiles(null);
+                setInput(question);
+                setTimeout(() => textareaRef.current?.focus(), 50);
+              }}
+            />
+          </div>
         )}
 
         {/* ── Chat view ── */}

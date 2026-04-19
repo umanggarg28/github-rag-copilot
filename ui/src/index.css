@@ -287,6 +287,28 @@ body::before {
 }
 .hover-lift:active { transform: translateY(0); }
 
+/* .view-switch-in — plays on mount. Apply via a keyed container so React
+   remounts it when the view changes, replaying the animation. Unifies the
+   feel of Chat↔Diagram, Canvas↔Story, and Explore/Architecture/Class tab
+   switches so all view transitions share one motion language. */
+.view-switch-in {
+  animation: view-switch-in var(--dur-slow) var(--ease-spring) both;
+  /* will-change signals the compositor to promote this layer for smooth transform/filter */
+  will-change: transform, opacity, filter;
+}
+/* Host for top-level view transitions inside .main — passes height through so
+   DiagramView's height:100% still resolves. */
+.app-view-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+@keyframes view-switch-in {
+  from { opacity: 0; transform: translateY(10px); filter: blur(6px); }
+  to   { opacity: 1; transform: translateY(0);    filter: blur(0); }
+}
+
 /* Respect the user. Disable motion where requested. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
