@@ -312,7 +312,16 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
       )}
 
       {/* ── Canvas area (diagram on top, detail tray below) ── */}
-      <div className="diagram-canvas" style={{ display: "flex", flexDirection: "column", overflow: "hidden", alignItems: "stretch", minHeight: 0 }}>
+      <div
+        className="diagram-canvas has-cursor-glow"
+        style={{ display: "flex", flexDirection: "column", overflow: "hidden", alignItems: "stretch", minHeight: 0, "--glow-size": "480px", "--glow-intensity": "7%" }}
+        onMouseMove={(e) => {
+          // Cursor-glow primitive — fed via CSS vars, painted on the compositor.
+          const r = e.currentTarget.getBoundingClientRect();
+          e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
+          e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
+        }}
+      >
         <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>
           {isExplore ? (
             <ExploreView repo={repo} onAskAbout={onAskAbout} onRegenerateRef={exploreRegenRef} />

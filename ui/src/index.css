@@ -94,8 +94,9 @@ html { height: 100dvh; background: #09090E; overflow: hidden; }
   --pill-bg: var(--surface-3);
 
   /* Typography */
-  --sans: "Anthropic Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono: "Anthropic Mono", "JetBrains Mono", "Fira Code", monospace;
+  --sans:  "Anthropic Sans",  -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --serif: "Anthropic Serif", "Source Serif Pro", "Iowan Old Style", Georgia, serif;
+  --mono:  "Anthropic Mono",  "JetBrains Mono", "Fira Code", monospace;
 
   /* Spacing (8px grid) */
   --space-1: 4px;  --space-2: 8px;  --space-3: 12px;
@@ -112,6 +113,16 @@ html { height: 100dvh; background: #09090E; overflow: hidden; }
   /* Transitions */
   --transition:      200ms ease;
   --transition-slow: 300ms ease;
+
+  /* Motion language — one curve everywhere.
+     --ease-spring is an ease-out-expo: fast start, gentle deceleration, no bounce.
+     Using it consistently across mounts, tabs, and route changes is what makes
+     the product feel like one thing instead of many screens. */
+  --ease-spring:       cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring-snap:  cubic-bezier(0.34, 1.15, 0.64, 1);  /* subtle overshoot for buttons */
+  --dur-fast:    220ms;
+  --dur-medium:  360ms;
+  --dur-slow:    520ms;
 
   /* Shadows — cool-tinted deep shadows (no warm brown) */
   --shadow-sm: 0 1px 3px rgba(0,0,16,0.70), 0 1px 2px rgba(0,0,16,0.50);
@@ -191,6 +202,99 @@ body::before {
 @keyframes page-in {
   from { opacity: 0; }
   to   { opacity: 1; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Design primitives — reusable visual moves, consumed across the app.
+   Keep these small and composable. If a class is used in only one place,
+   it belongs next to that feature. If it's used in three+, promote here.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Typed custom property — needed for transition: --ambient-tint to interpolate
+   between colours. Without @property the value is treated as an opaque string. */
+@property --ambient-tint {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #5B8FF9;
+}
+
+/* .display-serif — editorial headline treatment.
+   Apply to the hero heading of a view (tour title, empty-state, landing).
+   Signals "this is content to read" vs sans chrome ("things to operate"). */
+.display-serif {
+  font-family: var(--serif);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+/* .has-cursor-glow — a soft radial light that follows the pointer.
+   Requires the host to set --glow-color (defaults to --accent) and to feed
+   --mx / --my from JS with an onMouseMove handler. The pseudo is below content
+   (z-index 0) and inside a rounded clip box, so put this on any rounded card.
+   Paints via the compositor — no React re-renders. */
+.has-cursor-glow {
+  position: relative;
+  isolation: isolate;
+  --mx: 50%;
+  --my: 50%;
+  --glow-color: var(--accent);
+  --glow-size: 380px;
+  --glow-intensity: 14%;
+}
+.has-cursor-glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    var(--glow-size) circle at var(--mx) var(--my),
+    color-mix(in srgb, var(--glow-color) var(--glow-intensity), transparent) 0%,
+    transparent 55%
+  );
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 480ms ease;
+  z-index: 0;
+}
+.has-cursor-glow:hover::before { opacity: 1; }
+/* Content under .has-cursor-glow usually needs to sit above the glow */
+.has-cursor-glow > * { position: relative; z-index: 1; }
+
+/* .ambient-tint — a slowly morphing colour wash for a panel background.
+   Host sets --ambient-tint inline from JS (e.g. active concept colour); the
+   background interpolates between values because --ambient-tint is @property-typed. */
+.ambient-tint {
+  position: relative;
+  --ambient-tint: var(--accent);
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 38%, color-mix(in srgb, var(--ambient-tint) 12%, transparent) 0%, transparent 72%),
+    radial-gradient(ellipse 120% 95% at 50% 55%, color-mix(in srgb, var(--ambient-tint)  4%, transparent) 0%, transparent 80%),
+    var(--bg);
+  transition: --ambient-tint 700ms ease;
+}
+
+/* .hover-lift — universal button/card lift on hover.
+   Cheap, composable, and reads as responsive. Prefer over bespoke hover states. */
+.hover-lift {
+  transition: transform var(--dur-fast) var(--ease-spring-snap),
+              box-shadow var(--dur-fast) var(--ease-spring-snap),
+              border-color var(--dur-fast) ease;
+}
+.hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0,0,16,0.55), 0 0 0 1px var(--accent-border);
+}
+.hover-lift:active { transform: translateY(0); }
+
+/* Respect the user. Disable motion where requested. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Global focus-visible system */
@@ -313,7 +417,7 @@ textarea:focus-visible {
 .sidebar-brand-name {
   font-size: 19px;
   font-weight: 400;
-  font-family: "Anthropic Serif", Georgia, serif;
+  font-family: var(--serif);
   background: linear-gradient(135deg, #FFFFFF 0%, #C8DAFF 60%, #7DABFF 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -1440,7 +1544,7 @@ textarea:focus-visible {
 .onboarding-headline {
   font-size: 70px;
   font-weight: 300;
-  font-family: "Anthropic Serif", Georgia, serif;
+  font-family: var(--serif);
   letter-spacing: -0.040em;
   line-height: 1.08;
   padding-bottom: 0.05em;   /* stops descenders (g, y, p) clipping at line-height edges */
@@ -1578,7 +1682,7 @@ textarea:focus-visible {
   animation: onboardIn 750ms cubic-bezier(0.16, 1, 0.3, 1) both;
   font-size: 48px;
   font-weight: 300;
-  font-family: "Anthropic Serif", Georgia, serif;
+  font-family: var(--serif);
   letter-spacing: -0.035em;
   line-height: 0.98;
   margin-bottom: 12px;
@@ -1721,14 +1825,22 @@ textarea:focus-visible {
   font-family: var(--mono);
   color: var(--accent-soft);
   cursor: pointer;
-  transition: background var(--transition), border-color var(--transition), color var(--transition);
+  transition:
+    background   var(--dur-fast) var(--ease-spring),
+    border-color var(--dur-fast) var(--ease-spring),
+    color        var(--dur-fast) var(--ease-spring),
+    transform    var(--dur-fast) var(--ease-spring-snap),
+    box-shadow   var(--dur-fast) var(--ease-spring-snap);
   white-space: nowrap;
 }
 .try-repo-chip:hover {
-  background: rgba(91, 143, 249, 0.10);
-  border-color: rgba(91, 143, 249, 0.30);
-  color: var(--text-2);
+  background: rgba(91, 143, 249, 0.12);
+  border-color: rgba(91, 143, 249, 0.55);
+  color: var(--text);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(91, 143, 249, 0.18);
 }
+.try-repo-chip:active { transform: translateY(0); }
 
 /* ── Contextual retrieval tip — sits inside the repos section ── */
 .ctip {
@@ -2319,7 +2431,11 @@ textarea:focus-visible {
   /* position: relative anchors the ::before gradient top-edge line */
   position: relative;
   overflow: hidden;
-  transition: background var(--transition), border-color var(--transition), box-shadow var(--transition);
+  transition:
+    background   var(--dur-fast) var(--ease-spring),
+    border-color var(--dur-fast) var(--ease-spring),
+    box-shadow   var(--dur-fast) var(--ease-spring-snap),
+    transform    var(--dur-fast) var(--ease-spring-snap);
   min-width: 150px;
 }
 
@@ -2338,9 +2454,12 @@ textarea:focus-visible {
 }
 
 .diagram-type-btn:hover {
-  background: rgba(255, 255, 255,0.04);
+  background: rgba(255, 255, 255,0.05);
   border-color: var(--accent-border);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(91, 143, 249, 0.10);
 }
+.diagram-type-btn:active { transform: translateY(0); }
 .diagram-type-btn.active {
   background: rgba(91, 143, 249,0.12);
   border-color: rgba(91, 143, 249,0.45);
@@ -4263,6 +4382,9 @@ textarea:focus-visible {
    transition, progress rail at the bottom. Same data as Canvas mode.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* .ts-root is .ambient-tint (primitive) + story-specific layout.
+   --ambient-tint is set inline from JSX per active concept — the colour
+   interpolates smoothly because the custom property is @property-typed. */
 .ts-root {
   flex: 1;
   min-height: 0;
@@ -4270,21 +4392,6 @@ textarea:focus-visible {
   grid-template-rows: auto 1fr auto;
   gap: 0;
   overflow: hidden;
-  position: relative;
-  /* --ts-tint is set inline from JSX to match the active concept's type colour;
-     it transitions between steps giving the whole stage a subtle colour shift. */
-  --ts-tint: #5B8FF9;
-  background:
-    radial-gradient(ellipse 70% 55% at 50% 38%, color-mix(in srgb, var(--ts-tint) 14%, transparent) 0%, transparent 72%),
-    radial-gradient(ellipse 120% 95% at 50% 55%, color-mix(in srgb, var(--ts-tint) 5%, transparent) 0%, transparent 80%),
-    var(--bg);
-  transition: --ts-tint 700ms ease;
-}
-/* Register --ts-tint so background gradients interpolate smoothly between concept colours */
-@property --ts-tint {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: #5B8FF9;
 }
 
 /* ── Flow strip — horizontal map of every step ─────────────────────────── */
@@ -4400,7 +4507,6 @@ textarea:focus-visible {
 
 /* ── The focus card — hero surface ─────────────────────────────────────── */
 .ts-card {
-  position: relative;
   background: linear-gradient(180deg, rgba(21, 21, 34, 0.85) 0%, rgba(15, 15, 24, 0.90) 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
@@ -4412,17 +4518,11 @@ textarea:focus-visible {
      the scroll context so long content still scrolls. */
   overflow: hidden;
   max-height: 100%;
-  animation: ts-card-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  /* CSS vars fed by the onMouseMove handler — consumed by the ::after glow */
-  --mx: 50%;
-  --my: 50%;
-  --glow-color: var(--accent);
+  animation: ts-card-in var(--dur-slow) var(--ease-spring) both;
 }
-/* Inner scrolling body — actual padding + content live here so the scroll
-   thumb doesn't cut across the accent rail or round corners. */
+/* Inner scrolling body — content lives here so the scroll thumb doesn't
+   cut across the accent rail or rounded corners. */
 .ts-card-body {
-  position: relative;
-  z-index: 1;
   padding: 32px 36px 24px 42px;
   display: flex;
   flex-direction: column;
@@ -4431,27 +4531,8 @@ textarea:focus-visible {
   min-height: 0;
   flex: 1;
 }
-/* Cursor-tracking glow — a soft radial light that follows the pointer.
-   Uses ::after so it sits above the background but below the content. */
-.ts-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(
-    380px circle at var(--mx) var(--my),
-    color-mix(in srgb, var(--glow-color) 14%, transparent) 0%,
-    transparent 55%
-  );
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 480ms ease;
-  z-index: 0;
-}
-.ts-card:hover::after { opacity: 1; }
-/* Clip layer for the accent rail. With overflow:hidden on .ts-card this is
-   largely belt-and-braces, but it also means the rail never overlaps any
-   future scrollbars that appear inside .ts-card-body. */
+/* Clip layer for the accent rail — kept as a dedicated z-indexed overlay so
+   the rail sits above the cursor glow but below the body content. */
 .ts-card-clip {
   position: absolute;
   inset: 0;
@@ -4515,13 +4596,11 @@ textarea:focus-visible {
   letter-spacing: 0.02em;
 }
 
+/* Story title — composes .display-serif on the element for font + tracking,
+   this rule just sets scale and colour. */
 .ts-title {
-  /* Serif for the focus headline — editorial feel, contrasts with sans UI chrome */
-  font-family: "Anthropic Serif", "Source Serif Pro", "Iowan Old Style", Georgia, serif;
   font-size: 30px;
-  font-weight: 600;
   line-height: 1.12;
-  letter-spacing: -0.02em;
   color: var(--text);
   margin: 0;
 }
@@ -4683,7 +4762,7 @@ textarea:focus-visible {
   background: linear-gradient(90deg, var(--accent-soft), var(--accent));
   box-shadow: 0 0 12px rgba(91, 143, 249, 0.45);
   transform: translateY(-50%);
-  transition: width 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: width 480ms var(--ease-spring);
   overflow: visible;
 }
 /* Travelling comet at the leading edge of the progress fill.

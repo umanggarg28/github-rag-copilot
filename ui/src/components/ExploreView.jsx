@@ -704,8 +704,17 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
       {/* ── Canvas ── */}
       <div
         ref={wrapRef}
-        className="ec-canvas-wrapper"
+        className="ec-canvas-wrapper has-cursor-glow"
         onMouseDown={onMouseDown}
+        // Feed --mx / --my for the cursor-glow primitive.
+        // Pan drag uses onMouseDown + document mousemove, so this local
+        // handler doesn't interfere with drag gesture state.
+        onMouseMove={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
+          e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
+        }}
+        style={{ "--glow-size": "520px", "--glow-intensity": "8%" }}
       >
         <div
           className="ec-canvas"

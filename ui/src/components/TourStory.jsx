@@ -102,10 +102,10 @@ export default function TourStory({ data, repo, onAskAbout }) {
 
   return (
     <div
-      className="ts-root"
+      className="ts-root ambient-tint"
       // Drive the ambient tint from the active concept's type colour.
-      // Consumed by .ts-root background gradients — transitions via @property.
-      style={{ "--ts-tint": style.border }}
+      // Consumed by .ambient-tint primitive — interpolates via @property.
+      style={{ "--ambient-tint": style.border }}
     >
       {/* Top flow strip — every step visible, dependency arrows drawn as lines */}
       <div className="ts-flow" role="tablist" aria-label="Tour steps">
@@ -144,20 +144,19 @@ export default function TourStory({ data, repo, onAskAbout }) {
 
         <article
           key={animKey}
-          className="ts-card"
+          className="ts-card has-cursor-glow"
           onMouseMove={(e) => {
-            // Set CSS vars for the cursor-tracking glow. Measured against the
-            // card box — not viewport — so it works regardless of scroll.
+            // Feed --mx / --my to the .has-cursor-glow pseudo.
+            // Measured against the card box — not viewport — so it works under scroll.
             const r = e.currentTarget.getBoundingClientRect();
             e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
             e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
           }}
           style={{
-            // Accent tint per concept type — subtle left border rail + glow
             borderColor: "rgba(255,255,255,0.08)",
             boxShadow: `0 0 0 1px ${style.border}22, 0 30px 80px rgba(0,0,16,0.6), 0 0 120px ${style.border}22`,
-            // Consumed by the cursor-glow pseudo-element
-            "--glow-color": `${style.border}`,
+            // Consumed by .has-cursor-glow
+            "--glow-color": style.border,
           }}
         >
           {/* Dedicated clip layer — absolute overlay sitting on the non-scrolling
@@ -181,7 +180,7 @@ export default function TourStory({ data, repo, onAskAbout }) {
             <span className="ts-type" style={{ color: style.dot, borderColor: `${style.dot}44` }}>{style.tag}</span>
           </header>
 
-          <h2 className="ts-title">{c.name}</h2>
+          <h2 className="ts-title display-serif">{c.name}</h2>
           {c.subtitle && <p className="ts-subtitle">{c.subtitle}</p>}
           {c.description && <p className="ts-desc">{c.description}</p>}
 
