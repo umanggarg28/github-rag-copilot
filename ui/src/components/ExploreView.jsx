@@ -39,6 +39,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { streamTour } from "../api";
+import TourStory from "./TourStory";
 
 // Module-level cache — survives tab switches because ExploreView is unmounted
 // when the user navigates to Architecture/Class tabs and remounted on return.
@@ -339,6 +340,12 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   const [error, setError]       = useState(null);
   const [selectedId, setSelected] = useState(null);
   const [hoveredId, setHovered]   = useState(null);
+  // "canvas" = scatter of cards + arrows; "story" = focused one-at-a-time reading.
+  // Persist so the user's chosen mode survives page reloads.
+  const [mode, setMode] = useState(
+    () => localStorage.getItem("ghrc_tourMode") === "story" ? "story" : "canvas"
+  );
+  useEffect(() => { localStorage.setItem("ghrc_tourMode", mode); }, [mode]);
   const [xform, setXform]       = useState({ x: 0, y: 0, scale: window.innerWidth < 768 ? 0.5 : 0.85 });
   const dragging   = useRef(false);
   const drag0      = useRef({});
@@ -650,6 +657,36 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
       {/* ── Summary header ── */}
       <div className="ec-header">
         <div className="ec-summary">{data.summary}</div>
+        <div className="ec-mode-toggle" role="tablist" aria-label="Tour view mode">
+          <button
+            role="tab"
+            aria-selected={mode === "canvas"}
+            className={`ec-mode-btn${mode === "canvas" ? " is-active" : ""}`}
+            onClick={() => setMode("canvas")}
+            title="See all concepts at once"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1"/>
+              <rect x="9" y="1.5" width="5.5" height="5.5" rx="1"/>
+              <rect x="1.5" y="9" width="5.5" height="5.5" rx="1"/>
+              <rect x="9" y="9" width="5.5" height="5.5" rx="1"/>
+            </svg>
+            Canvas
+          </button>
+          <button
+            role="tab"
+            aria-selected={mode === "story"}
+            className={`ec-mode-btn${mode === "story" ? " is-active" : ""}`}
+            onClick={() => setMode("story")}
+            title="Read one concept at a time"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M2 3.25C2 2.56 2.56 2 3.25 2h9.5c.69 0 1.25.56 1.25 1.25v9.5c0 .69-.56 1.25-1.25 1.25h-9.5C2.56 14 2 13.44 2 12.75v-9.5ZM3.5 3.5v9h9v-9h-9Z"/>
+              <path d="M5 6h6v1.2H5V6Zm0 2.4h6v1.2H5V8.4Z"/>
+            </svg>
+            Story
+          </button>
+        </div>
         {data.entry_point && (
           <div className="ec-entry-hint">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.6 }}>
@@ -660,6 +697,10 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
         )}
       </div>
 
+      {mode === "story" ? (
+        <TourStory data={data} repo={repo} onAskAbout={onAskAbout} />
+      ) : (
+      <>
       {/* ── Canvas ── */}
       <div
         ref={wrapRef}
@@ -820,6 +861,8 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
           {concepts.length} concepts · scroll to zoom · drag canvas or cards · click to expand
         </span>
       </div>
+      </>
+      )}
     </div>
   );
 }
