@@ -757,10 +757,23 @@ export default function App() {
         {!showReadme && view === "chat" && (
           <>
             {messages.length === 0 ? (
-              <div className="empty-state">
+              <div
+                className="empty-state has-cursor-glow"
+                // Shared --mx/--my channel: one mousemove feeds both the
+                // glow pseudo and the constellation parallax. Percentages
+                // are used so the transforms are resolution-independent.
+                onMouseMove={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  const mx = ((e.clientX - r.left) / r.width) * 100;
+                  const my = ((e.clientY - r.top) / r.height) * 100;
+                  e.currentTarget.style.setProperty("--mx", `${mx}%`);
+                  e.currentTarget.style.setProperty("--my", `${my}%`);
+                }}
+                style={{ "--glow-size": "640px", "--glow-intensity": "6%" }}
+              >
                 {activeRepo === "all" && repos.length > 0 ? (
                   // "All repos" explicitly selected with repos indexed — cross-repo query mode
-                  <div className="suggest-state">
+                  <div className="suggest-state constellation-bg">
                     <h2>Ask across all repos</h2>
                     <p>Searching <strong>{repos.length} indexed repos</strong> at once — {repos.map(r => r.slug.split("/")[1]).join(", ")}. Results show which repo each source comes from.</p>
                     <div className="suggestions">
@@ -789,7 +802,7 @@ export default function App() {
                   </div>
                 ) : !activeRepo || activeRepo === "all" ? (
                   // No repo selected yet (landing), or All repos selected but nothing indexed
-                  <div className="onboarding-steps">
+                  <div className="onboarding-steps constellation-bg">
                     <div className="onboarding-header">
                       <svg width="72" height="72" viewBox="0 0 24 24" fill="none"
                         style={{ marginBottom: 12, filter: "drop-shadow(0 0 8px rgba(91,143,249,0.70))" }}>
@@ -827,7 +840,7 @@ export default function App() {
                   </div>
                 ) : (
                   // Repo selected — show mode-aware suggestions + feature discovery cards
-                  <div className="suggest-state">
+                  <div className="suggest-state constellation-bg">
                     <h2>How does {activeRepo.split("/")[1]} work?</h2>
 
 

@@ -309,6 +309,42 @@ body::before {
   to   { opacity: 1; transform: translateY(0);    filter: blur(0); }
 }
 
+/* .constellation-bg — a dotted lattice that drifts subtly with the cursor.
+   A thematic backdrop for the Cartographer landing hero: tiny "coordinate"
+   points evoke the act of mapping. Host element must also set --mx/--my via
+   onMouseMove (same contract as .has-cursor-glow — reuse the same handler). */
+.constellation-bg {
+  position: relative;
+  isolation: isolate;
+  /* --mx / --my are intentionally NOT declared here so they inherit from a
+     has-cursor-glow ancestor. Declaring them locally would reset parallax
+     to centred every time. The calc() fallback covers the no-ancestor case. */
+}
+.constellation-bg::before {
+  content: "";
+  position: absolute;
+  inset: -40px;                      /* bleed past edges so parallax never reveals an edge */
+  background-image:
+    radial-gradient(rgba(180, 200, 255, 0.18) 1px, transparent 1.2px),
+    radial-gradient(rgba(180, 200, 255, 0.08) 1px, transparent 1.2px);
+  background-size: 44px 44px, 88px 88px;
+  background-position: 0 0, 22px 22px;
+  mask-image: radial-gradient(ellipse at 50% 45%, black 0%, black 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 45%, black 0%, black 30%, transparent 75%);
+  pointer-events: none;
+  z-index: 0;
+  /* Cursor parallax — map 0..100% onto a ±12px offset. calc keeps it smooth
+     with no JS animation loop; the paint pipeline handles interpolation. */
+  transform: translate3d(
+    calc((var(--mx, 50%) - 50%) * -0.12),
+    calc((var(--my, 50%) - 50%) * -0.12),
+    0
+  );
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  opacity: 0.9;
+}
+.constellation-bg > * { position: relative; z-index: 1; }
+
 /* Respect the user. Disable motion where requested. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1524,12 +1560,12 @@ textarea:focus-visible {
   to   { opacity: 1; transform: translateY(0); }
 }
 .onboarding-header {
-  animation: onboardIn 750ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: onboardIn var(--dur-slow) var(--ease-spring) both;
   animation-delay: 0ms;
 }
-.onboarding-steps .onboarding-step:nth-child(2) { animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both; }
-.onboarding-steps .onboarding-step:nth-child(3) { animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 210ms both; }
-.onboarding-steps .onboarding-step:nth-child(4) { animation: onboardIn 560ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both; }
+.onboarding-steps .onboarding-step:nth-child(2) { animation: onboardIn var(--dur-medium) var(--ease-spring) 120ms both; }
+.onboarding-steps .onboarding-step:nth-child(3) { animation: onboardIn var(--dur-medium) var(--ease-spring) 210ms both; }
+.onboarding-steps .onboarding-step:nth-child(4) { animation: onboardIn var(--dur-medium) var(--ease-spring) 300ms both; }
 
 /* Header for onboarding section */
 .onboarding-header {
@@ -1701,7 +1737,7 @@ textarea:focus-visible {
 /* Suggest state */
 .suggest-state { max-width: 620px; width: 100%; text-align: center; padding-top: 16px; padding-bottom: 24px; }
 .suggest-state h2 {
-  animation: onboardIn 750ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: onboardIn var(--dur-slow) var(--ease-spring) both;
   font-size: 48px;
   font-weight: 300;
   font-family: var(--serif);
@@ -1712,7 +1748,7 @@ textarea:focus-visible {
   text-shadow: 0 0 80px rgba(91,143,249,0.20);
 }
 .suggest-state > p {
-  animation: onboardIn 700ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+  animation: onboardIn var(--dur-medium) var(--ease-spring) 120ms both;
   font-size: 13.5px;
   color: var(--text-2);
   margin-bottom: 20px;
@@ -1746,8 +1782,12 @@ textarea:focus-visible {
   font-family: var(--sans);
   padding: 13px 14px 13px 14px;
   text-align: left;
-  transition: border-color var(--transition), background var(--transition), transform var(--transition), box-shadow var(--transition);
-  animation: suggestionIn 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition:
+    border-color var(--dur-fast) var(--ease-spring),
+    background   var(--dur-fast) var(--ease-spring),
+    transform    var(--dur-fast) var(--ease-spring-snap),
+    box-shadow   var(--dur-fast) var(--ease-spring-snap);
+  animation: suggestionIn var(--dur-slow) var(--ease-spring) both;
   box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.15);
 }
 
