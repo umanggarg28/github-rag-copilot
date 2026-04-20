@@ -105,7 +105,7 @@ function stalenessLevel(isoTimestamp) {
   return "stale";                  // definitely stale
 }
 
-export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange, sessions, currentSessionId, onLoadSession, onDeleteSession, onRenameSession, isOpen, onClose, collapsed, onToggleCollapse, onGenerateReadme }) {
+export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo, onReposChange, mode, onModeChange, agentMode, onAgentModeChange, sessions, currentSessionId, onLoadSession, onDeleteSession, onRenameSession, isOpen, onClose, collapsed, onToggleCollapse, onGenerateReadme, isLanding = false }) {
   const [url, setUrl]                   = useState("");
   const [status, setStatus]             = useState(null); // {type, text}
   const [loading, setLoading]           = useState(false);
@@ -378,7 +378,8 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
         </button>
       </div>
 
-      {/* ── Ingest ── */}
+      {/* ── Ingest ── hidden on landing (the hero owns this primary action) */}
+      {!isLanding && (
       <div className="sidebar-section">
         <div className="section-label">Add Repository</div>
         <div className="ingest-card">
@@ -457,8 +458,10 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
         )}
         </div>{/* end ingest-card */}
       </div>
+      )}
 
-      {/* ── Query mode (RAG vs Agent) ── */}
+      {/* ── Query mode (RAG vs Agent) ── hidden on landing (no chat yet) */}
+      {!isLanding && (
       <div className="sidebar-section">
         <div className="section-label">Query Mode</div>
         <div className="mode-pills">
@@ -479,9 +482,10 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
             : "Retrieves code once, streams an answer. Fast."}
         </p>
       </div>
+      )}
 
-      {/* ── Search mode (only visible in RAG mode) ── */}
-      {!agentMode && (
+      {/* ── Search mode (only visible in RAG mode, and not on landing) ── */}
+      {!isLanding && !agentMode && (
         <div className="sidebar-section">
           <div className="section-label">Search Mode</div>
           <div className="mode-pills">
@@ -561,7 +565,13 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
                         <span className="repo-staleness repo-staleness--fresh">updated</span>
                       )}
                       {r.contextual_at && (
-                        <span className="repo-contextual" title={`Contextual retrieval applied — re-indexed ${timeAgo(r.contextual_at)}`}>✦</span>
+                        <span className="repo-contextual" title={`Contextual retrieval applied — re-indexed ${timeAgo(r.contextual_at)}`} aria-label="Contextual retrieval applied">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            {/* Sparkle: one large 4-point star + two tiny companions.
+                                Reads unambiguously as "AI enhanced" at any size. */}
+                            <path d="M12 3v4m0 10v4M3 12h4m10 0h4M6.7 6.7l2.8 2.8m5 5 2.8 2.8M6.7 17.3l2.8-2.8m5-5 2.8-2.8"/>
+                          </svg>
+                        </span>
                       )}
                       <span className="repo-count" title={`${r.chunks} indexed code chunks`}>{r.chunks}</span>
                     </div>
@@ -627,7 +637,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
             })}
           </div>
         )}
-        {repos.length > 0 && <ContextualTip />}
+        {!isLanding && repos.length > 0 && <ContextualTip />}
       </div>
 
       {/* ── Recent chats ── */}

@@ -711,9 +711,11 @@ textarea:focus-visible {
 .repo-list { display: flex; flex-direction: column; gap: 2px; }
 
 .repo-item {
+  /* Positioning context — actions overlay the right edge when hovered */
+  position: relative;
   display: flex;
   align-items: center;
-  padding: 6px 10px;
+  padding: 8px 12px;
   border-radius: var(--radius);
   cursor: pointer;
   /* 2px left accent — cleaner, less dominant */
@@ -723,7 +725,7 @@ textarea:focus-visible {
               border-left-color 150ms ease,
               transform 150ms cubic-bezier(0.34,1.56,0.64,1),
               box-shadow 150ms ease;
-  gap: 7px;
+  gap: 8px;
 }
 
 /* Single-row layout: slug on the left, meta (chunk count + staleness) on the right */
@@ -733,26 +735,38 @@ textarea:focus-visible {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
 }
 
 .repo-item-meta {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex-shrink: 0;
   margin-left: auto;
+  transition: opacity 140ms ease;
 }
+.repo-item:hover .repo-item-meta { opacity: 0; }
 
+/* Actions overlay the meta area on hover — meta fades out, actions fade in.
+   Absolute positioning means the slug gets the FULL row width when not hovered,
+   killing the ellipsis that was eating "karpathy/micrograd" → "karpathy/mi…". */
 .repo-item-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   gap: 2px;
-  flex-shrink: 0;
   opacity: 0;
-  transition: opacity var(--transition);
+  pointer-events: none;
+  transition: opacity 140ms ease;
 }
-.repo-item:hover .repo-item-actions { opacity: 1; }
+.repo-item:hover .repo-item-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
 
 .repo-item:hover {
   background: rgba(91, 143, 249, 0.06);
@@ -776,6 +790,7 @@ textarea:focus-visible {
   font-weight: 500;
   color: var(--text-2);
   flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -790,16 +805,24 @@ textarea:focus-visible {
 
 .repo-count {
   font-size: 10px;
-  color: rgba(200, 210, 240, 0.55);
+  color: rgba(200, 210, 240, 0.60);
   font-family: var(--mono);
   font-weight: 500;
   flex-shrink: 0;
-  letter-spacing: 0;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.09);
-  border-radius: 5px;
-  padding: 1px 6px;
+  letter-spacing: 0.02em;
+  /* Soft pill on a sheer backdrop — feels premium, not "dev-tool" */
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 999px;
+  padding: 1px 7px;
+  min-width: 24px;
+  text-align: center;
   cursor: default;
+}
+.repo-item.active .repo-count {
+  background: rgba(91, 143, 249, 0.12);
+  border-color: rgba(91, 143, 249, 0.28);
+  color: rgba(200, 220, 255, 0.85);
 }
 
 .repo-delete {
@@ -892,6 +915,48 @@ textarea:focus-visible {
   background:
     radial-gradient(ellipse 60% 30% at 50% -5%, rgba(91, 143, 249, 0.10) 0%, transparent 50%),
     var(--bg);
+}
+
+/* ── Universal ambient layer on .main ─────────────────────────
+   The same cursor-glow + constellation primitives used on landing are applied
+   to .main so every view shares one ambient voice. We tune them softer here
+   than their per-card default because they cover the whole viewport — what
+   reads right on a 400px card would be oppressive at 1200px wide. Children
+   can still set their own card-level cursor-glow for tighter accent.
+   ------------------------------------------------------------- */
+.main.has-cursor-glow {
+  --glow-size: 820px;
+  --glow-intensity: 7%;
+  --glow-color: var(--accent);
+}
+.main.has-cursor-glow::before {
+  /* Make the ambient glow always visible (not just on hover) so the room
+     always feels lit. Transition smooths the initial paint. */
+  opacity: 1;
+  transition: none;
+}
+.main.constellation-bg::before {
+  /* Softer than landing — the dot lattice should read as texture, not pattern.
+     We also widen the mask so the feathered edge sits beyond the viewport
+     (no visible ring where dots fade out). */
+  opacity: 0.55;
+  background-image:
+    radial-gradient(rgba(180, 200, 255, 0.11) 1px, transparent 1.2px),
+    radial-gradient(rgba(180, 200, 255, 0.05) 1px, transparent 1.2px);
+  background-size: 52px 52px, 104px 104px;
+  mask-image: radial-gradient(ellipse at 50% 40%, black 0%, black 45%, transparent 88%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 40%, black 0%, black 45%, transparent 88%);
+}
+
+/* On the landing, we already have a strong vignette + demo-accent glow on
+   the stage, so the main-level glow competes. Dim both layers inside landing
+   so they sit under the hero, not over it. The landing reads as intentional
+   composition; the ambient is support. */
+.layout.layout-landing .main.has-cursor-glow::before {
+  opacity: 0.4;
+}
+.layout.layout-landing .main.constellation-bg::before {
+  opacity: 0.8; /* keep the dot grid — it IS the landing's texture */
 }
 
 /* ── Chat header ──────────────────────────────────────────── */
@@ -1805,6 +1870,239 @@ textarea:focus-visible {
 .lh-url-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
 /* ══════════════════════════════════════════════════════════
+   LANDING INGESTION — the journey
+   The signature moment: tile click → the hero stage stays and a live map
+   forms inside it, driven by real SSE events from /ingest/stream. Shares
+   the .lh-stage / .lh-title styling so the transition from LandingHero
+   reads as one continuous moment, not two separate screens.
+   ══════════════════════════════════════════════════════════ */
+.li-root {
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+  padding: clamp(16px, 3vh, 48px) 32px clamp(14px, 2.5vh, 36px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(14px, 2.4vh, 26px);
+  animation: onboardIn var(--dur-slow) var(--ease-spring) both;
+}
+.li-title {
+  font-size: clamp(36px, min(5.2vw, 7.6vh), 66px);
+}
+.li-slug {
+  background: none;
+  -webkit-background-clip: unset;
+  -webkit-text-fill-color: currentColor;
+  background-clip: unset;
+  color: var(--demo-accent, #5B8FF9);
+  filter: drop-shadow(0 0 24px color-mix(in srgb, var(--demo-accent, #5B8FF9) 55%, transparent));
+  font-style: italic;
+  font-family: inherit;
+}
+/* The copy line mounts with its own key on every variant, so it replays
+   the fade whenever the narrative changes. Subtle — just enough to feel
+   "alive" without being distracting. */
+.li-sub {
+  animation: li-sub-in 420ms var(--ease-spring) both;
+}
+@keyframes li-sub-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* Stage — same shell as .lh-stage. Add a progress-aware box-shadow so the
+   glow intensifies as ingestion advances. --li-progress is a number 0..1
+   written by JS. */
+.li-stage {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--demo-accent, #5B8FF9) calc(22% + 20% * var(--li-progress, 0)), transparent),
+    0 30px 90px rgba(0, 0, 16, 0.55),
+    0 0 calc(120px + 80px * var(--li-progress, 0)) color-mix(in srgb, var(--demo-accent, #5B8FF9) calc(14% + 14% * var(--li-progress, 0)), transparent);
+  transition: box-shadow var(--dur-slow) var(--ease-spring);
+}
+.li-stage.is-done {
+  /* On completion, push the glow harder for a "reveal" beat. */
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--demo-accent, #5B8FF9) 60%, transparent),
+    0 30px 90px rgba(0, 0, 16, 0.55),
+    0 0 240px color-mix(in srgb, var(--demo-accent, #5B8FF9) 32%, transparent);
+}
+.li-stage.is-error {
+  box-shadow:
+    0 0 0 1px rgba(220, 120, 120, 0.45),
+    0 30px 90px rgba(0, 0, 16, 0.55);
+}
+
+/* Core node — pulses gently through all phases, "settles" on done */
+.li-core {
+  animation: li-core-pulse 2600ms var(--ease-spring) infinite;
+  transform-origin: 340px 170px;
+}
+.li-stage.is-done .li-core {
+  animation: li-core-settle 900ms var(--ease-spring) both;
+}
+@keyframes li-core-pulse {
+  0%, 100% { transform: scale(1);    opacity: 0.95; }
+  50%      { transform: scale(1.06); opacity: 1;    }
+}
+@keyframes li-core-settle {
+  from { transform: scale(1.08); }
+  to   { transform: scale(1);    }
+}
+
+/* File dots bloom in one by one */
+.li-dot {
+  opacity: 0;
+  transform: scale(0.4);
+  animation: li-dot-in 520ms var(--ease-spring-snap) both;
+}
+@keyframes li-dot-in {
+  0%   { opacity: 0; transform: scale(0.2); }
+  70%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1);   }
+}
+
+/* Edges appear softly — their own simple fade */
+.li-edge {
+  opacity: 0;
+  animation: li-edge-in 700ms ease 200ms both;
+}
+@keyframes li-edge-in {
+  to { opacity: 0.28; }
+}
+
+/* Concept flash — a brief ring + label that appears and recedes */
+.li-flash {
+  animation: li-flash-life 1400ms ease both;
+}
+@keyframes li-flash-life {
+  0%   { opacity: 0; transform: scale(0.2); }
+  25%  { opacity: 1; transform: scale(1.2); }
+  75%  { opacity: 1; transform: scale(1.0); }
+  100% { opacity: 0; transform: scale(0.9); }
+}
+
+/* Progress strip at the bottom of the stage — replaces the .lh-stage-meta
+   pill with one that includes a live bar fill. */
+.li-meta {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-2);
+  background: rgba(8, 10, 22, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.li-meta-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+  flex-shrink: 0;
+}
+.li-meta-label {
+  flex-shrink: 0;
+  color: var(--text);
+}
+.li-bar {
+  flex: 1;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-left: 4px;
+}
+.li-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--demo-accent, #5B8FF9) 60%, transparent),
+    var(--demo-accent, #5B8FF9));
+  border-radius: var(--radius-full);
+  transition: width 420ms var(--ease-spring);
+}
+
+/* Bottom CTA row — fixed height so the layout doesn't jump when the
+   CTA appears on completion. The CTA itself blooms in when rendered. */
+.li-cta-row {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.li-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--demo-accent, #5B8FF9) 55%, transparent);
+  background: color-mix(in srgb, var(--demo-accent, #5B8FF9) 18%, rgba(12, 14, 28, 0.6));
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-spring-snap),
+              background var(--dur-fast) ease,
+              box-shadow var(--dur-medium) ease;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--demo-accent, #5B8FF9) 30%, transparent);
+  animation: li-cta-bloom 720ms var(--ease-spring-snap) both;
+}
+.li-cta:hover {
+  background: color-mix(in srgb, var(--demo-accent, #5B8FF9) 26%, rgba(12, 14, 28, 0.6));
+  box-shadow: 0 0 28px 2px color-mix(in srgb, var(--demo-accent, #5B8FF9) 45%, transparent);
+}
+.li-cta:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--demo-accent, #5B8FF9) 70%, transparent);
+  outline-offset: 3px;
+}
+@keyframes li-cta-bloom {
+  0%   { opacity: 0; transform: translateY(10px) scale(0.94); }
+  60%  { opacity: 1; transform: translateY(-2px) scale(1.04); }
+  100% { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+.li-cta-ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.li-cta-ghost:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.li-cancel { opacity: 0.6; }
+
+/* Reduced motion — cut every journey animation to a simple opacity swap.
+   The progress bar still fills because that's meaningful (not decorative). */
+@media (prefers-reduced-motion: reduce) {
+  .li-core,
+  .li-dot,
+  .li-edge,
+  .li-flash,
+  .li-cta,
+  .li-sub { animation: none !important; }
+  .li-dot   { opacity: 1 !important; transform: none !important; }
+  .li-edge  { opacity: 0.28 !important; }
+  .li-cta   { opacity: 1;   transform: none !important; }
+}
+
+/* ══════════════════════════════════════════════════════════
    EMPTY STATE & ONBOARDING
    ══════════════════════════════════════════════════════════ */
 .empty-state {
@@ -2271,20 +2569,22 @@ textarea:focus-visible {
 }
 .ctip-body strong { color: var(--text-2); font-weight: 600; }
 .repo-contextual {
-  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--accent-soft);
   cursor: default;
-  line-height: 1;
+  line-height: 0;
   /* Slow glow-beat: signals "this repo has AI context embedded" without
      demanding attention. Opacity oscillates between dim and full while
-     text-shadow breathes the accent glow in and out. 3.6s period keeps
+     drop-shadow breathes the accent glow in and out. 8s period keeps
      it calm — closer to a sleeping MacBook indicator than a notification. */
   animation: contextual-beat 8s ease-in-out infinite;
 }
 @keyframes contextual-beat {
-  0%   { opacity: 0.45; color: var(--accent-soft);     text-shadow: none; }
-  50%  { opacity: 1;    color: rgba(200, 130, 255, 1); text-shadow: 0 0 8px rgba(200, 130, 255, 0.9), 0 0 16px var(--accent); }
-  100% { opacity: 0.45; color: var(--accent-soft);     text-shadow: none; }
+  0%   { opacity: 0.45; color: var(--accent-soft);     filter: none; }
+  50%  { opacity: 1;    color: rgba(200, 130, 255, 1); filter: drop-shadow(0 0 6px rgba(200, 130, 255, 0.75)); }
+  100% { opacity: 0.45; color: var(--accent-soft);     filter: none; }
 }
 
 .quality-tip-key {

@@ -250,7 +250,7 @@ export default function LandingHero({ onPickRepo, onPasteUrl }) {
           <button
             key={d.slug}
             className={`lh-tile hover-lift${i === demoIdx ? " is-active" : ""}`}
-            onClick={() => onPickRepo?.(d.slug)}
+            onClick={() => onPickRepo?.(d.slug, d.accent)}
             onMouseEnter={() => setDemoIdx(i)}
             style={{ "--tile-accent": d.accent }}
           >

@@ -6,6 +6,7 @@ import DiagramView from "./components/DiagramView";
 import ReadmeView from "./components/ReadmeView";
 import CustomCursor from "./components/CustomCursor";
 import LandingHero from "./components/LandingHero";
+import LandingIngestion from "./components/LandingIngestion";
 import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpPrompt, fetchAgentModels } from "./api";
 
 // ── Suggestion card icons ────────────────────────────────────────────────────
@@ -55,11 +56,11 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('ghrc_sidebarCollapsed') === 'true'
   );
-  // Landing forces the sidebar collapsed so the hero gets the whole viewport,
-  // but the user can still click the arrow to expand it. When they do, we
-  // record that override here so our landing-default doesn't fight them.
-  // null = follow the landing default; boolean = user took control.
-  const [landingSidebarOverride, setLandingSidebarOverride] = useState(null);
+  // Active in-landing ingestion journey. When non-null, the hero is replaced
+  // by LandingIngestion which owns its own SSE stream and renders the live
+  // map forming. On completion/error we clear this and route into the new
+  // repo. Shape: { url: string, slug: string|null, accent: string }
+  const [activeJourney, setActiveJourney] = useState(null);
   // Prompt autocomplete: shown when input starts with "/"
   const [prompts, setPrompts]         = useState([]);      // MCP prompt list
   const [promptMenu, setPromptMenu]   = useState(false);   // dropdown visible
@@ -226,16 +227,6 @@ export default function App() {
   }
 
   function toggleSidebarCollapse() {
-    // On landing, toggle only flips the ephemeral override so the user's
-    // persisted preference isn't changed by playing with the landing arrow.
-    // Off landing, toggle the real preference (persisted).
-    if (isLanding) {
-      // Effective collapsed state when the override is null is "true" (landing default);
-      // flipping from that perspective means override becomes false (expand).
-      const effective = landingSidebarOverride ?? true;
-      setLandingSidebarOverride(!effective);
-      return;
-    }
     const next = !sidebarCollapsed;
     setSidebarCollapsed(next);
     localStorage.setItem('ghrc_sidebarCollapsed', String(next));
@@ -662,47 +653,78 @@ export default function App() {
     messages.length === 0 &&
     (!activeRepo || (activeRepo === "all" && repos.length === 0));
 
-  // Effective collapsed state. On landing, the sidebar defaults to collapsed
-  // (the hero wants the room) but the user can still pop it open with the
-  // expand arrow — that flips `landingSidebarOverride`. Off landing, use the
-  // persisted preference.
-  const effectiveCollapsed = isLanding
-    ? (landingSidebarOverride ?? true)
-    : sidebarCollapsed;
+  // Sidebar visibility follows the user's persisted preference in every state,
+  // landing included. Earlier we force-collapsed on landing to hand the whole
+  // viewport to the hero; it turned out the sidebar reads as context
+  // (indexed repos, sessions) rather than clutter, so we keep it visible.
+  const effectiveCollapsed = sidebarCollapsed;
 
-  // Reset the landing override the moment we leave landing, so the user's
-  // persisted sidebar preference takes over cleanly on the next visit.
-  useEffect(() => {
-    if (!isLanding && landingSidebarOverride !== null) {
-      setLandingSidebarOverride(null);
-    }
-  }, [isLanding, landingSidebarOverride]);
-
-  // Landing → Sidebar bridge helpers. Tiles and the hero URL input both
-  // route through the same "external ingest" event so the Sidebar's existing
-  // ingestion flow (progress stream + success handling) owns the UX.
-  function handleLandingPick(slug) {
+  // Landing → journey: tile click and URL input both start the same live
+  // ingestion experience that replaces the hero in-place. If the repo is
+  // already indexed, we skip the journey and select it directly.
+  //
+  // We build a full https:// URL here because the /ingest/stream endpoint
+  // expects one; accept any of the shorthand forms the hero input allows.
+  function toIngestUrl(input) {
+    const raw = (input || "").trim();
+    if (!raw) return null;
+    if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+    if (raw.startsWith("github.com/")) return `https://${raw}`;
+    if (raw.includes("/")) return `https://github.com/${raw}`;
+    return null;
+  }
+  function startJourney({ slug, url, accent }) {
+    // Don't stack journeys — if one's already running, ignore duplicate clicks.
+    if (activeJourney) return;
+    const ingestUrl = url || (slug ? `https://github.com/${slug}` : null);
+    if (!ingestUrl) return;
+    setActiveJourney({ url: ingestUrl, slug: slug || null, accent: accent || "#5B8FF9" });
+  }
+  function handleLandingPick(slug, accent) {
     posthog.capture("landing_tile_clicked", { slug });
+    // If this repo is already indexed, skip the journey — the user has
+    // already seen the map form. Straight into the product.
     const indexed = repos.find(r => r.slug === slug);
     if (indexed) {
       setActiveRepo(slug);
       setShowReadme(false);
       return;
     }
-    window.dispatchEvent(new CustomEvent("cartographer:ingest", {
-      detail: { repo: `github.com/${slug}` },
-    }));
+    startJourney({ slug, accent });
   }
   function handleLandingUrl(raw) {
     posthog.capture("landing_url_submitted", { input: raw });
-    const clean = raw.includes("/") ? raw : null;
-    if (!clean) return;
-    const withHost = clean.startsWith("github.com/") || clean.startsWith("http")
-      ? clean
-      : `github.com/${clean}`;
-    window.dispatchEvent(new CustomEvent("cartographer:ingest", {
-      detail: { repo: withHost },
-    }));
+    const url = toIngestUrl(raw);
+    if (!url) return;
+    startJourney({ url });
+  }
+  // Journey completion: refresh the repo list so the sidebar picks up the
+  // newly indexed repo, then route the user straight into the Diagram view —
+  // that's the "understand this repo" destination. Chat is for questions;
+  // Diagram is the tour.
+  async function handleJourneyComplete(slug) {
+    if (!activeJourney) return;
+    const effectiveSlug = slug || activeJourney.slug;
+    setActiveJourney(null);
+    // Reload repos so the sidebar list updates (the new repo will appear).
+    await loadRepos();
+    if (effectiveSlug) {
+      setActiveRepo(effectiveSlug);
+      setShowReadme(false);
+      // Diagram view is the natural first stop for a brand-new repo — it
+      // shows the concept tour / structural overview. The user can still
+      // jump to chat any time. Journey → tour is the narrative promise.
+      setView("graph");
+      posthog.capture("landing_journey_completed", { repo: effectiveSlug });
+    }
+  }
+  function handleJourneyAbort() {
+    setActiveJourney(null);
+  }
+  function handleJourneyError(msg) {
+    posthog.capture("landing_journey_error", { message: msg });
+    // Keep the overlay visible so the user can read the error and retry
+    // via the "Back" button; the component shows its own error copy.
   }
 
   return (
@@ -734,9 +756,28 @@ export default function App() {
         collapsed={effectiveCollapsed}
         onToggleCollapse={toggleSidebarCollapse}
         onGenerateReadme={(repo) => { setActiveRepo(repo); setShowReadme(true); posthog.capture("readme_opened", { repo }); }}
+        isLanding={isLanding}
       />
 
-      <div className="main">
+      {/* .main is the universal canvas for every view. We apply the same
+          ambient primitives (cursor-glow + constellation parallax) that make
+          the landing feel premium, so every surface — chat empty state,
+          diagram, explore, story, readme — shares one ambient language.
+          Individual views can still add tighter card-level glows on top. */}
+      <div
+        className="main has-cursor-glow constellation-bg"
+        onMouseMove={(e) => {
+          // Shared --mx/--my channel: one handler on .main feeds both the
+          // cursor-glow pseudo and the constellation parallax. Custom
+          // properties inherit, so any descendant that reads var(--mx)/
+          // var(--my) will see the same values without its own handler.
+          const r = e.currentTarget.getBoundingClientRect();
+          const mx = ((e.clientX - r.left) / r.width) * 100;
+          const my = ((e.clientY - r.top)  / r.height) * 100;
+          e.currentTarget.style.setProperty("--mx", `${mx}%`);
+          e.currentTarget.style.setProperty("--my", `${my}%`);
+        }}
+      >
         {/* Header */}
         {/* 3-column grid: left (repo badge) | center (toggle) | right (actions)
             Equal 1fr flanks guarantee the center column is always truly centred,
@@ -829,12 +870,27 @@ export default function App() {
           <>
             {messages.length === 0 ? (
               isLanding ? (
-                // Full-bleed landing — LandingHero owns its own layout
+                // Full-bleed landing — LandingHero owns its own layout, or
+                // LandingIngestion takes over when a journey is in flight.
+                // We key on activeJourney so the entrance animation replays
+                // on mount — the feeling of "the map starting to form."
                 <div className="landing-root view-switch-in">
-                  <LandingHero
-                    onPickRepo={handleLandingPick}
-                    onPasteUrl={handleLandingUrl}
-                  />
+                  {activeJourney ? (
+                    <LandingIngestion
+                      key={`journey-${activeJourney.url}`}
+                      repoUrl={activeJourney.url}
+                      repoSlug={activeJourney.slug}
+                      accent={activeJourney.accent}
+                      onComplete={handleJourneyComplete}
+                      onError={handleJourneyError}
+                      onAbort={handleJourneyAbort}
+                    />
+                  ) : (
+                    <LandingHero
+                      onPickRepo={handleLandingPick}
+                      onPasteUrl={handleLandingUrl}
+                    />
+                  )}
                 </div>
               ) : (
               <div
