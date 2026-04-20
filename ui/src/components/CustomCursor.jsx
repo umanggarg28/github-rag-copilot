@@ -20,8 +20,6 @@ const INTERACTIVE_SELECTOR = [
   "a",
   '[role="button"]',
   '[role="tab"]',
-  "input",
-  "textarea",
   ".ts-flow-step",
   ".ts-rail-dot",
   ".ts-dep-pill",
@@ -31,6 +29,21 @@ const INTERACTIVE_SELECTOR = [
   ".ec-node",
   ".onboarding-step",
 ].join(", ");
+
+// Surfaces where the dot becomes noise instead of signal:
+//   - inputs / textareas: the I-beam is the actual pointer, the dot fights it
+//   - pre / code: monospaced text where a 10px dot reads like a glyph
+//   - contenteditable: same as inputs
+// We hide the dot entirely over these. Pure-prose elements (p, span) are
+// NOT in this list — the dot is useful ambient signal over long reading.
+const HIDE_OVER_SELECTOR = [
+  'input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"])',
+  'textarea',
+  '[contenteditable="true"]',
+  'pre',
+  'code',
+  '.mcp-detail-preview',
+].join(', ');
 
 export default function CustomCursor() {
   const ref = useRef(null);
@@ -56,8 +69,11 @@ export default function CustomCursor() {
       }
     }
     function onOver(e) {
-      // Upgrade when hovering anything interactive, anywhere in the bubble path.
-      const interactive = e.target.closest?.(INTERACTIVE_SELECTOR);
+      // Hide entirely over text-entry surfaces; otherwise upgrade to the
+      // active ring when over any interactive element in the bubble path.
+      const overInput = !!e.target.closest?.(TEXT_INPUT_SELECTOR);
+      el.dataset.overInput = overInput ? "1" : "0";
+      const interactive = !overInput && e.target.closest?.(INTERACTIVE_SELECTOR);
       el.dataset.active = interactive ? "1" : "0";
     }
     function onLeave() { el.dataset.visible = "0"; }
@@ -76,5 +92,5 @@ export default function CustomCursor() {
   }, [enabled]);
 
   if (!enabled) return null;
-  return <div ref={ref} className="custom-cursor" aria-hidden="true" data-visible="0" data-active="0" />;
+  return <div ref={ref} className="custom-cursor" aria-hidden="true" data-visible="0" data-active="0" data-over-input="0" />;
 }

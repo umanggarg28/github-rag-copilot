@@ -4,9 +4,9 @@ import Sidebar from "./components/Sidebar";
 import Message from "./components/Message";
 import DiagramView from "./components/DiagramView";
 import ReadmeView from "./components/ReadmeView";
-import CustomCursor from "./components/CustomCursor";
 import LandingHero from "./components/LandingHero";
 import LandingIngestion from "./components/LandingIngestion";
+import CustomCursor from "./components/CustomCursor";
 import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpPrompt, fetchAgentModels } from "./api";
 
 // ── Suggestion card icons ────────────────────────────────────────────────────
@@ -56,6 +56,10 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem('ghrc_sidebarCollapsed') === 'true'
   );
+  // Diagram view's fullscreen state is lifted here so the layout can hide the
+  // sidebar + chat-header chrome cleanly (rather than relying on z-index over
+  // elements that can create stacking/containing blocks mid-animation).
+  const [diagramFullscreen, setDiagramFullscreen] = useState(false);
   // Active in-landing ingestion journey. When non-null, the hero is replaced
   // by LandingIngestion which owns its own SSE stream and renders the live
   // map forming. On completion/error we clear this and route into the new
@@ -728,7 +732,7 @@ export default function App() {
   }
 
   return (
-    <div className={`layout${effectiveCollapsed ? " layout-collapsed" : ""}${isLanding ? " layout-landing" : ""}`}>
+    <div className={`layout${effectiveCollapsed ? " layout-collapsed" : ""}${isLanding ? " layout-landing" : ""}${diagramFullscreen ? " layout-fullscreen" : ""}`}>
       <CustomCursor />
 
       {/* Sidebar overlay for mobile — closes sidebar when clicking outside */}
@@ -861,6 +865,7 @@ export default function App() {
                 setInput(question);
                 setTimeout(() => textareaRef.current?.focus(), 50);
               }}
+              onFullscreenChange={setDiagramFullscreen}
             />
           </div>
         )}
@@ -909,7 +914,7 @@ export default function App() {
               >
                 {activeRepo === "all" && repos.length > 0 ? (
                   // "All repos" explicitly selected with repos indexed — cross-repo query mode
-                  <div className="suggest-state constellation-bg">
+                  <div className="suggest-state">
                     <h2>Ask across all repos</h2>
                     <p>Searching <strong>{repos.length} indexed repos</strong> at once — {repos.map(r => r.slug.split("/")[1]).join(", ")}. Results show which repo each source comes from.</p>
                     <div className="suggestions">
@@ -938,7 +943,7 @@ export default function App() {
                   </div>
                 ) : (
                   // Repo selected — show mode-aware suggestions + feature discovery cards
-                  <div className="suggest-state constellation-bg">
+                  <div className="suggest-state">
                     <h2>How does {activeRepo.split("/")[1]} work?</h2>
 
 

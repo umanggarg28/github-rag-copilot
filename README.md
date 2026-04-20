@@ -96,7 +96,7 @@ For complex questions requiring multi-file investigation ("trace how data flows 
 
 ### Architecture: Model Context Protocol (MCP)
 
-The agent communicates with tools via **MCP** — the same open protocol Claude Code uses. A FastMCP server runs inside the FastAPI process at `/mcp`. The agent connects as an MCP client, discovers tools dynamically, and calls them via JSON-RPC.
+The agent communicates with tools via **MCP** — an open protocol for wiring LLM agents to external capabilities. A FastMCP server runs inside the FastAPI process at `/mcp`. The agent connects as an MCP client, discovers tools dynamically, and calls them via JSON-RPC.
 
 This means every tool works with any MCP-compatible client, not just our agent.
 
@@ -150,7 +150,7 @@ Phase 2 — INVESTIGATE  Deep-dive into each pipeline stage (one LLM call per fi
 Phase 3 — SYNTHESIZE  Convert traced understanding into structured tour JSON
 ```
 
-Each phase gets only the context it needs — no LLM call is asked to do two hard things simultaneously. This mirrors Claude Code's own `architecture_overview` + `explain_tool` prompt pattern, and produces grounded dependency graphs traced from actual imports rather than guessed from naming conventions.
+Each phase gets only the context it needs — no LLM call is asked to do two hard things simultaneously. This mirrors the `architecture_overview` + `explain_tool` split used by agentic code explorers, and produces grounded dependency graphs traced from actual imports rather than guessed from naming conventions.
 
 During generation, a **live agent trace panel** shows each investigation step in real time — making the reasoning process visible and building trust in why each concept appears.
 
@@ -207,7 +207,7 @@ The ⟳ button in the sidebar triggers a re-index with LLM-generated chunk descr
 | Reranker (primary) | Cohere `rerank-v3.5` | Cross-encoder, API, 1000 calls/month free |
 | Reranker (fallback) | `ms-marco-MiniLM-L-6-v2` | Local cross-encoder, baked into Docker image |
 | LLM generation | Cerebras → Groq → Gemini → OpenRouter → Anthropic | Automatic cascade, all free tiers |
-| Agent | MCP via FastMCP | JSON-RPC tool discovery + calling; compatible with Claude Code |
+| Agent | MCP via FastMCP | JSON-RPC tool discovery + calling; works with any MCP-compatible client |
 | Diagrams | Mermaid.js | Lazy-loaded, client-side rendering |
 | Graph visualization | D3.js (force-directed) | Architecture diagram; Explore view uses topological layout |
 | Analytics | Vercel Analytics | Page views and visitor tracking |

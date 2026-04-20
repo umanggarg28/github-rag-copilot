@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { BASE, deleteRepo, fetchMcpStatus, ingestRepo } from "../api";
+import { BASE, deleteRepo, fetchMcpStatus, fetchMcpPrompt } from "../api";
 
 function ContextualTip() {
   const [open, setOpen] = useState(false);
@@ -111,6 +111,8 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
   const [loading, setLoading]           = useState(false);
   const [mcpInfo, setMcpInfo]           = useState(null); // MCP server status
   const [mcpOpen, setMcpOpen]           = useState(false); // expand/collapse panel
+  const [mcpExpandedKey, setMcpExpandedKey] = useState(null); // "tool:name" | "res:uri" | "prompt:name"
+  const [mcpPromptPreview, setMcpPromptPreview] = useState({}); // name → text (fetched lazily)
   const [confirming, setConfirming]     = useState(null); // slug being confirmed for delete
   const [ingestProgress, setIngestProgress] = useState([]); // [{step, detail, done}]
   const [isIngesting, setIsIngesting]   = useState(false);
@@ -693,12 +695,16 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
               {mcpInfo.tools.length}T · {mcpInfo.resources.length}R · {mcpInfo.prompts.length}P
             </span>
           )}
+          {/* Panel expands UPWARD from the bottom. Closed state points up
+              (where the panel will appear); open state points down (where
+              it will collapse back to). The down-chevron SVG is the base —
+              rotate it when closed so the caret matches the action. */}
           <svg
             className="mcp-chevron"
             width="10" height="10" viewBox="0 0 16 16"
             fill="none" stroke="currentColor" strokeWidth="2"
             strokeLinecap="round" strokeLinejoin="round"
-            style={{ transform: mcpOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}
+            style={{ transform: mcpOpen ? "none" : "rotate(180deg)", transition: "transform 0.2s" }}
             aria-hidden="true"
           >
             <path d="m4 6 4 4 4-4"/>
@@ -711,34 +717,158 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
               <p className="mcp-error">Not connected — is the backend running?</p>
             ) : (
               <>
+                {/* Primer — one line explaining what this panel exposes.
+                    Turns a debug list into a piece of the product story. */}
+                <p className="mcp-primer">
+                  Live from the backend — every capability the agent uses to reason over your code.
+                </p>
                 {mcpInfo.tools.length > 0 && (
                   <div className="mcp-section">
-                    <div className="mcp-section-label">Tools</div>
-                    {mcpInfo.tools.map(t => (
-                      <div key={t.name} className="mcp-item">
-                        <span className="mcp-item-name">{t.name}</span>
-                      </div>
-                    ))}
+                    <div className="mcp-section-label">
+                      <span>Tools</span>
+                      <span className="mcp-section-count">{mcpInfo.tools.length}</span>
+                    </div>
+                    {mcpInfo.tools.map(t => {
+                      const key = `tool:${t.name}`;
+                      const expanded = mcpExpandedKey === key;
+                      return (
+                        <div key={t.name} className={`mcp-row${expanded ? " is-open" : ""}`}>
+                          <button
+                            type="button"
+                            className="mcp-item"
+                            onClick={() => setMcpExpandedKey(expanded ? null : key)}
+                            aria-expanded={expanded}
+                          >
+                            <span className="mcp-kind mcp-kind-tool" aria-hidden="true">
+                              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3 3 6l3 3M10 13l3-3-3-3M9 4 7 12"/></svg>
+                            </span>
+                            <span className="mcp-item-content">
+                              <span className="mcp-item-name">{t.name}</span>
+                              {t.description && <span className="mcp-item-desc">{t.description}</span>}
+                            </span>
+                            <svg className="mcp-item-chevron" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+                          </button>
+                          {expanded && t.description && (
+                            <div className="mcp-detail">
+                              <p className="mcp-detail-desc">{t.description}</p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 {mcpInfo.resources.length > 0 && (
                   <div className="mcp-section">
-                    <div className="mcp-section-label">Resources</div>
-                    {mcpInfo.resources.map(r => (
-                      <div key={r.uri} className="mcp-item">
-                        <span className="mcp-item-name mcp-uri">{r.uri}</span>
-                      </div>
-                    ))}
+                    <div className="mcp-section-label">
+                      <span>Resources</span>
+                      <span className="mcp-section-count">{mcpInfo.resources.length}</span>
+                    </div>
+                    {mcpInfo.resources.map(r => {
+                      const key = `res:${r.uri}`;
+                      const expanded = mcpExpandedKey === key;
+                      return (
+                        <div key={r.uri} className={`mcp-row${expanded ? " is-open" : ""}`}>
+                          <button
+                            type="button"
+                            className="mcp-item"
+                            onClick={() => setMcpExpandedKey(expanded ? null : key)}
+                            aria-expanded={expanded}
+                          >
+                            <span className="mcp-kind mcp-kind-resource" aria-hidden="true">
+                              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2C4.7 2 2 3.3 2 5v6c0 1.7 2.7 3 6 3s6-1.3 6-3V5c0-1.7-2.7-3-6-3Z"/><path d="M2 5c0 1.7 2.7 3 6 3s6-1.3 6-3M2 8c0 1.7 2.7 3 6 3s6-1.3 6-3"/></svg>
+                            </span>
+                            <span className="mcp-item-content">
+                              <span className="mcp-item-name">{r.name || r.uri.split("://").pop()}</span>
+                              <span className="mcp-item-desc mcp-uri">{r.uri}</span>
+                            </span>
+                            <svg className="mcp-item-chevron" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+                          </button>
+                          {expanded && (
+                            <div className="mcp-detail">
+                              <p className="mcp-detail-desc">
+                                {r.description || "Read-only resource exposed over MCP."}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 {mcpInfo.prompts.length > 0 && (
                   <div className="mcp-section">
-                    <div className="mcp-section-label">Prompts</div>
-                    {mcpInfo.prompts.map(p => (
-                      <div key={p.name} className="mcp-item">
-                        <span className="mcp-item-name">/{p.name}</span>
-                      </div>
-                    ))}
+                    <div className="mcp-section-label">
+                      <span>Prompts</span>
+                      <span className="mcp-section-count">{mcpInfo.prompts.length}</span>
+                    </div>
+                    {mcpInfo.prompts.map(p => {
+                      const key = `prompt:${p.name}`;
+                      const expanded = mcpExpandedKey === key;
+                      const preview = mcpPromptPreview[p.name];
+                      const args = p.arguments || [];
+                      const hasRequiredArgs = args.some(a => a.required);
+                      return (
+                        <div key={p.name} className={`mcp-row${expanded ? " is-open" : ""}`}>
+                          <button
+                            type="button"
+                            className="mcp-item"
+                            onClick={() => setMcpExpandedKey(expanded ? null : key)}
+                            aria-expanded={expanded}
+                          >
+                            <span className="mcp-kind mcp-kind-prompt" aria-hidden="true">
+                              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h10M3 6h10M3 9h7M3 12h4"/></svg>
+                            </span>
+                            <span className="mcp-item-content">
+                              <span className="mcp-item-name">/{p.name}</span>
+                              {p.description && <span className="mcp-item-desc">{p.description}</span>}
+                            </span>
+                            <svg className="mcp-item-chevron" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+                          </button>
+                          {expanded && (
+                            <div className="mcp-detail">
+                              {p.description && <p className="mcp-detail-desc">{p.description}</p>}
+                              {args.length > 0 && (
+                                <div className="mcp-sig">
+                                  <div className="mcp-sig-label">Arguments</div>
+                                  {args.map(a => (
+                                    <div key={a.name} className="mcp-sig-arg">
+                                      <span className="mcp-sig-name">{a.name}</span>
+                                      {a.required && <span className="mcp-sig-req">required</span>}
+                                      {a.description && <span className="mcp-sig-desc">{a.description}</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {preview && (
+                                <pre className="mcp-detail-preview">{preview}</pre>
+                              )}
+                              {!hasRequiredArgs && !preview && (
+                                <button
+                                  type="button"
+                                  className="mcp-detail-action"
+                                  onClick={async () => {
+                                    try {
+                                      const { text } = await fetchMcpPrompt(p.name, {});
+                                      setMcpPromptPreview(prev => ({ ...prev, [p.name]: text }));
+                                    } catch (err) {
+                                      setMcpPromptPreview(prev => ({ ...prev, [p.name]: `Error: ${err.message}` }));
+                                    }
+                                  }}
+                                >
+                                  Preview expanded prompt
+                                </button>
+                              )}
+                              {hasRequiredArgs && !preview && (
+                                <p className="mcp-detail-hint">
+                                  Invoke from chat: type <code>/{p.name}</code> in the message box.
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </>

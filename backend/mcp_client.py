@@ -277,15 +277,35 @@ class MCPClient:
                 "connected":  True,
                 "server_url": self.server_url,
                 "tools": [
-                    {"name": t.name, "description": (t.description or "")[:120]}
+                    {
+                        "name":        t.name,
+                        "description": t.description or "",
+                    }
                     for t in tools_r.tools
                 ],
                 "resources": [
-                    {"uri": str(r.uri), "name": r.name}
+                    {
+                        "uri":         str(r.uri),
+                        "name":        r.name,
+                        "description": getattr(r, "description", "") or "",
+                    }
                     for r in resources_r.resources
                 ],
                 "prompts": [
-                    {"name": p.name, "description": (p.description or "")[:120]}
+                    {
+                        "name":        p.name,
+                        "description": p.description or "",
+                        # Prompts can have required arguments (e.g. a repo slug);
+                        # surfacing them lets the UI build a quick input form.
+                        "arguments": [
+                            {
+                                "name":        a.name,
+                                "description": getattr(a, "description", "") or "",
+                                "required":    getattr(a, "required", False),
+                            }
+                            for a in (getattr(p, "arguments", None) or [])
+                        ],
+                    }
                     for p in prompts_r.prompts
                 ],
             }

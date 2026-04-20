@@ -45,6 +45,16 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { height: 100dvh; background: #09090E; overflow: hidden; }
 
+/* Hide the OS cursor on pointer-capable devices — the .custom-cursor dot is
+   the pointer. Touch devices skip this so taps still feel native. Text inputs
+   keep their native I-beam because a dot over text is harder to aim with. */
+@media (hover: hover) and (pointer: fine) {
+  html, body, * { cursor: none; }
+  input[type="text"], input[type="url"], input[type="email"],
+  input[type="password"], input[type="search"], textarea,
+  [contenteditable="true"] { cursor: text; }
+}
+
 :root {
   /* ── Near-pure black backgrounds — blueprint dark base ──
      Deeper than Linear (#0A0A0A), creates richer canvas depth.
@@ -150,37 +160,12 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Atmospheric bloom — bottom-right and top-center static glows.
-     The top-left blue glow is extracted to body::after so it can drift. */
+  /* Atmospheric bloom — soft static corner glows. The drifting top-left blob
+     was removed because it competed with the cursor-follow ambient on .main. */
   background-image:
     radial-gradient(ellipse 45% 40% at 105% 100%, rgba(10, 30, 90,  0.18) 0%, transparent 60%),
     radial-gradient(ellipse 30% 25% at 50% 0%,   rgba(91, 143, 249, 0.05) 0%, transparent 50%);
   animation: page-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-/* Animated top-left glow — the main blueprint blue bloom drifts slowly.
-   Extracted from body background-image so transform: translate() can animate it.
-   CSS cannot animate positions inside radial-gradient() directly; a pseudo-element
-   that you translate is the only pure-CSS path.
-   body::before is taken (dot grid), so we use body::after.
-   z-index: 0 keeps it below .layout (z-index: 1) but above the static body background. */
-body::after {
-  content: '';
-  position: fixed;
-  top: -30%;
-  left: -15%;
-  width: 55%;
-  height: 65%;
-  background: radial-gradient(ellipse at 50% 50%, rgba(30, 80, 200, 0.45) 0%, rgba(20, 60, 160, 0.18) 45%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-  animation: glow-drift 10s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-@keyframes glow-drift {
-  from { transform: translate(0,   0); }
-  to   { transform: translate(70%, 55%); }
 }
 
 /* Signature dot grid — blueprint-tinted, masked to center, creates spatial texture.
@@ -292,9 +277,14 @@ body::before {
    feel of Chat↔Diagram, Canvas↔Story, and Explore/Architecture/Class tab
    switches so all view transitions share one motion language. */
 .view-switch-in {
-  animation: view-switch-in var(--dur-slow) var(--ease-spring) both;
-  /* will-change signals the compositor to promote this layer for smooth transform/filter */
-  will-change: transform, opacity, filter;
+  /* backwards fill-mode holds the hidden "from" state BEFORE the animation
+     starts (prevents flash on mount) but releases the transform/filter AFTER
+     it ends. That matters because a persistent filter/transform creates a
+     containing block, which would trap position:fixed descendants (like
+     .diagram-fullscreen) inside this wrapper instead of the viewport.
+     Similarly, will-change: transform|filter also creates a containing block,
+     so we omit it — modern browsers auto-promote short animations anyway. */
+  animation: view-switch-in var(--dur-slow) var(--ease-spring) backwards;
 }
 /* Host for top-level view transitions inside .main — passes height through so
    DiagramView's height:100% still resolves. */
@@ -383,6 +373,9 @@ body::before {
     0 0 0 1.5px var(--accent-soft),
     0 0 18px rgba(91, 143, 249, 0.45);
 }
+/* Over text-entry surfaces: hide entirely. The native I-beam does the
+   pointing job; a companion dot over a placeholder only adds noise. */
+.custom-cursor[data-over-input="1"] { opacity: 0 !important; }
 
 /* Respect the user. Disable motion where requested. */
 @media (prefers-reduced-motion: reduce) {
@@ -430,6 +423,18 @@ textarea:focus-visible {
 /* When sidebar is collapsed, shrink the column to icon-strip width */
 .layout.layout-collapsed {
   grid-template-columns: 52px 1fr;
+}
+/* Fullscreen diagram mode — everything but the focused canvas gets out of the
+   way. The sidebar column collapses to zero and the chat-header hides, so the
+   fullscreen overlay has a clean stage to land on (and reflow on exit is
+   minimal). Kept at the layout level rather than z-index to avoid fighting
+   stacking contexts. */
+.layout.layout-fullscreen {
+  grid-template-columns: 0 1fr;
+}
+.layout.layout-fullscreen .sidebar,
+.layout.layout-fullscreen .chat-header {
+  display: none;
 }
 /* Landing mode — whole viewport belongs to the hero. We keep the sidebar
    column alive (so brand + repo shortcuts remain accessible) but let the
@@ -929,34 +934,51 @@ textarea:focus-visible {
   --glow-intensity: 7%;
   --glow-color: var(--accent);
 }
-.main.has-cursor-glow::before {
-  /* Make the ambient glow always visible (not just on hover) so the room
-     always feels lit. Transition smooths the initial paint. */
-  opacity: 1;
-  transition: none;
-}
+/* The constellation-bg and has-cursor-glow primitives both paint via ::before.
+   When both classes are applied to the SAME element, the constellation's
+   background-image wins and the glow disappears. On .main we want BOTH — so
+   ::before keeps the constellation dots, and ::after hosts the cursor glow. */
 .main.constellation-bg::before {
-  /* Softer than landing — the dot lattice should read as texture, not pattern.
-     We also widen the mask so the feathered edge sits beyond the viewport
-     (no visible ring where dots fade out). */
-  opacity: 0.55;
+  /* Dot lattice — bright enough to read as texture on every view, soft enough
+     not to compete with content. Mask extends past the viewport so the feathered
+     edge isn't visible as a ring. */
+  opacity: 0.85;
   background-image:
-    radial-gradient(rgba(180, 200, 255, 0.11) 1px, transparent 1.2px),
-    radial-gradient(rgba(180, 200, 255, 0.05) 1px, transparent 1.2px);
-  background-size: 52px 52px, 104px 104px;
-  mask-image: radial-gradient(ellipse at 50% 40%, black 0%, black 45%, transparent 88%);
-  -webkit-mask-image: radial-gradient(ellipse at 50% 40%, black 0%, black 45%, transparent 88%);
+    radial-gradient(rgba(180, 200, 255, 0.18) 1px, transparent 1.2px),
+    radial-gradient(rgba(180, 200, 255, 0.08) 1px, transparent 1.2px);
+  background-size: 48px 48px, 96px 96px;
+  mask-image: radial-gradient(ellipse at 50% 40%, black 0%, black 55%, transparent 95%);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 40%, black 0%, black 55%, transparent 95%);
+}
+.main.has-cursor-glow::after {
+  /* Cursor-follow ambient glow — same contract as .has-cursor-glow::before
+     but lives on ::after so it can coexist with the constellation on ::before.
+     Always visible (not hover-gated) so every view reads as lit. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    var(--glow-size) circle at var(--mx) var(--my),
+    color-mix(in srgb, var(--glow-color) var(--glow-intensity), transparent) 0%,
+    transparent 55%
+  );
+  pointer-events: none;
+  opacity: 1;
+  z-index: 0;
 }
 
-/* On the landing, we already have a strong vignette + demo-accent glow on
-   the stage, so the main-level glow competes. Dim both layers inside landing
-   so they sit under the hero, not over it. The landing reads as intentional
-   composition; the ambient is support. */
-.layout.layout-landing .main.has-cursor-glow::before {
-  opacity: 0.4;
+/* Landing is the entry moment — push the ambient to full strength here so
+   the hero sits in a lit room, not a dim one. The stage's own demo-accent
+   glow is localised to .lh-stage and doesn't clash with the room light. */
+.layout.layout-landing .main.has-cursor-glow {
+  --glow-size: 980px;
+  --glow-intensity: 11%;
+}
+.layout.layout-landing .main.has-cursor-glow::after {
+  opacity: 1;
 }
 .layout.layout-landing .main.constellation-bg::before {
-  opacity: 0.8; /* keep the dot grid — it IS the landing's texture */
+  opacity: 1; /* keep the dot grid — it IS the landing's texture */
 }
 
 /* ── Chat header ──────────────────────────────────────────── */
@@ -1821,16 +1843,30 @@ textarea:focus-visible {
   gap: 0;
   width: 100%;
   max-width: 560px;
-  background: rgba(12, 14, 28, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(12, 14, 28, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius);
   padding: 4px 4px 4px 14px;
-  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 1px 0 rgba(0, 0, 0, 0.25);
+  transition:
+    border-color var(--dur-fast) ease,
+    box-shadow   var(--dur-fast) ease,
+    background   var(--dur-fast) ease;
   animation: onboardIn var(--dur-slow) var(--ease-spring) 320ms both;
 }
+.lh-url:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(12, 14, 28, 0.82);
+}
 .lh-url:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: rgba(14, 16, 32, 0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent),
+    0 8px 32px -8px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 .lh-url-prefix {
   font-family: var(--mono);
@@ -1849,6 +1885,20 @@ textarea:focus-visible {
   font-size: 13px;
   padding: 10px 8px;
   outline: none;
+  box-shadow: none;
+}
+/* Suppress the global input focus halo — the wrapper's :focus-within
+   state IS the focus indicator here. A second halo inside creates the
+   double-box effect. */
+.lh-url-input:focus,
+.lh-url-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+.lh-url-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
 .lh-url-input::placeholder { color: var(--muted); }
 .lh-url-btn {
@@ -3065,7 +3115,10 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg);
+  /* Transparent so the .main ambient layer (cursor-glow + constellation) shows
+     through. Fullscreen variant below opts back into var(--bg) because it
+     breaks out of .main with position:fixed. */
+  background: transparent;
   overflow: hidden;
 }
 
@@ -3742,27 +3795,253 @@ textarea:focus-visible {
 
 .mcp-error { color: var(--muted); font-size: 11px; margin: 0; }
 
-.mcp-section { display: flex; flex-direction: column; gap: 3px; }
+/* Primer — a single line that turns a debug list into part of the product story.
+   Sets context once at the top of the expanded panel. */
+.mcp-primer {
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  background: rgba(91, 143, 249, 0.04);
+  border: 1px solid rgba(91, 143, 249, 0.10);
+  border-radius: var(--radius-sm);
+}
+
+.mcp-section { display: flex; flex-direction: column; gap: 4px; }
 
 .mcp-section-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  text-transform: none;
-  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
   margin-bottom: 2px;
   font-family: var(--sans);
 }
+.mcp-section-count {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: rgba(180, 200, 255, 0.45);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
 
-.mcp-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+/* Container row — holds the clickable header and (when open) the detail panel. */
+.mcp-row {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition);
+}
+.mcp-row.is-open { background: rgba(91, 143, 249, 0.05); }
+
+/* Rich list row — small category icon + name + one-line description.
+   Reads as a capabilities gallery rather than a symbol dump. */
+.mcp-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition);
+  cursor: pointer;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.mcp-item:hover { background: rgba(91, 143, 249, 0.06); }
+.mcp-item:focus-visible { outline: none; background: rgba(91, 143, 249, 0.08); }
+
+.mcp-item-chevron {
+  flex-shrink: 0;
+  color: var(--faint);
+  opacity: 0.6;
+  margin-top: 2px;
+  transition: transform var(--transition), opacity var(--transition);
+}
+.mcp-row.is-open .mcp-item-chevron {
+  transform: rotate(180deg);
+  opacity: 1;
+}
+
+/* Expanded detail — full description + argument signature. Appears below the
+   row it belongs to, visually linked by shared rounded container + subtle tint. */
+.mcp-detail {
+  padding: 6px 10px 10px 30px; /* align left edge with the icon column */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.06);
+  margin: 2px 4px 0;
+}
+.mcp-detail-desc {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.mcp-detail-empty {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-style: italic;
+}
+.mcp-detail-hint {
+  margin: 0;
+  font-size: 10.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.mcp-detail-hint code {
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 1px 4px;
+  background: rgba(91, 143, 249, 0.12);
+  border-radius: 3px;
+  color: var(--accent-soft);
+}
+.mcp-detail-preview {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  background: rgba(8, 10, 20, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.mcp-detail-action {
+  align-self: flex-start;
+  padding: 4px 10px;
+  font-size: 10.5px;
+  font-family: var(--sans);
+  color: var(--accent-soft);
+  background: rgba(91, 143, 249, 0.10);
+  border: 1px solid rgba(91, 143, 249, 0.25);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.mcp-detail-action:hover {
+  background: rgba(91, 143, 249, 0.18);
+  border-color: rgba(91, 143, 249, 0.45);
+}
+
+/* Argument signature — compact table-like list of parameters. */
+.mcp-sig {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mcp-sig-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.mcp-sig-arg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.mcp-sig-name {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--accent-soft);
+}
+.mcp-sig-type {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted);
+  padding: 0 5px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+.mcp-sig-req {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #F59E0B;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  padding: 0 5px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.mcp-sig-desc {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+  padding-left: 2px;
+}
+
+.mcp-kind {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  margin-top: 1px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.mcp-kind-tool     { color: #7DABFF; background: rgba(125, 171, 255, 0.10); }
+.mcp-kind-resource { color: #6EE7B7; background: rgba(110, 231, 183, 0.08); }
+.mcp-kind-prompt   { color: #C4B5FD; background: rgba(196, 181, 253, 0.08); }
+
+.mcp-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
 
 .mcp-item-name {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--accent-soft);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.mcp-uri { color: var(--green); }
+.mcp-item-desc {
+  font-size: 10.5px;
+  color: var(--muted);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--sans);
+}
+
+.mcp-uri {
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 10px;
+}
 
 /* ══════════════════════════════════════════════════════════
    PROMPT AUTOCOMPLETE MENU
@@ -4768,13 +5047,38 @@ textarea:focus-visible {
 
 /* Summary header */
 .ec-header {
-  padding: 12px 16px 10px;
+  padding: 4px 16px 8px;
   border-bottom: 1px solid rgba(255, 255, 255,0.06);
   flex-shrink: 0;
   display: flex;
-  align-items: baseline;
-  gap: 16px;
+  align-items: flex-start;
+  gap: 18px;
   flex-wrap: wrap;
+}
+/* Right-aligned cluster: mode toggle + start-reading hint.
+   Grouped so they read as one "view controls" block instead of two
+   stray chips. A thin divider between them reinforces the grouping. */
+.ec-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-top: 2px;
+}
+.ec-controls .ec-mode-toggle + .ec-entry-hint {
+  position: relative;
+  padding-left: 12px;
+}
+.ec-controls .ec-mode-toggle + .ec-entry-hint::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  transform: translateY(-50%);
 }
 
 .ec-summary {
@@ -4813,11 +5117,12 @@ textarea:focus-visible {
   position: relative;
   /* Atmospheric glow — spotlight from top-center bleeds behind the graph,
      making nodes pop against the dark canvas. Inspired by Raycast/Arc splash screens.
-     Two layers: a warm blue core + a cooler wide bloom that fills the canvas. */
+     Two layers: a warm blue core + a cooler wide bloom that fills the canvas.
+     No solid var(--bg) base — the .main ambient layer shows through so Explore
+     matches every other view. */
   background:
     radial-gradient(ellipse 70% 55% at 50% 50%,  rgba(91, 143, 249, 0.13) 0%, transparent 70%),
-    radial-gradient(ellipse 110% 90% at 50% 50%, rgba(91, 143, 249, 0.05) 0%, transparent 80%),
-    var(--bg);
+    radial-gradient(ellipse 110% 90% at 50% 50%, rgba(91, 143, 249, 0.05) 0%, transparent 80%);
 }
 
 .ec-canvas-wrapper:active {
@@ -5434,7 +5739,7 @@ textarea:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 14px 28px 18px;
+  padding: 10px 28px 14px;
   border-top: 1px solid var(--border-subtle);
   background: rgba(9, 9, 14, 0.6);
 }
@@ -5635,11 +5940,69 @@ textarea:focus-visible {
 .diagram-container.diagram-fullscreen {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: 300; /* above mobile sidebar (200) and everything in .main */
   background: var(--bg);
   border-radius: 0;
   display: flex;
   flex-direction: column;
+  padding: 12px 28px 8px;
+  gap: 6px;
+  /* Dim the surrounding ambient so the focused content leads. The same
+     cursor-glow still reads through the transparent body below. */
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(91, 143, 249, 0.05), transparent 60%),
+    var(--bg);
+  animation: fullscreen-in 220ms var(--ease-spring) both;
+}
+@keyframes fullscreen-in {
+  from { opacity: 0; transform: scale(0.985); }
+  to   { opacity: 1; transform: scale(1);     }
+}
+.diagram-container.diagram-fullscreen .diagram-header {
+  /* Slim header bar — only the exit + action buttons matter here. */
+  padding: 0;
+  border-bottom: none;
+  min-height: auto;
+}
+.diagram-container.diagram-fullscreen .diagram-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+/* Fullscreen breadcrumb — sits in the leftover space on the left of the
+   action buttons. Same visual voice as the chat-header's repo-badge so it
+   reads as continuation, not a new element. */
+.diagram-fs-crumbs {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  font-family: var(--mono);
+  padding: 5px 12px 5px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  letter-spacing: -0.01em;
+  animation: crumbs-in 260ms var(--ease-spring) 80ms both;
+}
+@keyframes crumbs-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+.diagram-fs-slug { display: inline-flex; align-items: baseline; }
+.diagram-fs-owner { color: var(--muted); font-weight: 400; }
+.diagram-fs-name  { color: var(--text);  font-weight: 600; }
+.diagram-fs-sep   { color: var(--faint); font-family: var(--sans); }
+.diagram-fs-view  {
+  font-family: var(--sans);
+  font-size: 11.5px;
+  color: var(--accent-soft);
+  padding: 2px 8px;
+  background: rgba(91, 143, 249, 0.10);
+  border: 1px solid rgba(91, 143, 249, 0.22);
+  border-radius: 4px;
+  letter-spacing: 0;
 }
 
 .diagram-fullscreen-btn {
@@ -5741,7 +6104,8 @@ textarea:focus-visible {
 .readme-view-body {
   flex: 1;
   overflow-y: auto;
-  background: var(--bg);
+  /* Transparent — lets the .main ambient layer show through. */
+  background: transparent;
 }
 
 /* Prose column — GitHub/Linear-style: clean, constrained, no visual tricks */

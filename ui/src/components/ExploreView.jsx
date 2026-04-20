@@ -657,6 +657,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
       {/* ── Summary header ── */}
       <div className="ec-header">
         <div className="ec-summary">{data.summary}</div>
+        <div className="ec-controls">
         <div className="ec-mode-toggle" role="tablist" aria-label="Tour view mode">
           <button
             role="tab"
@@ -695,6 +696,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
             Start reading: <code>{data.entry_point}</code>
           </div>
         )}
+        </div>
       </div>
 
       {/* Keyed flex wrapper — remounts on mode change so .view-switch-in replays.

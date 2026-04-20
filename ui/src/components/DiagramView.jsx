@@ -83,7 +83,7 @@ function TabIcon({ id }) {
 
 const ALL_TABS = [EXPLORE_TAB, ...DIAGRAM_TABS];
 
-export default function DiagramView({ repo, onAskAbout, focusFiles }) {
+export default function DiagramView({ repo, onAskAbout, focusFiles, onFullscreenChange }) {
   const [diagramType, setDiagramType] = useState(
     () => localStorage.getItem("ghrc_diagramType") || "explore"
   );
@@ -186,6 +186,13 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [fullscreen]);
 
+  // Notify parent so it can collapse the sidebar while fullscreen is on.
+  // The sidebar sits under the z:300 overlay anyway, but collapsing it also
+  // reclaims the grid column behind the overlay — less reflow on exit.
+  useEffect(() => {
+    onFullscreenChange?.(fullscreen);
+  }, [fullscreen, onFullscreenChange]);
+
   function handleRegenerate() {
     try { localStorage.removeItem(diagLsKey(repo, diagramType)); } catch {}
     setCache(prev => { const n = {...prev}; delete n[diagramType]; return n; });
@@ -210,6 +217,24 @@ export default function DiagramView({ repo, onAskAbout, focusFiles }) {
           <span className="diagram-title">
             {isExplore ? `Explore — ${repo}` : `System Diagram — ${repo}`}
           </span>
+        )}
+        {/* Fullscreen breadcrumb — the chat-header (which normally carries the
+            repo context) is hidden in fullscreen, so we surface the same
+            signal inline: a backend dot + owner/repo slug + current view. */}
+        {fullscreen && (
+          <div className="diagram-fs-crumbs" aria-label="Current view">
+            <span className="diagram-fs-slug">
+              {(() => {
+                const [owner, name] = repo.split("/");
+                return (<>
+                  <span className="diagram-fs-owner">{owner}/</span>
+                  <span className="diagram-fs-name">{name}</span>
+                </>);
+              })()}
+            </span>
+            <span className="diagram-fs-sep" aria-hidden="true">›</span>
+            <span className="diagram-fs-view">{selectedTypeDef?.label || "Explore"}</span>
+          </div>
         )}
         {/* Right-side controls — action buttons then fullscreen on the far right */}
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: "auto" }}>

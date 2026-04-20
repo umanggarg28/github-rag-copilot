@@ -66,6 +66,13 @@ Never hardcode colours that duplicate a CSS variable.
 - No LangChain, no LlamaIndex — build from scratch so concepts are visible
 - Write comments explaining **why**, not what
 
+## Attribution Rule (enforce strictly)
+
+**Never name "Claude Code" in user-facing text — UI strings, README, marketing copy.**
+Internal code comments, docstrings, and study notes (e.g. `notes/004-*.md`, `notes/005-*.md`) may reference Claude Code freely — that context helps future maintainers understand the inspiration. The rule only applies to surfaces a user/visitor sees.
+
+When writing UI copy or public docs, describe inspirations with neutral phrasing like "modern code agents", "agentic codebase explorers", or name the underlying protocol (MCP) directly. The product should read as Cartographer's own work to an outside reader.
+
 ## LLM Prompt Rules (enforce strictly — violations have happened repeatedly)
 
 **No domain-specific terms in agent/tour prompts.**
