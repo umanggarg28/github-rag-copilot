@@ -12,18 +12,18 @@ THREE PROVIDERS, ONE INTERFACE
 ──────────────────────────────
 Provider is selected from EMBEDDING_MODEL at init:
 
-  EMBEDDING_MODEL contains "voyage" + VOYAGE_API_KEY set
+  EMBEDDING_MODEL contains "voyage" + VOYAGE_API_KEY set  (default)
     → Voyage AI: code-optimised, 1024-dim, 200M tokens/month free.
       voyage-code-3 is specifically trained on code and outperforms
       general-purpose embedders on code retrieval benchmarks.
-      ⚠️  Requires EMBEDDING_DIM=1024 and a new Qdrant collection.
+      Requires EMBEDDING_DIM=1024 and a new Qdrant collection.
 
-  EMBEDDING_MODEL contains "gemini" + GEMINI_API_KEY set  (default)
+  EMBEDDING_MODEL contains "gemini" + GEMINI_API_KEY set
     → Google Gemini: gemini-embedding-001, 768-dim output (configurable
       via MRL), generous free tier. Re-uses the same GEMINI_API_KEY we
-      use for the LLM — no separate signup.
+      use for the LLM, but free-tier limits are tight for huge repos.
 
-  NOMIC_API_KEY set  (legacy fallback)
+  EMBEDDING_MODEL contains "nomic" + NOMIC_API_KEY set  (legacy fallback)
     → Nomic API: nomic-embed-text-v1.5, 768-dim. Free quota is 10M
       tokens total — easy to exhaust across a few large repo indexes.
 

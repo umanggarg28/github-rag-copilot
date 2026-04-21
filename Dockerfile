@@ -15,8 +15,8 @@
 # By downloading it during the Docker build, it's baked into the image layer.
 # Subsequent starts are instant — the model is already on disk.
 #
-# The embedding model (nomic-embed-code) is NOT downloaded here — it runs via
-# the Nomic API (no local file needed). That's how we stay under the RAM limit.
+# The embedding model is NOT downloaded here — Voyage/Gemini/Nomic run via API
+# (no local file needed). That's how we stay under the RAM limit.
 #
 # ARCHITECTURE
 # ────────────
@@ -47,7 +47,7 @@ RUN pip install --user --no-cache-dir -r requirements.txt
 
 # Pre-download the re-ranker model into the image layer.
 # This bakes the ~80MB model into the image so cold starts don't download it.
-# The Nomic embedding model is NOT downloaded here — it lives on Nomic's API.
+# The embedding model is NOT downloaded here — it lives behind a hosted API.
 RUN python -c "\
 from sentence_transformers import CrossEncoder; \
 print('Pre-downloading re-ranker...'); \

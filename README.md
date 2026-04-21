@@ -42,7 +42,7 @@ GitHub URL
                          Falls back to line-windowed sliding chunks for unsupported languages
   → ingestion_service.py (Optional) LLM generates a 1–2 sentence description per chunk
                          prepended before embedding — Anthropic's "contextual retrieval"
-  → embedder.py          Nomic nomic-embed-text-v1.5 (768-dim) via API · optional Voyage voyage-code-3 (1024-dim)
+  → embedder.py          Voyage voyage-code-3 (1024-dim) via API · Gemini/Nomic fallback
   → qdrant_store.py      Each chunk stored with: dense vector + sparse BM25 vector + full payload metadata
 ```
 
@@ -201,8 +201,8 @@ The ⟳ button in the sidebar triggers a re-index with LLM-generated chunk descr
 | Backend | FastAPI + uvicorn | Async ASGI, 20+ endpoints, SSE streaming throughout |
 | Frontend | React + Vite | Component-based UI, localStorage sessions, SSE token streaming |
 | Vector DB | Qdrant Cloud | Native hybrid search (dense + sparse), free 1 GB tier |
-| Embeddings (default) | Nomic `nomic-embed-text-v1.5` | 768-dim, via Nomic API (zero local RAM) |
-| Embeddings (optional) | Voyage `voyage-code-3` | 1024-dim, code-optimised, 200M tokens/month free |
+| Embeddings (default) | Voyage `voyage-code-3` | 1024-dim, code-optimised, 200M tokens/month free |
+| Embeddings (fallback) | Gemini `gemini-embedding-001` | 768-dim, via Gemini API; good quality but tighter free-tier limits |
 | Code parsing | tree-sitter | Multi-language AST — Python, JS, TS, Go, Rust, Java |
 | Reranker (primary) | Cohere `rerank-v3.5` | Cross-encoder, API, 1000 calls/month free |
 | Reranker (fallback) | `ms-marco-MiniLM-L-6-v2` | Local cross-encoder, baked into Docker image |
@@ -264,11 +264,16 @@ cd ui && npm install && npm run dev
 # Vector DB (required)
 QDRANT_URL=          # Qdrant Cloud cluster URL
 QDRANT_API_KEY=      # Qdrant Cloud API key
-QDRANT_COLLECTION=   # e.g. cartographer_nomic
+QDRANT_COLLECTION=github_repos_voyage  # new 1024-dim collection for Voyage
 
-# Embeddings (one required)
-NOMIC_API_KEY=       # Default — free at atlas.nomic.ai
-VOYAGE_API_KEY=      # Optional upgrade — free at voyageai.com (set EMBEDDING_MODEL=voyage-code-3)
+# Embeddings
+VOYAGE_API_KEY=      # Default — free at voyageai.com
+EMBEDDING_MODEL=voyage-code-3
+EMBEDDING_DIM=1024
+
+# Optional embedding fallbacks
+GEMINI_API_KEY=      # Also used for LLMs; set EMBEDDING_MODEL=gemini-embedding-001 and EMBEDDING_DIM=768
+NOMIC_API_KEY=       # Legacy fallback; set EMBEDDING_MODEL=nomic-embed-text-v1.5 and EMBEDDING_DIM=768
 
 # LLM (at least one required)
 CEREBRAS_API_KEY=    # Fastest — free at cloud.cerebras.ai (1M tok/day)

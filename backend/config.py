@@ -25,7 +25,7 @@ class Settings:
     # ── Vector DB ─────────────────────────────────────────────────────────────
     qdrant_url: str         = os.getenv("QDRANT_URL", "")
     qdrant_api_key: str     = os.getenv("QDRANT_API_KEY", "")
-    qdrant_collection: str  = os.getenv("QDRANT_COLLECTION", "github_repos")
+    qdrant_collection: str  = os.getenv("QDRANT_COLLECTION", "github_repos_voyage")
 
     # ── GitHub ────────────────────────────────────────────────────────────────
     # Optional — without it you get 60 API req/hr; with it 5,000 req/hr
@@ -34,25 +34,25 @@ class Settings:
     # ── Embeddings ────────────────────────────────────────────────────────────
     # Three embedding providers, selected at startup by EMBEDDING_MODEL:
     #
-    # 1. Gemini (default — EMBEDDING_MODEL contains "gemini", needs GEMINI_API_KEY)
-    #    gemini-embedding-001: 768-dim output via MRL, generous free tier.
-    #    Re-uses the same GEMINI_API_KEY used for the LLM — no extra signup.
-    #    Free at https://aistudio.google.com.
-    #
-    # 2. Voyage AI (EMBEDDING_MODEL contains "voyage", needs VOYAGE_API_KEY)
+    # 1. Voyage AI (default — EMBEDDING_MODEL contains "voyage", needs VOYAGE_API_KEY)
     #    voyage-code-3: code-optimised, 1024-dim, 200M tokens/month free.
-    #    ⚠️  Requires EMBEDDING_DIM=1024 and a NEW Qdrant collection — dims
+    #    Requires EMBEDDING_DIM=1024 and a NEW Qdrant collection — dims
     #    are incompatible with 768-dim collections.
     #
-    # 3. Nomic (legacy fallback — NOMIC_API_KEY set)
+    # 2. Gemini (EMBEDDING_MODEL contains "gemini", needs GEMINI_API_KEY)
+    #    gemini-embedding-001: 768-dim output via MRL. Re-uses the same
+    #    GEMINI_API_KEY used for the LLM, but free-tier RPM/TPM limits are
+    #    too tight for LangChain-scale repos.
+    #
+    # 3. Nomic (legacy fallback — EMBEDDING_MODEL contains "nomic")
     #    nomic-embed-text-v1.5: 768-dim. Free quota is 10M tokens TOTAL
     #    (not per month) — easy to exhaust across a few large indexes.
     #
     # EMBEDDING_DIM must match the chosen model exactly.
     nomic_api_key: str      = os.getenv("NOMIC_API_KEY", "")
     voyage_api_key: str     = os.getenv("VOYAGE_API_KEY", "")
-    embedding_model: str    = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
-    embedding_dim: int      = int(os.getenv("EMBEDDING_DIM", "768"))
+    embedding_model: str    = os.getenv("EMBEDDING_MODEL", "voyage-code-3")
+    embedding_dim: int      = int(os.getenv("EMBEDDING_DIM", "1024"))
     gemini_embedding_batch_size: int = int(os.getenv("GEMINI_EMBEDDING_BATCH_SIZE", "8"))
     gemini_embedding_min_interval: float = float(os.getenv("GEMINI_EMBEDDING_MIN_INTERVAL", "4.0"))
     gemini_embedding_retries: int = int(os.getenv("GEMINI_EMBEDDING_RETRIES", "6"))

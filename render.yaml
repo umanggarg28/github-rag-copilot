@@ -26,16 +26,20 @@ services:
         sync: false          # set manually in Render dashboard
       - key: QDRANT_API_KEY
         sync: false
+      - key: QDRANT_COLLECTION
+        value: github_repos_voyage
       - key: GROQ_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
       - key: GITHUB_TOKEN
         sync: false
       - key: EMBEDDING_MODEL
-        value: sentence-transformers/all-MiniLM-L6-v2
+        value: voyage-code-3
       - key: EMBEDDING_DIM
-        value: "384"
+        value: "1024"
       - key: TOP_K
         value: "6"
       # HuggingFace cache dir — Render gives 1GB ephemeral disk
