@@ -10,6 +10,7 @@ Routes:
 
 import asyncio
 import json
+import re
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -26,6 +27,15 @@ from backend.services.ingestion_service import IngestionService
 from fastapi.responses import StreamingResponse
 
 router = APIRouter(tags=["ingestion"])
+
+
+def _safe_error_detail(error: Exception) -> str:
+    """Redact provider credentials from errors before returning them to clients."""
+    text = str(error)
+    text = re.sub(r"([?&](?:key|api_key|token)=)[^&\s\"']+", r"\1[REDACTED]", text, flags=re.IGNORECASE)
+    text = re.sub(r"(Bearer\s+)[A-Za-z0-9._\-]+", r"\1[REDACTED]", text, flags=re.IGNORECASE)
+    text = re.sub(r"AIza[0-9A-Za-z_\-]{20,}", "AIza[REDACTED]", text)
+    return text
 
 
 @router.post("/ingest", response_model=IngestResponse)
@@ -64,12 +74,12 @@ async def ingest_repo(
         ph_capture(distinct_id, "repo_ingestion_failed", {
             "repo_url": request.repo_url, "error_type": "validation",
         })
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=_safe_error_detail(e))
     except Exception as e:
         ph_capture(distinct_id, "repo_ingestion_failed", {
             "repo_url": request.repo_url, "error_type": "server",
         })
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Ingestion failed: {_safe_error_detail(e)}")
 
 
 @router.get("/ingest/stream")
@@ -103,7 +113,10 @@ async def ingest_stream(repo: str, request: Request, force: bool = False):
             if force:
                 repo_contextual_at[repo_slug] = now
         except Exception as e:
-            loop.call_soon_threadsafe(queue.put_nowait, {"step": "error", "detail": str(e)})
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {"step": "error", "detail": _safe_error_detail(e)},
+            )
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, None)
 

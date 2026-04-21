@@ -45,6 +45,7 @@ chunks (~8KB each) and to keep individual retries cheap.
 import time
 from pathlib import Path
 import sys
+import re
 
 import requests as http
 
@@ -58,6 +59,20 @@ _BATCH_SIZE      = 32    # conservative for all providers: stays under ~10MB bod
                          # and keeps each failed batch cheap to retry
 _MAX_CHARS       = 8000  # truncate each text before sending — embeddings degrade
                          # gracefully on truncation and models silently clip anyway
+
+
+def _redact_secrets(text: str) -> str:
+    """Remove API keys/tokens from provider errors before they reach logs/UI."""
+    text = re.sub(r"([?&](?:key|api_key|token)=)[^&\s\"']+", r"\1[REDACTED]", text, flags=re.IGNORECASE)
+    text = re.sub(r"(Bearer\s+)[A-Za-z0-9._\-]+", r"\1[REDACTED]", text, flags=re.IGNORECASE)
+    text = re.sub(r"AIza[0-9A-Za-z_\-]{20,}", "AIza[REDACTED]", text)
+    return text
+
+
+def _provider_error(provider: str, response: http.Response) -> RuntimeError:
+    body = _redact_secrets(response.text or "")[:500]
+    detail = f": {body}" if body else ""
+    return RuntimeError(f"{provider} API {response.status_code} error{detail}")
 
 
 class Embedder:
@@ -213,7 +228,7 @@ class Embedder:
                     print(f"Voyage API rate limit. Waiting {wait}s before retry...")
                     time.sleep(wait)
                     continue
-                raise
+                raise RuntimeError(f"Voyage API error: {_redact_secrets(str(e))}") from None
         raise RuntimeError("Voyage API call failed after retries")
 
     # ── Nomic API implementation ───────────────────────────────────────────────
@@ -262,7 +277,8 @@ class Embedder:
                 time.sleep(wait)
                 continue
 
-            response.raise_for_status()
+            if not response.ok:
+                raise _provider_error("Nomic", response) from None
             return response.json()["embeddings"]
 
         raise RuntimeError("Nomic API call failed after retries")
@@ -337,7 +353,8 @@ class Embedder:
                 time.sleep(wait)
                 continue
 
-            response.raise_for_status()
+            if not response.ok:
+                raise _provider_error("Gemini", response) from None
             return [e["values"] for e in response.json()["embeddings"]]
 
         raise RuntimeError("Gemini API call failed after retries")
