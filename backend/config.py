@@ -53,6 +53,9 @@ class Settings:
     voyage_api_key: str     = os.getenv("VOYAGE_API_KEY", "")
     embedding_model: str    = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
     embedding_dim: int      = int(os.getenv("EMBEDDING_DIM", "768"))
+    gemini_embedding_batch_size: int = int(os.getenv("GEMINI_EMBEDDING_BATCH_SIZE", "8"))
+    gemini_embedding_min_interval: float = float(os.getenv("GEMINI_EMBEDDING_MIN_INTERVAL", "4.0"))
+    gemini_embedding_retries: int = int(os.getenv("GEMINI_EMBEDDING_RETRIES", "6"))
 
     # ── Chunking ──────────────────────────────────────────────────────────────
     # Used as fallback for non-Python files (markdown, config, plain text).

@@ -81,20 +81,25 @@ class Embedder:
         # API key gating the choice. This lets an operator flip providers by
         # only changing EMBEDDING_MODEL in .env — no code change needed.
         name = self.model_name.lower()
-        if "voyage" in name and settings.voyage_api_key:
+        if "voyage" in name:
+            if not settings.voyage_api_key:
+                raise RuntimeError("EMBEDDING_MODEL is Voyage-based but VOYAGE_API_KEY is not set.")
             self._provider = "voyage"
             self._init_voyage()
-        elif "gemini" in name and settings.gemini_api_key:
+        elif "gemini" in name:
+            if not settings.gemini_api_key:
+                raise RuntimeError("EMBEDDING_MODEL is Gemini-based but GEMINI_API_KEY is not set.")
             self._provider = "gemini"
             self._init_gemini()
-        elif settings.nomic_api_key:
+        elif "nomic" in name and settings.nomic_api_key:
             self._provider = "nomic"
             self._init_nomic()
         else:
             raise RuntimeError(
                 f"No embedding provider available for model '{self.model_name}'. "
                 "Set GEMINI_API_KEY (default — free at https://aistudio.google.com), "
-                "or VOYAGE_API_KEY + EMBEDDING_MODEL=voyage-code-3."
+                "VOYAGE_API_KEY + EMBEDDING_MODEL=voyage-code-3, or "
+                "NOMIC_API_KEY + EMBEDDING_MODEL=nomic-embed-text-v1.5."
             )
 
     def _init_voyage(self):
@@ -125,6 +130,7 @@ class Embedder:
         way one deployment can reuse an existing Qdrant collection schema
         (768-dim) or scale up to a larger one without code changes."""
         self._gemini_key = settings.gemini_api_key
+        self._gemini_last_request_at = 0.0
         print(
             f"Embedder: using Gemini API ({self.model_name}, {self.embedding_dim}-dim). "
             "No local model loaded."
@@ -273,8 +279,9 @@ class Embedder:
         projection for doing the retrieving.
         """
         all_embeddings: list[list[float]] = []
-        for i in range(0, len(texts), _BATCH_SIZE):
-            batch      = [t[:_MAX_CHARS] for t in texts[i : i + _BATCH_SIZE]]
+        batch_size = max(1, settings.gemini_embedding_batch_size)
+        for i in range(0, len(texts), batch_size):
+            batch      = [t[:_MAX_CHARS] for t in texts[i : i + batch_size]]
             embeddings = self._gemini_call_api(batch, task_type)
             all_embeddings.extend(embeddings)
         return all_embeddings
@@ -283,7 +290,7 @@ class Embedder:
         self,
         texts: list[str],
         task_type: str,
-        retries: int = 3,
+        retries: int = None,
     ) -> list[list[float]]:
         """
         Single Gemini batchEmbedContents call with retry on rate limit (429)
@@ -310,12 +317,22 @@ class Embedder:
             ]
         }
 
+        retries = settings.gemini_embedding_retries if retries is None else retries
+
         for attempt in range(retries + 1):
+            min_interval = max(0.0, settings.gemini_embedding_min_interval)
+            elapsed = time.monotonic() - self._gemini_last_request_at
+            if elapsed < min_interval:
+                time.sleep(min_interval - elapsed)
+
             response = http.post(url, json=payload, timeout=60)
+            self._gemini_last_request_at = time.monotonic()
 
             if response.status_code in (429, 503) and attempt < retries:
-                # Gemini doesn't always send Retry-After; back off exponentially.
-                wait = int(response.headers.get("Retry-After", 2 ** attempt * 5))
+                # Gemini free-tier limits can be RPM/TPM based and the API
+                # doesn't always send Retry-After. Wait long enough for the
+                # quota window to reset instead of failing the ingestion run.
+                wait = int(response.headers.get("Retry-After", min(300, 30 * (2 ** attempt))))
                 print(f"Gemini API {response.status_code}. Waiting {wait}s before retry...")
                 time.sleep(wait)
                 continue
