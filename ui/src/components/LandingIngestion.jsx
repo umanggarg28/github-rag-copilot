@@ -317,8 +317,8 @@ export default function LandingIngestion({
             <line
               key={key}
               x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-              stroke={accent} strokeOpacity="0.28"
-              strokeWidth="0.8" strokeLinecap="round"
+              stroke={accent} strokeOpacity="0.55"
+              strokeWidth="1.25" strokeLinecap="round"
               className="li-edge"
             />
           ))}

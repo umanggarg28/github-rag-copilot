@@ -687,9 +687,11 @@ export default function App() {
   function handleLandingPick(slug, accent) {
     posthog.capture("landing_tile_clicked", { slug });
     // If this repo is already indexed, skip the journey — the user has
-    // already seen the map form. Straight into the product.
+    // already seen the map form. Straight into the product via the iris
+    // reveal (cinematic iris from viewport centre).
     const indexed = repos.find(r => r.slug === slug);
     if (indexed) {
+      triggerReveal();
       setActiveRepo(slug);
       setShowReadme(false);
       return;
@@ -700,7 +702,20 @@ export default function App() {
     posthog.capture("landing_url_submitted", { input: raw });
     const url = toIngestUrl(raw);
     if (!url) return;
+    triggerReveal();
     startJourney({ url });
+  }
+  function triggerReveal() {
+    // Origin is always viewport-centre. We tried click-point origins first,
+    // but tiles sit in the bottom third of the viewport, so the iris read
+    // as "something happening near my cursor" instead of "the page is
+    // revealing itself." Centre-origin plays like a cinematic iris — the
+    // same gesture regardless of which tile was picked.
+    const el = document.documentElement;
+    el.style.setProperty("--reveal-x", "50vw");
+    el.style.setProperty("--reveal-y", "50vh");
+    el.classList.add("is-revealing");
+    window.setTimeout(() => el.classList.remove("is-revealing"), 1250);
   }
   // Journey completion: refresh the repo list so the sidebar picks up the
   // newly indexed repo, then route the user straight into the Diagram view —

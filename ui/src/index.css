@@ -1633,6 +1633,59 @@ textarea:focus-visible {
      blue blobs that competed with the constellation backdrop before. */
   background: radial-gradient(ellipse at 50% 35%, rgba(91, 143, 249, 0.10) 0%, transparent 55%);
 }
+
+/* ── Iris reveal — landing → tour transition ────────────────────────────
+   When the user picks a tile (or presses "Map it"), we capture the click
+   point as --reveal-x/--reveal-y on <html>, add .is-revealing, and hold
+   it for ~950ms. During that window:
+     - A full-viewport scrim (html::before) expands from the click point
+       as a darkening radial gradient, then fades out — the visual "zoom
+       out of the landing, into the tour" beat.
+     - The newly-mounted explore view enters with a clip-path iris grow
+       from the same origin, so the product literally *opens* out of
+       wherever the user pressed.
+   Why coordinate the two layers: the scrim hides the abrupt unmount of
+   the landing; the iris gives the new view a feeling of emergence
+   instead of a hard swap. Together they read as one continuous gesture. */
+html.is-revealing::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--reveal-x, 50%) var(--reveal-y, 50%),
+    rgba(12, 14, 26, 0) 0%,
+    rgba(12, 14, 26, 0) 8%,
+    rgba(110, 231, 183, 0.35) 14%,
+    rgba(12, 14, 26, 0.9) 24%,
+    rgba(12, 14, 26, 1) 60%
+  );
+  animation: reveal-scrim 1200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes reveal-scrim {
+  0%   { opacity: 1; transform: scale(1);   }
+  40%  { opacity: 1; }
+  100% { opacity: 0; transform: scale(2.4); }
+}
+html.is-revealing .app-view-host {
+  animation: reveal-iris 1200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes reveal-iris {
+  from {
+    clip-path: circle(0 at var(--reveal-x, 50%) var(--reveal-y, 50%));
+    opacity: 0;
+  }
+  25%  { opacity: 1; }
+  to {
+    clip-path: circle(170% at var(--reveal-x, 50%) var(--reveal-y, 50%));
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.is-revealing::before,
+  html.is-revealing .app-view-host { animation: none !important; clip-path: none !important; }
+}
 .lh-root {
   max-width: 880px;
   width: 100%;
@@ -1737,6 +1790,28 @@ textarea:focus-visible {
 @keyframes lh-label-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* Edge pulses — bright data-dot traveling along each curve. Fades in after
+   the edge has finished drawing so the eye reads the sequence as "line
+   appears, then data starts flowing through it." */
+.lh-pulse {
+  opacity: 0;
+  animation: lh-pulse-in 600ms ease 1.2s forwards;
+}
+@keyframes lh-pulse-in { to { opacity: 0.95; } }
+
+/* Stage breathing — the whole graph gently expands/contracts so the page
+   never feels inert. Scale is tiny (1.005) — noticeable only subconsciously. */
+.lh-svg { animation: lh-stage-breathe 6.5s ease-in-out infinite; transform-origin: 50% 50%; }
+@keyframes lh-stage-breathe {
+  0%, 100% { transform: scale(1);     filter: brightness(1);    }
+  50%      { transform: scale(1.006); filter: brightness(1.06); }
+}
+
+/* Respect reduced-motion — pulses and breathing both go silent. */
+@media (prefers-reduced-motion: reduce) {
+  .lh-pulse, .lh-svg { animation: none !important; }
 }
 
 .lh-stage-meta {

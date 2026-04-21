@@ -11,7 +11,7 @@
  * path into the tool.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // Curated demo layouts — each is a tiny node-graph that evokes the shape of
 // a real repo (nanoGPT, micrograd, langchain). Coordinates are hand-placed
@@ -21,6 +21,31 @@ import { useEffect, useMemo, useState } from "react";
 // rotating character so returning visitors see the thing move rather than
 // the same static mark.
 const DEMOS = [
+  {
+    slug: "langchain-ai/langchain",
+    tagline: "LLM framework",
+    accent: "#6EE7B7",
+    nodes: [
+      { id: "chain",   x: 120, y: 100, label: "Chain",       type: "class"  },
+      { id: "llm",     x: 280, y: 60,  label: "LLM",         type: "class"  },
+      { id: "prompt",  x: 280, y: 160, label: "PromptTpl",   type: "class"  },
+      { id: "memory",  x: 280, y: 250, label: "Memory",      type: "module" },
+      { id: "agent",   x: 450, y: 100, label: "Agent",       type: "class"  },
+      { id: "tool",    x: 450, y: 200, label: "Tool",        type: "class"  },
+      { id: "retrv",   x: 130, y: 240, label: "Retriever",   type: "module" },
+      { id: "vstore",  x: 570, y: 60,  label: "VectorStore", type: "module" },
+    ],
+    edges: [
+      ["chain", "llm"],
+      ["chain", "prompt"],
+      ["chain", "memory"],
+      ["agent", "tool"],
+      ["agent", "llm"],
+      ["llm", "vstore"],
+      ["retrv", "vstore"],
+      ["chain", "retrv"],
+    ],
+  },
   {
     slug: "karpathy/nanoGPT",
     tagline: "GPT from scratch — 300 lines",
@@ -72,31 +97,6 @@ const DEMOS = [
       ["back", "demo"],
     ],
   },
-  {
-    slug: "langchain-ai/langchain",
-    tagline: "LLM framework",
-    accent: "#6EE7B7",
-    nodes: [
-      { id: "chain",   x: 120, y: 100, label: "Chain",       type: "class"  },
-      { id: "llm",     x: 280, y: 60,  label: "LLM",         type: "class"  },
-      { id: "prompt",  x: 280, y: 160, label: "PromptTpl",   type: "class"  },
-      { id: "memory",  x: 280, y: 250, label: "Memory",      type: "module" },
-      { id: "agent",   x: 450, y: 100, label: "Agent",       type: "class"  },
-      { id: "tool",    x: 450, y: 200, label: "Tool",        type: "class"  },
-      { id: "retrv",   x: 130, y: 240, label: "Retriever",   type: "module" },
-      { id: "vstore",  x: 570, y: 60,  label: "VectorStore", type: "module" },
-    ],
-    edges: [
-      ["chain", "llm"],
-      ["chain", "prompt"],
-      ["chain", "memory"],
-      ["agent", "tool"],
-      ["agent", "llm"],
-      ["llm", "vstore"],
-      ["retrv", "vstore"],
-      ["chain", "retrv"],
-    ],
-  },
 ];
 
 // Map node-type → accent colour. Echoes the palette used in ExploreView/
@@ -142,6 +142,42 @@ export default function LandingHero({ onPickRepo, onPasteUrl }) {
 
   const demo = DEMOS[demoIdx];
 
+  // Cursor-reactive node displacement. We track the cursor position on the
+  // stage in SVG-user-space coordinates (not CSS px) so the math matches
+  // the node coordinates directly — no scale conversion per frame.
+  // Why this matters: static graphs read as screenshots; the smallest hint
+  // of nodes "knowing" where the cursor is tips the hero from diagram → tool.
+  const stageRef = useRef(null);
+  const svgRef   = useRef(null);
+  const [cursor, setCursor] = useState({ x: -9999, y: -9999, active: false });
+  function onStageMove(e) {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    // Map from CSS px → SVG viewBox units (680×340).
+    const x = ((e.clientX - rect.left) / rect.width)  * 680;
+    const y = ((e.clientY - rect.top)  / rect.height) * 340;
+    setCursor({ x, y, active: true });
+    setPaused(true);
+  }
+  function onStageLeave() {
+    setCursor({ x: -9999, y: -9999, active: false });
+    setPaused(false);
+  }
+
+  // Per-node displacement — inverse-distance push away from cursor.
+  // Capped at 14 SVG units so labels don't drift into other nodes.
+  function nodeOffset(n) {
+    if (!cursor.active) return { dx: 0, dy: 0 };
+    const dx = n.x - cursor.x;
+    const dy = n.y - cursor.y;
+    const d  = Math.hypot(dx, dy) || 1;
+    const R  = 140;
+    if (d > R) return { dx: 0, dy: 0 };
+    const push = (1 - d / R) * 14;
+    return { dx: (dx / d) * push, dy: (dy / d) * push };
+  }
+
   // Bump animKey on demo change so the SVG remounts → the drawing animation
   // replays. React rebuilds the subtree rather than us having to toggle classes.
   const animKey = useMemo(() => `${demoIdx}-${demo.slug}`, [demoIdx, demo.slug]);
@@ -150,7 +186,13 @@ export default function LandingHero({ onPickRepo, onPasteUrl }) {
     e?.preventDefault();
     const clean = url.trim();
     if (!clean) return;
-    onPasteUrl?.(clean);
+    // Reveal origin = center of the "Map it" button, if we can find it.
+    const btn = e?.currentTarget?.querySelector(".lh-url-btn");
+    const rect = btn?.getBoundingClientRect();
+    const origin = rect
+      ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+      : undefined;
+    onPasteUrl?.(clean, origin);
   }
 
   return (
@@ -169,12 +211,14 @@ export default function LandingHero({ onPickRepo, onPasteUrl }) {
       {/* Live concept-map demo — the thing the product produces, performing itself */}
       <div
         key={animKey}
+        ref={stageRef}
         className="lh-stage"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
+        onMouseMove={onStageMove}
+        onMouseLeave={onStageLeave}
         style={{ "--demo-accent": demo.accent }}
       >
         <svg
+          ref={svgRef}
           viewBox="0 0 680 340"
           className="lh-svg"
           role="img"
@@ -190,49 +234,81 @@ export default function LandingHero({ onPickRepo, onPasteUrl }) {
           {/* Background glow */}
           <rect x="0" y="0" width="680" height="340" fill={`url(#lh-glow-${demoIdx})`} opacity="0.7" />
 
-          {/* Edges — drawn first so nodes paint on top */}
+          {/* Edges — drawn first so nodes paint on top.
+              Two layers per edge: the static curve (reveals via dashoffset)
+              plus a "pulse" overlay that travels the same path in a loop,
+              so the graph reads as data actively flowing, not a still diagram. */}
           {demo.edges.map(([a, b], i) => {
             const na = demo.nodes.find(n => n.id === a);
             const nb = demo.nodes.find(n => n.id === b);
             if (!na || !nb) return null;
+            const oa = nodeOffset(na);
+            const ob = nodeOffset(nb);
+            const d  = curvePath(
+              { x: na.x + oa.dx, y: na.y + oa.dy },
+              { x: nb.x + ob.dx, y: nb.y + ob.dy },
+            );
+            const pulseId = `pulse-${demoIdx}-${i}`;
             return (
-              <path
-                key={`e-${a}-${b}`}
-                d={curvePath(na, nb)}
-                fill="none"
-                stroke={demo.accent}
-                strokeWidth="1.2"
-                strokeLinecap="round"
-                opacity="0.55"
-                className="lh-edge"
-                style={{ animationDelay: `${400 + i * 90}ms` }}
-              />
+              <g key={`e-${a}-${b}`}>
+                <path
+                  id={pulseId}
+                  d={d}
+                  fill="none"
+                  stroke={demo.accent}
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  opacity="0.55"
+                  className="lh-edge"
+                  style={{ animationDelay: `${400 + i * 90}ms` }}
+                />
+                {/* Flowing pulse — a bright dot that slides along the edge */}
+                <circle r="2.2" fill={demo.accent} className="lh-pulse" style={{ filter: `drop-shadow(0 0 4px ${demo.accent})` }}>
+                  <animateMotion
+                    dur={`${3.6 + (i % 3) * 0.5}s`}
+                    begin={`${1.2 + i * 0.18}s`}
+                    repeatCount="indefinite"
+                    rotate="auto"
+                  >
+                    <mpath href={`#${pulseId}`} />
+                  </animateMotion>
+                </circle>
+              </g>
             );
           })}
 
           {/* Nodes */}
-          {demo.nodes.map((n, i) => (
-            <g
-              key={n.id}
-              className="lh-node"
-              style={{ animationDelay: `${i * 120}ms`, transformOrigin: `${n.x}px ${n.y}px` }}
-            >
-              <circle cx={n.x} cy={n.y} r="18" fill="rgba(20,22,38,0.85)" stroke={TYPE_DOT[n.type] || demo.accent} strokeWidth="1.5" />
-              <circle cx={n.x} cy={n.y} r="3" fill={TYPE_DOT[n.type] || demo.accent} />
-              <text
-                x={n.x}
-                y={n.y + 34}
-                textAnchor="middle"
-                fill="rgba(230,235,250,0.85)"
-                fontSize="10"
-                fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
-                className="lh-label"
-                style={{ animationDelay: `${200 + i * 120}ms` }}
+          {demo.nodes.map((n, i) => {
+            const off = nodeOffset(n);
+            const cx = n.x + off.dx;
+            const cy = n.y + off.dy;
+            return (
+              <g
+                key={n.id}
+                className="lh-node"
+                style={{ animationDelay: `${i * 120}ms`, transformOrigin: `${n.x}px ${n.y}px` }}
               >
-                {n.label}
-              </text>
-            </g>
-          ))}
+                {/* Soft breathing halo — only shows up close to cursor */}
+                {cursor.active && Math.hypot(n.x - cursor.x, n.y - cursor.y) < 140 && (
+                  <circle cx={cx} cy={cy} r="26" fill={TYPE_DOT[n.type] || demo.accent} opacity="0.12" />
+                )}
+                <circle cx={cx} cy={cy} r="18" fill="rgba(20,22,38,0.85)" stroke={TYPE_DOT[n.type] || demo.accent} strokeWidth="1.5" />
+                <circle cx={cx} cy={cy} r="3" fill={TYPE_DOT[n.type] || demo.accent} />
+                <text
+                  x={cx}
+                  y={cy + 34}
+                  textAnchor="middle"
+                  fill="rgba(230,235,250,0.85)"
+                  fontSize="10"
+                  fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                  className="lh-label"
+                  style={{ animationDelay: `${200 + i * 120}ms` }}
+                >
+                  {n.label}
+                </text>
+              </g>
+            );
+          })}
         </svg>
 
         {/* Stage caption — tells the viewer what they're looking at */}
@@ -250,7 +326,7 @@ export default function LandingHero({ onPickRepo, onPasteUrl }) {
           <button
             key={d.slug}
             className={`lh-tile hover-lift${i === demoIdx ? " is-active" : ""}`}
-            onClick={() => onPickRepo?.(d.slug, d.accent)}
+            onClick={(e) => onPickRepo?.(d.slug, d.accent, { x: e.clientX, y: e.clientY })}
             onMouseEnter={() => setDemoIdx(i)}
             style={{ "--tile-accent": d.accent }}
           >
