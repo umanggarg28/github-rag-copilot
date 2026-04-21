@@ -516,6 +516,10 @@ class AgentService:
         """
         self.mcp          = mcp_client
         self._repo_map    = repo_map_svc
+        # Provider fallback and per-request model selection mutate the active
+        # client/provider/model fields. Serialise runs so concurrent requests
+        # cannot leak one user's selected model into another user's session.
+        self._run_lock    = asyncio.Lock()
 
         # ── Provider detection ─────────────────────────────────────────────────
         # Priority: Cerebras (Qwen3-235B) → Gemini → OpenRouter → Anthropic → Groq.
@@ -566,65 +570,82 @@ class AgentService:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    async def run(self, question: str, repo_filter: str | None = None, history: list[dict] | None = None) -> dict:
+    async def run(
+        self,
+        question: str,
+        repo_filter: str | None = None,
+        history: list[dict] | None = None,
+        model_id: str | None = None,
+    ) -> dict:
         """
         Run the full ReAct loop and return the final answer + trace.
 
         Returns:
             {"answer": str, "tool_calls": list[dict], "iterations": int}
         """
-        # Discover tools from MCP server
-        mcp_tools  = await self.mcp.list_tools()
-        messages   = self._build_initial_messages(question, repo_filter, history)
-        tool_trace = []
+        async with self._run_lock:
+            _orig = (self._client, self._provider, self._model)
+            entry = next((m for m in AGENT_MODELS if m["id"] == model_id), None)
+            if entry:
+                self._client   = _make_client(entry)
+                self._provider = entry["provider"]
+                self._model    = entry["model"]
 
-        # Loop detection: track (tool, args) pairs already executed this run.
-        # Prevents wasting all MAX_ITERATIONS on duplicate searches when the
-        # model gets confused and repeats the same call over and over.
-        seen_calls: set[tuple] = set()
+            try:
+                # Discover tools from MCP server
+                mcp_tools  = await self.mcp.list_tools()
+                messages   = self._build_initial_messages(question, repo_filter, history)
+                tool_trace = []
 
-        for iteration in range(self.MAX_ITERATIONS):
-            # LLM call is synchronous — run in thread pool to avoid blocking
-            # Pass raw mcp_tools so _call_llm can reformat if provider switches mid-run
-            step = await asyncio.to_thread(self._call_llm, messages, mcp_tools)
+                # Loop detection: track (tool, args) pairs already executed this run.
+                # Prevents wasting all MAX_ITERATIONS on duplicate searches when the
+                # model gets confused and repeats the same call over and over.
+                seen_calls: set[tuple] = set()
 
-            if step["done"]:
+                for iteration in range(self.MAX_ITERATIONS):
+                    # LLM call is synchronous — run in thread pool to avoid blocking
+                    # Pass raw mcp_tools so _call_llm can reformat if provider switches mid-run
+                    step = await asyncio.to_thread(self._call_llm, messages, mcp_tools)
+
+                    if step["done"]:
+                        return {
+                            "answer":     step["answer"],
+                            "tool_calls": tool_trace,
+                            "iterations": iteration + 1,
+                        }
+
+                    messages.append(step["assistant_message"])
+
+                    for tc in step["tool_calls"]:
+                        # Deduplicate: skip calls already made with identical arguments.
+                        call_key = (tc["name"], tuple(sorted(tc["input"].items())))
+                        if call_key in seen_calls:
+                            result = f"[Skipped duplicate {tc['name']} call — already ran with these arguments]"
+                            tool_trace.append({"tool": tc["name"], "input": tc["input"], "output": result})
+                            messages.append(self._build_tool_result(tc["id"], tc["name"], result))
+                            continue
+                        seen_calls.add(call_key)
+
+                        # Tool execution via MCP protocol (async HTTP)
+                        try:
+                            result = await self.mcp.call_tool(tc["name"], tc["input"])
+                        except Exception as e:
+                            result = f"Tool error: {e}"
+
+                        tool_trace.append({
+                            "tool":   tc["name"],
+                            "input":  tc["input"],
+                            "output": result[:500] + "..." if len(result) > 500 else result,
+                        })
+                        messages.append(self._build_tool_result(tc["id"], tc["name"], result))
+
                 return {
-                    "answer":     step["answer"],
+                    "answer":     "I was unable to fully answer within the allowed reasoning steps.",
                     "tool_calls": tool_trace,
-                    "iterations": iteration + 1,
+                    "iterations": self.MAX_ITERATIONS,
                 }
-
-            messages.append(step["assistant_message"])
-
-            for tc in step["tool_calls"]:
-                # Deduplicate: skip calls already made with identical arguments.
-                call_key = (tc["name"], tuple(sorted(tc["input"].items())))
-                if call_key in seen_calls:
-                    result = f"[Skipped duplicate {tc['name']} call — already ran with these arguments]"
-                    tool_trace.append({"tool": tc["name"], "input": tc["input"], "output": result})
-                    messages.append(self._build_tool_result(tc["id"], tc["name"], result))
-                    continue
-                seen_calls.add(call_key)
-
-                # Tool execution via MCP protocol (async HTTP)
-                try:
-                    result = await self.mcp.call_tool(tc["name"], tc["input"])
-                except Exception as e:
-                    result = f"Tool error: {e}"
-
-                tool_trace.append({
-                    "tool":   tc["name"],
-                    "input":  tc["input"],
-                    "output": result[:500] + "..." if len(result) > 500 else result,
-                })
-                messages.append(self._build_tool_result(tc["id"], tc["name"], result))
-
-        return {
-            "answer":     "I was unable to fully answer within the allowed reasoning steps.",
-            "tool_calls": tool_trace,
-            "iterations": self.MAX_ITERATIONS,
-        }
+            finally:
+                self._client, self._provider, self._model = _orig
 
     async def stream(
         self,
@@ -655,6 +676,17 @@ class AgentService:
           we re-run with stream=True so tokens arrive in real time.
           This is one extra LLM call but delivers genuine streaming UX.
         """
+        async with self._run_lock:
+            async for event in self._stream_locked(question, repo_filter, history, model_id):
+                yield event
+
+    async def _stream_locked(
+        self,
+        question: str,
+        repo_filter: str | None = None,
+        history: list[dict] | None = None,
+        model_id: str | None = None,
+    ) -> AsyncIterator[dict]:
         # ── Per-request model override ────────────────────────────────────────
         # If the user selected a specific model in the UI, temporarily swap to it.
         # We save/restore self._client/provider/model in a finally block so the

@@ -113,9 +113,6 @@ def check_rate_limit(request: Request) -> None:
     window = _rate_windows[ip]
     while window and window[0] < now - 60:
         window.popleft()
-    if not window:
-        del _rate_windows[ip]
-        return
 
     if len(window) >= limit:
         raise HTTPException(

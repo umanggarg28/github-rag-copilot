@@ -52,7 +52,12 @@ async def agent_query(
 ):
     """Run the agentic RAG loop synchronously via MCP tools."""
     try:
-        result = await agent_svc.run(request.question, repo_filter=request.repo)
+        result = await agent_svc.run(
+            request.question,
+            repo_filter=request.repo,
+            history=request.history,
+            model_id=request.model_id,
+        )
         return AgentResponse(
             answer=result["answer"],
             tool_calls=[AgentToolCall(**tc) for tc in result["tool_calls"]],

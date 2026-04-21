@@ -1,38 +1,45 @@
 """
-embedder.py — Embed code chunks via Voyage AI or Nomic API.
+embedder.py — Embed code chunks via a hosted embedding API.
 
 WHY API-BASED EMBEDDINGS
 ─────────────────────────
-The local sentence-transformers model (nomic-embed-code) is ~600MB RAM.
-That kills free-tier hosting (HF Spaces, Render: 512MB–1GB RAM limit).
-Both APIs use the same underlying model — vectors are equivalent quality.
-Zero RAM cost on our server, just network latency (~200ms/batch).
+Local sentence-transformers models are ~600MB RAM — enough to kill
+free-tier hosting (HF Spaces, Render: 512MB–1GB RAM limit). Hosted
+APIs give us zero RAM cost and equivalent quality, at the price of
+~200ms of network latency per batch.
 
-TWO PROVIDERS, ONE INTERFACE
+THREE PROVIDERS, ONE INTERFACE
 ──────────────────────────────
-Provider selection happens at init time, based on env vars:
+Provider is selected from EMBEDDING_MODEL at init:
 
-  VOYAGE_API_KEY set + EMBEDDING_MODEL=voyage-code-3
+  EMBEDDING_MODEL contains "voyage" + VOYAGE_API_KEY set
     → Voyage AI: code-optimised, 1024-dim, 200M tokens/month free.
       voyage-code-3 is specifically trained on code and outperforms
       general-purpose embedders on code retrieval benchmarks.
-      ⚠️  Requires new Qdrant collection (dim mismatch with 768-dim).
+      ⚠️  Requires EMBEDDING_DIM=1024 and a new Qdrant collection.
 
-  NOMIC_API_KEY set (default)
-    → Nomic API: nomic-embed-text-v1.5, 768-dim, generous free tier.
+  EMBEDDING_MODEL contains "gemini" + GEMINI_API_KEY set  (default)
+    → Google Gemini: gemini-embedding-001, 768-dim output (configurable
+      via MRL), generous free tier. Re-uses the same GEMINI_API_KEY we
+      use for the LLM — no separate signup.
+
+  NOMIC_API_KEY set  (legacy fallback)
+    → Nomic API: nomic-embed-text-v1.5, 768-dim. Free quota is 10M
+      tokens total — easy to exhaust across a few large repo indexes.
 
 TASK TYPES
 ───────────
-Both APIs distinguish between document and query roles:
-  - "search_document" / "document": used when indexing chunks
-  - "search_query"   / "query":     used when embedding user queries
-
-This produces a better inner-product space than treating both the same.
+Every provider distinguishes document and query roles. A document
+projection and a query projection live in the same embedding space
+but are optimised for their direction of the inner product:
+  - document:  used when indexing chunks
+  - query:     used when embedding the user's question
 
 BATCHING
 ─────────
-Both APIs accept up to 256-512 texts per call. We batch in groups of 96
-(conservative) to avoid timeout on large text chunks over free-tier networks.
+All three APIs accept batched input. We use groups of 32 to stay
+well under request-body size limits on large contextually-enriched
+chunks (~8KB each) and to keep individual retries cheap.
 """
 
 import time
@@ -45,11 +52,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from backend.config import settings
 
 
-_NOMIC_API_URL  = "https://api-atlas.nomic.ai/v1/embedding/text"
-_BATCH_SIZE     = 32    # Nomic has a ~10MB request body limit; 32 chunks keeps us safe
-                        # even for large contextually-enriched chunks (~8KB each)
-_MAX_CHARS      = 8000  # truncate each text before sending — embeddings degrade
-                        # gracefully on truncation, and models have a token limit anyway
+_NOMIC_API_URL   = "https://api-atlas.nomic.ai/v1/embedding/text"
+_GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+_BATCH_SIZE      = 32    # conservative for all providers: stays under ~10MB body
+                         # and keeps each failed batch cheap to retry
+_MAX_CHARS       = 8000  # truncate each text before sending — embeddings degrade
+                         # gracefully on truncation and models silently clip anyway
 
 
 class Embedder:
@@ -69,13 +77,25 @@ class Embedder:
         self.model_name    = model_name or settings.embedding_model
         self.embedding_dim = settings.embedding_dim
 
-        # Select provider based on available keys + model name
-        if settings.voyage_api_key and "voyage" in self.model_name.lower():
+        # Provider selection is driven by the MODEL NAME, with the available
+        # API key gating the choice. This lets an operator flip providers by
+        # only changing EMBEDDING_MODEL in .env — no code change needed.
+        name = self.model_name.lower()
+        if "voyage" in name and settings.voyage_api_key:
             self._provider = "voyage"
             self._init_voyage()
-        else:
+        elif "gemini" in name and settings.gemini_api_key:
+            self._provider = "gemini"
+            self._init_gemini()
+        elif settings.nomic_api_key:
             self._provider = "nomic"
             self._init_nomic()
+        else:
+            raise RuntimeError(
+                f"No embedding provider available for model '{self.model_name}'. "
+                "Set GEMINI_API_KEY (default — free at https://aistudio.google.com), "
+                "or VOYAGE_API_KEY + EMBEDDING_MODEL=voyage-code-3."
+            )
 
     def _init_voyage(self):
         """Initialise Voyage AI client. voyage-code-3 is code-optimised 1024-dim."""
@@ -93,15 +113,20 @@ class Embedder:
 
     def _init_nomic(self):
         """Initialise Nomic API client. nomic-embed-text-v1.5 is 768-dim."""
-        if not settings.nomic_api_key:
-            raise RuntimeError(
-                "No embedding provider configured. "
-                "Set NOMIC_API_KEY (free at https://atlas.nomic.ai) or "
-                "VOYAGE_API_KEY + EMBEDDING_MODEL=voyage-code-3."
-            )
         self._nomic_key = settings.nomic_api_key
         print(
             f"Embedder: using Nomic API ({self.model_name}, {self.embedding_dim}-dim). "
+            "No local model loaded."
+        )
+
+    def _init_gemini(self):
+        """Initialise Gemini embeddings. gemini-embedding-001 supports MRL,
+        so we request exactly `embedding_dim` dimensions from the API — that
+        way one deployment can reuse an existing Qdrant collection schema
+        (768-dim) or scale up to a larger one without code changes."""
+        self._gemini_key = settings.gemini_api_key
+        print(
+            f"Embedder: using Gemini API ({self.model_name}, {self.embedding_dim}-dim). "
             "No local model loaded."
         )
 
@@ -123,6 +148,8 @@ class Embedder:
         texts = [c["text"][:_MAX_CHARS] for c in chunks]
         if self._provider == "voyage":
             return self._voyage_embed(texts, input_type="document")
+        if self._provider == "gemini":
+            return self._gemini_embed(texts, task_type="RETRIEVAL_DOCUMENT")
         return self._nomic_embed(texts, task_type="search_document")
 
     def embed_query(self, query: str) -> list[float]:
@@ -134,6 +161,8 @@ class Embedder:
         """
         if self._provider == "voyage":
             return self._voyage_embed([query], input_type="query")[0]
+        if self._provider == "gemini":
+            return self._gemini_embed([query], task_type="RETRIEVAL_QUERY")[0]
         return self._nomic_embed([query], task_type="search_query")[0]
 
     # ── Voyage AI implementation ───────────────────────────────────────────────
@@ -231,3 +260,67 @@ class Embedder:
             return response.json()["embeddings"]
 
         raise RuntimeError("Nomic API call failed after retries")
+
+    # ── Gemini API implementation ──────────────────────────────────────────────
+
+    def _gemini_embed(self, texts: list[str], task_type: str) -> list[list[float]]:
+        """Call Gemini batchEmbedContents with batching. Returns list of
+        `embedding_dim`-dim vectors.
+
+        task_type is the Gemini task enum (RETRIEVAL_DOCUMENT / RETRIEVAL_QUERY).
+        These produce different projections within the same embedding space —
+        the document projection is optimised for being retrieved, the query
+        projection for doing the retrieving.
+        """
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(texts), _BATCH_SIZE):
+            batch      = [t[:_MAX_CHARS] for t in texts[i : i + _BATCH_SIZE]]
+            embeddings = self._gemini_call_api(batch, task_type)
+            all_embeddings.extend(embeddings)
+        return all_embeddings
+
+    def _gemini_call_api(
+        self,
+        texts: list[str],
+        task_type: str,
+        retries: int = 3,
+    ) -> list[list[float]]:
+        """
+        Single Gemini batchEmbedContents call with retry on rate limit (429)
+        or service error (503). Gemini free tier is RPM-capped, so backoff is
+        more aggressive than Nomic (3 retries vs 2, longer default wait).
+
+        Response shape:
+          { "embeddings": [{ "values": [float, ...] }, ...] }
+        """
+        url = (
+            f"{_GEMINI_API_BASE}/{self.model_name}:batchEmbedContents"
+            f"?key={self._gemini_key}"
+        )
+        model_id = f"models/{self.model_name}"
+        payload = {
+            "requests": [
+                {
+                    "model":                model_id,
+                    "content":              {"parts": [{"text": t}]},
+                    "taskType":             task_type,
+                    "outputDimensionality": self.embedding_dim,
+                }
+                for t in texts
+            ]
+        }
+
+        for attempt in range(retries + 1):
+            response = http.post(url, json=payload, timeout=60)
+
+            if response.status_code in (429, 503) and attempt < retries:
+                # Gemini doesn't always send Retry-After; back off exponentially.
+                wait = int(response.headers.get("Retry-After", 2 ** attempt * 5))
+                print(f"Gemini API {response.status_code}. Waiting {wait}s before retry...")
+                time.sleep(wait)
+                continue
+
+            response.raise_for_status()
+            return [e["values"] for e in response.json()["embeddings"]]
+
+        raise RuntimeError("Gemini API call failed after retries")

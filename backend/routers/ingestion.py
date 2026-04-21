@@ -92,15 +92,16 @@ async def ingest_stream(repo: str, request: Request, force: bool = False):
 
     async def _run():
         try:
-            await asyncio.to_thread(services.ingestion.ingest, repo, force, _progress)
+            result = await asyncio.to_thread(services.ingestion.ingest, repo, force, _progress)
+            repo_slug = result.get("repo", repo)
             if services.diagram:
-                services.diagram.invalidate(repo)
+                services.diagram.invalidate(repo_slug)
             if services.repo_map:
-                services.repo_map.invalidate(repo)
+                services.repo_map.invalidate(repo_slug)
             now = datetime.now(timezone.utc).isoformat()
-            repo_indexed_at[repo] = now
+            repo_indexed_at[repo_slug] = now
             if force:
-                repo_contextual_at[repo] = now
+                repo_contextual_at[repo_slug] = now
         except Exception as e:
             loop.call_soon_threadsafe(queue.put_nowait, {"step": "error", "detail": str(e)})
         finally:

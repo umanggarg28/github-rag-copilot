@@ -32,21 +32,26 @@ class Settings:
     github_token: str       = os.getenv("GITHUB_TOKEN", "")
 
     # ── Embeddings ────────────────────────────────────────────────────────────
-    # Two embedding providers, selected at startup:
+    # Three embedding providers, selected at startup by EMBEDDING_MODEL:
     #
-    # 1. Voyage AI (VOYAGE_API_KEY set + EMBEDDING_MODEL=voyage-code-3)
+    # 1. Gemini (default — EMBEDDING_MODEL contains "gemini", needs GEMINI_API_KEY)
+    #    gemini-embedding-001: 768-dim output via MRL, generous free tier.
+    #    Re-uses the same GEMINI_API_KEY used for the LLM — no extra signup.
+    #    Free at https://aistudio.google.com.
+    #
+    # 2. Voyage AI (EMBEDDING_MODEL contains "voyage", needs VOYAGE_API_KEY)
     #    voyage-code-3: code-optimised, 1024-dim, 200M tokens/month free.
     #    ⚠️  Requires EMBEDDING_DIM=1024 and a NEW Qdrant collection — dims
-    #    are incompatible with nomic (768-dim) collections.
+    #    are incompatible with 768-dim collections.
     #
-    # 2. Nomic API (default, NOMIC_API_KEY required)
-    #    nomic-embed-text-v1.5: general text, 768-dim, generous free tier.
-    #    Free at https://atlas.nomic.ai (no credit card needed).
+    # 3. Nomic (legacy fallback — NOMIC_API_KEY set)
+    #    nomic-embed-text-v1.5: 768-dim. Free quota is 10M tokens TOTAL
+    #    (not per month) — easy to exhaust across a few large indexes.
     #
     # EMBEDDING_DIM must match the chosen model exactly.
     nomic_api_key: str      = os.getenv("NOMIC_API_KEY", "")
     voyage_api_key: str     = os.getenv("VOYAGE_API_KEY", "")
-    embedding_model: str    = os.getenv("EMBEDDING_MODEL", "nomic-embed-text-v1.5")
+    embedding_model: str    = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
     embedding_dim: int      = int(os.getenv("EMBEDDING_DIM", "768"))
 
     # ── Chunking ──────────────────────────────────────────────────────────────
