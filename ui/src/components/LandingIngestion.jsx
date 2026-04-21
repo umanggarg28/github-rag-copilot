@@ -360,7 +360,7 @@ export default function LandingIngestion({
             {isDone
               ? (fileCount ? `${fileCount} files indexed` : "Indexing complete")
               : isError
-                ? "Tap below to retry"
+                ? "Something interrupted the map"
                 : (fileCount ? `${fileCount} files` : "Reading repository…")}
           </span>
           <div className="li-bar" aria-hidden="true">
@@ -385,9 +385,22 @@ export default function LandingIngestion({
           </button>
         )}
         {isError && (
-          <button className="li-cta li-cta-ghost" onClick={onAbort}>
-            Back
-          </button>
+          <>
+            <button
+              className="li-cta hover-lift"
+              style={{ "--demo-accent": accent }}
+              onClick={() => onRetry?.()}
+              autoFocus
+            >
+              Try again
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3.5 8a4.5 4.5 0 1 1 1.32 3.18M3.5 4.5v3h3"/>
+              </svg>
+            </button>
+            <button className="li-cta-ghost" onClick={onAbort}>
+              Back
+            </button>
+          </>
         )}
         {!isDone && !isError && (
           <button className="li-cta-ghost li-cancel" onClick={onAbort}>

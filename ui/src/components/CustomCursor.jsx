@@ -71,7 +71,7 @@ export default function CustomCursor() {
     function onOver(e) {
       // Hide entirely over text-entry surfaces; otherwise upgrade to the
       // active ring when over any interactive element in the bubble path.
-      const overInput = !!e.target.closest?.(TEXT_INPUT_SELECTOR);
+      const overInput = !!e.target.closest?.(HIDE_OVER_SELECTOR);
       el.dataset.overInput = overInput ? "1" : "0";
       const interactive = !overInput && e.target.closest?.(INTERACTIVE_SELECTOR);
       el.dataset.active = interactive ? "1" : "0";
