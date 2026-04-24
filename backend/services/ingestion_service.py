@@ -234,7 +234,13 @@ class IngestionService:
             # Upsert this group before touching the next — that's the actual
             # checkpoint. If the next group's embedding call dies, everything
             # up to here is already in Qdrant.
-            _emit("storing", f"Storing checkpoint {group_start + len(group)}/{len(chunks)}...")
+            #
+            # Deliberately NOT emitting a "storing" event here: the UI phase
+            # would flicker embedding → storing → embedding every group,
+            # yanking the progress bar between its embed-range and its
+            # storing-range. The user perceives one continuous "embedding"
+            # phase, so keep the phase stable and let the per-batch progress
+            # emits from the embedder drive the bar smoothly.
             group_ids = self.store.upsert_chunks(group, group_vectors)
             written_ids.extend(group_ids)
             print(f"  Checkpoint {group_start + len(group)}/{len(chunks)} stored")

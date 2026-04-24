@@ -96,8 +96,10 @@ function parseFileCount(detail = "") {
   const m = detail.match(/(\d+)\s+files?/i);
   return m ? parseInt(m[1], 10) : null;
 }
-/** Parse "Adding context to chunks… 12 / 40" → { done: 12, total: 40 }. */
-function parseCtxProgress(detail = "") {
+/** Parse any "N / M" fragment (used for contextualizing and embedding events).
+ *  Same shape is emitted by both phases; consumers pick the right progress
+ *  state based on the event's `step`. */
+function parseProgressRatio(detail = "") {
   const m = detail.match(/(\d+)\s*\/\s*(\d+)/);
   return m ? { done: parseInt(m[1], 10), total: parseInt(m[2], 10) } : null;
 }
@@ -119,10 +121,11 @@ export default function LandingIngestion({
     return m ? m[1] : repoUrl;
   }, [slugProp, repoUrl]);
 
-  const [phase,       setPhase]       = useState("embark");
-  const [fileCount,   setFileCount]   = useState(null);
-  const [ctxProgress, setCtxProgress] = useState(null); // {done,total} | null
-  const [errorMsg,    setErrorMsg]    = useState(null);
+  const [phase,         setPhase]         = useState("embark");
+  const [fileCount,     setFileCount]     = useState(null);
+  const [ctxProgress,   setCtxProgress]   = useState(null); // {done,total} | null
+  const [embedProgress, setEmbedProgress] = useState(null); // {done,total} | null
+  const [errorMsg,      setErrorMsg]      = useState(null);
 
   // Concept flashes: each is { id, x, y, label }. They're transient — added
   // on a timer during contextualizing, removed after ~1.4s. Using an array
@@ -147,8 +150,16 @@ export default function LandingIngestion({
         if (n != null) setFileCount(n);
       }
       if (event.step === "contextualizing") {
-        const p = parseCtxProgress(event.detail);
+        const p = parseProgressRatio(event.detail);
         if (p) setCtxProgress(p);
+      }
+      if (event.step === "embedding") {
+        // The backend now emits "Embedded X/Y chunks..." during the
+        // checkpointed embed loop. Drive the progress bar dynamically
+        // off those — without this, the bar would sit at the embedding
+        // base weight (0.40) for the entire 2–3 min phase and read as stuck.
+        const p = parseProgressRatio(event.detail);
+        if (p) setEmbedProgress(p);
       }
 
       if (event.step === "done") {
@@ -234,7 +245,16 @@ export default function LandingIngestion({
 
   // Progress 0..1 — used for both the progress bar fill and the stage's
   // accent-glow intensity. We weight phases so the bar feels truthful:
-  // fetching & filtering are quick, embedding & contextualizing are long.
+  // fetching & filtering are quick; embedding & contextualizing are long,
+  // so they each claim a wide range and fill dynamically from real
+  // {done,total} events.
+  //
+  // Weight layout:
+  //   0.00 → 0.28  fetching · filtering · chunking (quick phases)
+  //   0.28 → 0.55  contextualizing (force re-index only)
+  //   0.40 → 0.92  embedding  (overlaps contextualizing intentionally —
+  //                 the paths are mutually exclusive in time)
+  //   0.92 → 1.00  storing · done
   const progress = useMemo(() => {
     if (phase === "done")   return 1;
     if (phase === "error")  return 0;
@@ -243,16 +263,20 @@ export default function LandingIngestion({
       fetching:        0.08,
       filtering:       0.18,
       chunking:        0.28,
+      contextualizing: 0.28,
       embedding:       0.40,
-      contextualizing: 0.55,
       storing:         0.92,
     }[phase] ?? 0;
-    // During contextualizing, fill dynamically using real X/Y.
+    // Contextualizing fills 0.28 → 0.55 off real X/Y events.
     if (phase === "contextualizing" && ctxProgress && ctxProgress.total) {
-      return base + (0.35 * (ctxProgress.done / ctxProgress.total));
+      return base + (0.27 * (ctxProgress.done / ctxProgress.total));
+    }
+    // Embedding fills 0.40 → 0.92 off real X/Y events emitted per batch.
+    if (phase === "embedding" && embedProgress && embedProgress.total) {
+      return base + (0.52 * (embedProgress.done / embedProgress.total));
     }
     return base;
-  }, [phase, ctxProgress]);
+  }, [phase, ctxProgress, embedProgress]);
 
   const isDone  = phase === "done";
   const isError = phase === "error";

@@ -94,8 +94,9 @@ export default function App() {
   // question truncated to 55 chars), messages array, and ISO timestamp.
   // Sessions are stored as `ghrc_sessions_{repo}` → JSON array, newest first.
 
-  // null = landing page (no repo chosen yet), "all" = All repos explicitly selected
-  // Both map to the same storage key; only "all" ever writes sessions.
+  // null = landing page (no repo chosen yet). Per-repo sessions are keyed by slug;
+  // landing-mode sessions fall back to the "all" key for historical compat with
+  // any existing localStorage data from previous versions.
   function sessionsKey(repo) { return `ghrc_sessions_${repo || "all"}`; }
 
   function readSessions(repo) {
@@ -175,8 +176,8 @@ export default function App() {
     setFocusFiles(null);
     setSessions(readSessions(activeRepo));
     // Auto-navigate to Explore view when a specific repo is selected.
-    // Reset to chat for "All repos" or landing page — diagram needs a single repo.
-    if (activeRepo && activeRepo !== "all") setView("graph");
+    // Reset to chat for the landing page — the diagram needs a single repo.
+    if (activeRepo) setView("graph");
     else setView("chat");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRepo]);
@@ -288,8 +289,8 @@ export default function App() {
   }, [input]);
 
   // Load repos on mount — also tracks backend health for the header status dot.
-  // Auto-selects the only repo if exactly one is indexed, so new users land in
-  // single-repo mode rather than the "All repos" cross-repo view.
+  // Auto-selects the only repo if exactly one is indexed, so new users land
+  // directly in that repo's view rather than a bare landing screen.
   const loadRepos = useCallback(async () => {
     setReposLoading(true);
     try {
@@ -479,7 +480,7 @@ export default function App() {
       // ── Agent mode: ReAct loop with live tool-call trace ──────────────────
       stop = streamAgentQuery({
         question,
-        repo: activeRepo === "all" ? null : activeRepo,
+        repo: activeRepo,
         model_id: selectedModelId || undefined,
         history,
         onThought: (text) => {
@@ -555,7 +556,7 @@ export default function App() {
       // ── Plain RAG mode: single retrieval → stream tokens ──────────────────
       stop = streamQuery({
         question,
-        repo: activeRepo === "all" ? null : activeRepo,
+        repo: activeRepo,
         mode,
         history,
         onToken,
@@ -649,13 +650,12 @@ export default function App() {
 
   // Landing mode = a fresh user with nowhere else to be. We dedicate the
   // whole viewport to the hero in this state — sidebar collapses to an icon
-  // strip, the chat input hides, and the landing layout takes over. "All
-  // repos" selected with zero indexed counts as landing too (nothing to do).
+  // strip, the chat input hides, and the landing layout takes over.
   const isLanding =
     !showReadme &&
     view === "chat" &&
     messages.length === 0 &&
-    (!activeRepo || (activeRepo === "all" && repos.length === 0));
+    !activeRepo;
 
   // Sidebar visibility follows the user's persisted preference in every state,
   // landing included. Earlier we force-collapsed on landing to hand the whole
@@ -820,21 +820,35 @@ export default function App() {
                 style={{ background: backendOk ? "var(--green)" : "var(--red)" }}
               />
             )}
-            {activeRepo ? (
-              <span className="repo-badge">
-                {activeRepo === "all" ? "All repos" : (() => {
-                  const [owner, name] = activeRepo.split("/");
-                  return <><span style={{ opacity: 0.55, fontWeight: 400 }}>{owner}/</span><span style={{ fontWeight: 600 }}>{name}</span></>;
-                })()}
+            {activeRepo && (() => {
+              const [owner, name] = activeRepo.split("/");
+              return (
+                <span className="repo-badge">
+                  <span style={{ opacity: 0.55, fontWeight: 400 }}>{owner}/</span>
+                  <span style={{ fontWeight: 600 }}>{name}</span>
+                </span>
+              );
+            })()}
+            {/* Agent-mode indicator — persistent badge when agent mode is active.
+                Pulses when a query is streaming (the "thinking" state). Makes
+                mode immediately legible from any view, not just the sidebar pill. */}
+            {agentMode && activeRepo && (
+              <span
+                className="agent-badge"
+                data-thinking={streaming || undefined}
+                title={streaming ? "Agent is investigating your question" : "Agent mode is active"}
+              >
+                <span className="agent-badge-mark" aria-hidden="true">✦</span>
+                <span className="agent-badge-label">
+                  {streaming ? "Agent thinking…" : "Agent"}
+                </span>
               </span>
-            ) : (
-              <span className="no-repo">All indexed repos</span>
             )}
           </div>
 
           {/* CENTER — view toggle, only when a specific repo is selected */}
           <div className="header-center">
-            {activeRepo && activeRepo !== "all" && (
+            {activeRepo && (
               <div className="view-toggle">
                 <button
                   className={`view-btn ${view === "chat" && !showReadme ? "active" : ""}`}
@@ -857,7 +871,7 @@ export default function App() {
         </div>
 
         {/* ── README view ── */}
-        {showReadme && activeRepo && activeRepo !== "all" && (
+        {showReadme && activeRepo && (
           <ReadmeView
             repo={activeRepo}
             contextualAt={repos.find(r => r.slug === activeRepo)?.contextual_at ?? null}
@@ -927,38 +941,8 @@ export default function App() {
                 }}
                 style={{ "--glow-size": "640px", "--glow-intensity": "6%" }}
               >
-                {activeRepo === "all" && repos.length > 0 ? (
-                  // "All repos" explicitly selected with repos indexed — cross-repo query mode
-                  <div className="suggest-state">
-                    <h2>Ask across all repos</h2>
-                    <p>Searching <strong>{repos.length} indexed repos</strong> at once — {repos.map(r => r.slug.split("/")[1]).join(", ")}. Results show which repo each source comes from.</p>
-                    <div className="suggestions">
-                      {[
-                        { icon: "compare", title: "Compare architectures", body: "What patterns do these repos share?" },
-                        { icon: "complexity", title: "Complexity analysis", body: "Which repo is most complex and why?" },
-                        { icon: "entry", title: "Entry points",       body: "Find all main entry points across repos" },
-                        { icon: "config",  title: "Configuration",    body: "How do these repos handle env & config?" },
-                        { icon: "pattern", title: "Design patterns",  body: "Common abstractions across all repos" },
-                      ].map(({ icon, title, body }, i) => {
-                        const q = `${title}: ${body}`;
-                        return (
-                          <button key={title} className="suggestion-btn"
-                            style={{ animationDelay: `${150 + i * 120}ms` }}
-                            onClick={() => { setInput(q); textareaRef.current?.focus(); }}>
-                            <span className="suggestion-icon">{ICONS[icon]}</span>
-                            <span className="suggestion-content">
-                              <span className="suggestion-title">{title}</span>
-                              <span className="suggestion-body">{body}</span>
-                            </span>
-                            <svg className="suggestion-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  // Repo selected — show mode-aware suggestions + feature discovery cards
-                  <div className="suggest-state">
+                {/* Repo selected — show mode-aware suggestions + feature discovery cards */}
+                <div className="suggest-state">
                     <h2>How does {activeRepo.split("/")[1]} work?</h2>
 
 
@@ -1030,7 +1014,6 @@ export default function App() {
                       </>
                     )}
                   </div>
-                )}
               </div>
               )
             ) : (

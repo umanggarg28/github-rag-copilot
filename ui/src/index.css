@@ -446,10 +446,9 @@ textarea:focus-visible {
      textures competing with the hero stage. */
   background: transparent;
 }
-/* The "All indexed repos" breadcrumb reads as chrome on a landing pitch —
-   a first-time visitor has no repos to navigate yet, so the header is pure
-   distraction and steals vertical space (forcing the hero to scroll).
-   Remove it outright; it reappears the moment any repo is indexed. */
+/* Landing has no repo yet, so the header pill reads as chrome and steals
+   vertical space (forcing the hero to scroll). Hide header bars entirely
+   on landing; they reappear the moment any repo is selected. */
 .layout.layout-landing .chat-header,
 .layout.layout-landing .messages-header,
 .layout.layout-landing .main-header { display: none; }
@@ -907,6 +906,35 @@ textarea:focus-visible {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
 }
 
+/* Agent pill — distinct accent treatment so the mode reads clearly at a
+   glance, not like a twin of the RAG pill. The sparkle mark is the same
+   motif as the header agent-badge and the session-mode-badge. */
+.pill--agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.pill--agent .pill-mark {
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity var(--transition), transform var(--transition);
+}
+.pill--agent:hover .pill-mark { opacity: 0.9; }
+.pill--agent.active {
+  background: var(--accent-dim);
+  color: var(--accent-light);
+  box-shadow:
+    inset 0 1px 0 rgba(200, 220, 255, 0.18),
+    0 0 0 1px var(--accent-border);
+}
+.pill--agent.active .pill-mark {
+  color: var(--accent);
+  opacity: 1;
+  transform: scale(1.1);
+}
+
 /* ══════════════════════════════════════════════════════════
    MAIN CHAT AREA
    ══════════════════════════════════════════════════════════ */
@@ -1045,13 +1073,45 @@ textarea:focus-visible {
     inset 0 1px 0 rgba(200, 220, 255,0.15);
 }
 
-.chat-header .no-repo {
-  /* Readable context indicator — not muted, this is the active state */
-  color: var(--text-2);
-  font-size: 13px;
+/* Agent mode indicator — persistent header badge so "you are in agent mode"
+   is legible from any view. The violet accent-dim fill + accent border make
+   it visually distinct from the neutral repo-badge beside it.
+   `data-thinking` flips the label to "Agent thinking…" during streaming and
+   adds a subtle pulse animation on the sparkle so the badge feels alive. */
+.agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius);
+  color: var(--accent-soft);
+  font-family: var(--sans);
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: -0.02em;
+  padding: 4px 10px;
+  letter-spacing: -0.01em;
+  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
 }
+.agent-badge-mark {
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1;
+}
+.agent-badge[data-thinking] {
+  /* Active-investigation state — brighter text, softer accent glow. */
+  color: var(--accent-light);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: 0 0 0 1px var(--accent-border), 0 4px 18px rgba(91, 143, 249, 0.22);
+}
+.agent-badge[data-thinking] .agent-badge-mark {
+  animation: agent-pulse 1.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes agent-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.14); }
+}
+
 
 .chat-header .clear-btn {
   margin-left: auto;

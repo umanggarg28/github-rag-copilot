@@ -201,7 +201,7 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
     e.stopPropagation();
     try {
       await deleteRepo(slug);
-      if (activeRepo === slug) onSelectRepo("all");
+      if (activeRepo === slug) onSelectRepo(null);
       onReposChange();
     } catch (err) {
       setStatus({ type: "error", text: err.message });
@@ -473,10 +473,13 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
             aria-pressed={!agentMode}
           >RAG</button>
           <button
-            className={`pill ${agentMode ? "active" : ""}`}
+            className={`pill pill--agent ${agentMode ? "active" : ""}`}
             onClick={() => onAgentModeChange(true)}
             aria-pressed={agentMode}
-          >Agent <span style={{ fontSize: 8, verticalAlign: "middle", color: "var(--accent-soft)", marginLeft: 2 }}>●</span></button>
+          >
+            <span className="pill-mark" aria-hidden="true">✦</span>
+            Agent
+          </button>
         </div>
         <p className="mode-description">
           {agentMode
@@ -529,12 +532,6 @@ export default function Sidebar({ repos, reposLoading, activeRepo, onSelectRepo,
           </p>
         ) : (
           <div className="repo-list">
-            <div
-              className={`repo-item ${activeRepo === "all" ? "active" : ""}`}
-              onClick={() => onSelectRepo(activeRepo === "all" ? null : "all")}
-            >
-              <span className="repo-slug">All repos</span>
-            </div>
             {repos.map((r) => {
               const staleness = stalenessLevel(r.indexed_at);
               const isReindexingThis = reindexing === r.slug;
