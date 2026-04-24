@@ -46,6 +46,7 @@ import time
 from pathlib import Path
 import sys
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests as http
 
@@ -55,8 +56,12 @@ from backend.config import settings
 
 _NOMIC_API_URL   = "https://api-atlas.nomic.ai/v1/embedding/text"
 _GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-_BATCH_SIZE      = 32    # conservative for all providers: stays under ~10MB body
+_BATCH_SIZE      = 32    # conservative default (Nomic): stays under ~10MB body
                          # and keeps each failed batch cheap to retry
+_VOYAGE_BATCH_SIZE  = 96 # Voyage accepts up to 128 per call; 96 at _MAX_CHARS=8000
+                         # stays well under their 120K-token-per-request cap.
+_VOYAGE_CONCURRENCY = 8  # parallel workers for Voyage. Their paid tier is 2000 RPM
+                         # (~33 req/s); 8 workers * ~2s/batch ≈ 4 req/s — comfortable.
 _MAX_CHARS       = 8000  # truncate each text before sending — embeddings degrade
                          # gracefully on truncation and models silently clip anyway
 
@@ -118,10 +123,21 @@ class Embedder:
             )
 
     def _init_voyage(self):
-        """Initialise Voyage AI client. voyage-code-3 is code-optimised 1024-dim."""
+        """Initialise Voyage AI client. voyage-code-3 is code-optimised 1024-dim.
+
+        timeout=60 is mandatory per the Provider Client Rule in CLAUDE.md — a
+        stuck request with no timeout will block an entire ingestion silently,
+        since the voyageai SDK uses plain `requests` and doesn't log each call.
+        max_retries=0 leaves retry logic to us (see _voyage_call_api), so we
+        don't double-retry on transient failures.
+        """
         try:
             import voyageai
-            self._voyage = voyageai.Client(api_key=settings.voyage_api_key)
+            self._voyage = voyageai.Client(
+                api_key=settings.voyage_api_key,
+                timeout=60,
+                max_retries=0,
+            )
         except ImportError:
             raise ImportError(
                 "voyageai package not installed. Run: pip install voyageai"
@@ -153,7 +169,11 @@ class Embedder:
 
     # ── Public interface ───────────────────────────────────────────────────────
 
-    def embed_chunks(self, chunks: list[dict]) -> list[list[float]]:
+    def embed_chunks(
+        self,
+        chunks: list[dict],
+        progress: callable = None,
+    ) -> list[list[float]]:
         """
         Embed a list of chunk dicts for indexing (document role).
 
@@ -165,10 +185,14 @@ class Embedder:
         a token limit (~8192 tokens) and API gateways have a request body size
         limit (~10MB). Truncation degrades retrieval quality marginally but
         avoids 413 errors on large class definitions or contextually-enriched chunks.
+
+        progress: optional callback progress(done_chunks, total_chunks) called
+        as each batch completes. Lets callers render a live progress bar without
+        knowing the provider's internal batch size.
         """
         texts = [c["text"][:_MAX_CHARS] for c in chunks]
         if self._provider == "voyage":
-            return self._voyage_embed(texts, input_type="document")
+            return self._voyage_embed(texts, input_type="document", progress=progress)
         if self._provider == "gemini":
             return self._gemini_embed(texts, task_type="RETRIEVAL_DOCUMENT")
         return self._nomic_embed(texts, task_type="search_document")
@@ -188,23 +212,60 @@ class Embedder:
 
     # ── Voyage AI implementation ───────────────────────────────────────────────
 
-    def _voyage_embed(self, texts: list[str], input_type: str) -> list[list[float]]:
+    def _voyage_embed(
+        self,
+        texts: list[str],
+        input_type: str,
+        progress: callable = None,
+    ) -> list[list[float]]:
         """
-        Call Voyage AI API with batching.
+        Call Voyage AI API with parallel batching.
 
         voyage-code-3 is specifically trained on (code, docstring) pairs
         and GitHub issues, giving it much better code retrieval than
         general-purpose text embedders.
 
-        Batching: Voyage API accepts up to 128 texts per call on free tier.
-        We use 96 to leave headroom for large chunks.
+        Concurrency: Voyage's paid tier is 2000 RPM (~33 req/s). We run
+        _VOYAGE_CONCURRENCY=8 workers so a 13K-chunk ingest drops from ~15 min
+        serial to ~2 min parallel. Each worker serialises its HTTP call through
+        the shared voyageai.Client (which uses a thread-safe requests.Session
+        internally), so no per-worker client is needed.
+
+        Order preservation: batches may complete out of order, so we fill a
+        pre-sized results array by batch index, then flatten in original order.
+        Without this, a chunk's vector could land on the wrong chunk payload.
+
+        progress(done_chunks, total_chunks) fires after each completed batch.
         """
-        all_embeddings: list[list[float]] = []
-        for i in range(0, len(texts), _BATCH_SIZE):
-            batch  = texts[i : i + _BATCH_SIZE]
-            result = self._voyage_call_api(batch, input_type)
-            all_embeddings.extend(result)
-        return all_embeddings
+        batches = [
+            texts[i : i + _VOYAGE_BATCH_SIZE]
+            for i in range(0, len(texts), _VOYAGE_BATCH_SIZE)
+        ]
+        if not batches:
+            return []
+
+        results: list[list[list[float]] | None] = [None] * len(batches)
+        total_chunks = len(texts)
+        done_chunks  = 0
+
+        workers = min(_VOYAGE_CONCURRENCY, len(batches))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_idx = {
+                pool.submit(self._voyage_call_api, batch, input_type): idx
+                for idx, batch in enumerate(batches)
+            }
+            for fut in as_completed(future_to_idx):
+                idx = future_to_idx[fut]
+                results[idx] = fut.result()
+                done_chunks += len(batches[idx])
+                print(
+                    f"  Voyage batch {sum(1 for r in results if r is not None)}"
+                    f"/{len(batches)} done ({done_chunks}/{total_chunks} chunks)"
+                )
+                if progress:
+                    progress(done_chunks, total_chunks)
+
+        return [vec for batch_result in results for vec in batch_result]
 
     def _voyage_call_api(
         self,

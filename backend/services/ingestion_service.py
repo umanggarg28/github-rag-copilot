@@ -186,27 +186,58 @@ class IngestionService:
             _emit("embedding", f"Embedding {len(chunks)} chunks...")
 
         print("Embedding chunks...")
-        new_vectors = self.embedder.embed_chunks(new_chunks) if new_chunks else []
-        if new_vectors:
-            print(f"  Produced {len(new_vectors)} vectors ({len(new_vectors[0])}-dim each)")
 
-        # Reconstruct the full vectors list in original chunk order.
-        # Chunks with existing vectors use the stored vector; new ones use the
-        # freshly computed one. This preserves the 1-to-1 chunks↔vectors pairing
-        # that upsert_chunks requires.
-        new_hash_to_vec = {c["text_hash"]: v for c, v in zip(new_chunks, new_vectors)}
-        vectors = [
-            existing_vectors.get(c["text_hash"]) or new_hash_to_vec[c["text_hash"]]
-            for c in chunks
-        ]
+        # ── Step 7: Embed + upsert in checkpointed groups ─────────────────────
+        # Stream embed→upsert in groups so a crash mid-run leaves earlier
+        # chunks safely in Qdrant. Retry then skips them via the existing
+        # find_vectors_by_hash dedup path above. Without checkpoints, a 15-min
+        # ingest that dies at chunk 13000/13594 loses 100% of the work.
+        #
+        # Group size 500: big enough that Qdrant upsert overhead amortises,
+        # small enough that a crash loses at most ~500 re-embeddings on retry.
+        CHECKPOINT_SIZE = 500
+        total_new = len(new_chunks)
+        new_done  = 0
+        written_ids: list = []
 
-        # ── Step 7: Store, then sweep stale chunks ────────────────────────────
-        # Upsert new chunks first — at this point old chunks are still visible.
-        # Any chunk whose source code hasn't changed will be overwritten with an
-        # identical payload (same ID, stable per repo::filepath::start_line).
-        _emit("storing", f"Storing {len(chunks)} chunks in Qdrant...")
-        print("Storing in Qdrant...")
-        written_ids = self.store.upsert_chunks(chunks, vectors)
+        # Progress callback for the embedder — maps batch-level progress
+        # within a checkpoint group to an overall "chunks embedded / total"
+        # count. `new_done` snapshots the running total across groups.
+        def _embed_progress(batch_done: int, batch_total: int) -> None:
+            overall_done = new_done + batch_done
+            _emit("embedding", f"Embedded {overall_done}/{total_new} chunks...")
+
+        for group_start in range(0, len(chunks), CHECKPOINT_SIZE):
+            group = chunks[group_start : group_start + CHECKPOINT_SIZE]
+
+            # Within the group, split reused vs new. Only the new ones hit
+            # the embedding API; reused chunks pull from `existing_vectors`.
+            group_new_chunks = [c for c in group if c["text_hash"] not in existing_vectors]
+
+            if group_new_chunks:
+                group_new_vectors = self.embedder.embed_chunks(
+                    group_new_chunks, progress=_embed_progress,
+                )
+                new_done += len(group_new_chunks)
+            else:
+                group_new_vectors = []
+
+            # Stitch back into group order so each chunk lines up with its vector.
+            group_hash_to_vec = {
+                c["text_hash"]: v for c, v in zip(group_new_chunks, group_new_vectors)
+            }
+            group_vectors = [
+                existing_vectors.get(c["text_hash"]) or group_hash_to_vec[c["text_hash"]]
+                for c in group
+            ]
+
+            # Upsert this group before touching the next — that's the actual
+            # checkpoint. If the next group's embedding call dies, everything
+            # up to here is already in Qdrant.
+            _emit("storing", f"Storing checkpoint {group_start + len(group)}/{len(chunks)}...")
+            group_ids = self.store.upsert_chunks(group, group_vectors)
+            written_ids.extend(group_ids)
+            print(f"  Checkpoint {group_start + len(group)}/{len(chunks)} stored")
 
         # On a force re-index, delete chunks that no longer exist in the source.
         # This handles deleted files and renamed functions — their old IDs won't
