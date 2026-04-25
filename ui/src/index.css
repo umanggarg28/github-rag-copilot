@@ -149,6 +149,49 @@ html { height: 100dvh; background: #09090E; overflow: hidden; }
 /* Color-scheme: dark — browser chrome adapts */
 :root { color-scheme: dark; }
 
+/* Custom text selection — default browser blue is generic and clashes with
+   the accent palette. Use the same blueprint-blue tint at low alpha so any
+   highlighted text reads as part of the product, not an OS overlay. The
+   light text colour stays legible on the soft accent fill. */
+::selection {
+  background: rgba(91, 143, 249, 0.32);
+  color: var(--text);
+}
+::-moz-selection {
+  background: rgba(91, 143, 249, 0.32);
+  color: var(--text);
+}
+
+/* CompassSpinner — slow, deliberate rotation. Linear timing because a real
+   compass needle rotates at constant velocity once disturbed; ease-in-out
+   would create a "breathing" rhythm that reads as gif-ish. 6s per revolution
+   is the threshold below which the eye starts registering "spinning" and
+   above which it reads as "settling" — we want the latter. */
+.compass-spin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: compass-spin-rotate 6s linear infinite;
+  transform-origin: 50% 50%;
+  /* will-change is a paint hint — the browser keeps the element on its own
+     compositor layer so each rotation frame doesn't trigger a full repaint.
+     Cheap on memory at this size; matters when many spinners coexist. */
+  will-change: transform;
+}
+.compass-spin svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+@keyframes compass-spin-rotate {
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .compass-spin { animation: none; }
+}
+
 /* ── Smooth page entry ──────────────────────────────────────────────────────── */
 body {
   font-family: var(--sans);
@@ -463,15 +506,41 @@ textarea:focus-visible {
     /* Bottom-right counter-bloom — depth through color variance */
     radial-gradient(ellipse 120% 30% at 100% 100%, rgba(129, 140, 248, 0.06) 0%, transparent 60%),
     #060610;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  /* No flat 1px border — the seam is rendered as an absolute pseudo-element
+     so it can carry a vertical gradient (transparent → faint accent → transparent),
+     reading as a precision-instrument spine instead of a plain divider. The
+     ambient-right spill via box-shadow stays for the soft glow into the main pane. */
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Glass edge + ambient right spill */
+  position: relative;
   box-shadow:
     inset -1px 0 0 rgba(91, 143, 249, 0.05),
     4px 0 32px rgba(0, 0, 0, 0.60),
     8px 0 64px rgba(0, 0, 0, 0.25);
+}
+
+/* Sidebar right-edge spine — replaces a flat 1px border. Vertical gradient
+   from transparent at the top, faint accent in the middle (where the eye
+   spends most time), back to transparent at the bottom. The kind of seam
+   detail you find on premium IDE / instrument UIs (Linear, Raycast). Pseudo
+   element so it doesn't disturb the layout. */
+.sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(91, 143, 249, 0.08) 22%,
+    rgba(91, 143, 249, 0.18) 50%,
+    rgba(91, 143, 249, 0.08) 78%,
+    transparent 100%
+  );
 }
 
 /* Scrollable content area — everything above the MCP panel */
@@ -814,6 +883,12 @@ textarea:focus-visible {
   font-weight: 500;
   flex-shrink: 0;
   letter-spacing: 0.02em;
+  /* Tabular numerals: every digit takes the same advance width, so when
+     counts of different magnitudes (27, 681, 13561) stack in a list they
+     align cleanly on the right edge. Reads instrument-like, not webpage-like.
+     Single declaration, but it's the kind of detail that separates a
+     dashboard from a control panel. */
+  font-variant-numeric: tabular-nums;
   /* Soft pill on a sheer backdrop — feels premium, not "dev-tool" */
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.06);
@@ -903,7 +978,15 @@ textarea:focus-visible {
   border: none;
   color: var(--text);
   font-weight: 600;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+  /* Three-layer depth: stronger top inner highlight + subtle drop shadow
+     pulls the active pill ABOVE the wrapper's inset (which makes inactive
+     pills read as "pressed-in"), and a 1px hairline outline gives the
+     raised edge definition. iOS/macOS segmented-control trick — the
+     active segment looks physically raised, not just a different colour. */
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.18),
+    0 1px 2px rgba(0,0,0,0.35),
+    0 0 0 1px rgba(255,255,255,0.06);
 }
 
 /* Agent pill — distinct accent treatment so the mode reads clearly at a
@@ -925,8 +1008,12 @@ textarea:focus-visible {
 .pill--agent.active {
   background: var(--accent-dim);
   color: var(--accent-light);
+  /* Same three-layer depth as the default .pill.active, but the hairline
+     edge is the accent border so the agent pill carries its accent
+     vocabulary into its raised state. */
   box-shadow:
     inset 0 1px 0 rgba(200, 220, 255, 0.18),
+    0 1px 2px rgba(0,0,0,0.40),
     0 0 0 1px var(--accent-border);
 }
 .pill--agent.active .pill-mark {
@@ -1809,6 +1896,11 @@ html.is-revealing .app-view-host {
   border: 1px solid rgba(255, 255, 255, 0.06);
   overflow: hidden;
   box-shadow:
+    /* Top inner highlight — one hairline of light along the upper edge
+       completes the "lit object under skylight" effect. The card already
+       has the outer accent ring and drop shadows; this is the missing
+       piece that makes it read as a window with material weight. */
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 0 0 1px color-mix(in srgb, var(--demo-accent, #5B8FF9) 22%, transparent),
     0 30px 90px rgba(0, 0, 16, 0.55),
     0 0 120px color-mix(in srgb, var(--demo-accent, #5B8FF9) 14%, transparent);
@@ -2039,20 +2131,48 @@ html.is-revealing .app-view-host {
 .lh-url-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 14px;
+  gap: 7px;
+  padding: 0 18px;
   border: none;
   border-radius: calc(var(--radius) - 2px);
-  background: var(--accent);
+  /* Top-lit gradient: accent-light at the top edge → accent at the bottom.
+     With the inner top highlight + outer accent glow this reads as a real
+     button under implied "skylight" — a primary CTA, not a flat rectangle. */
+  background: linear-gradient(180deg, var(--accent-light) 0%, var(--accent) 100%);
   color: #fff;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
   cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-spring-snap), background var(--dur-fast) ease;
+  /* Three-layer presence: inner top highlight (light source visible on the
+     top edge), bottom-edge inner shadow for depth, soft outer accent glow
+     for "this is the primary action you should click." */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15),
+    0 4px 14px -4px rgba(91, 143, 249, 0.45);
+  transition:
+    transform var(--dur-fast) var(--ease-spring-snap),
+    box-shadow var(--dur-fast) ease,
+    filter var(--dur-fast) ease;
 }
-.lh-url-btn:hover { background: #4c7ee8; transform: translateX(1px); }
-.lh-url-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.lh-url-btn:hover {
+  /* Brighten via filter (cheaper than re-blending a new gradient) and
+     swell the outer glow. Feels like the button is reaching toward the
+     cursor without actually moving it (jumpy hover translates feel cheap). */
+  filter: brightness(1.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.15),
+    0 6px 22px -4px rgba(91, 143, 249, 0.65);
+}
+.lh-url-btn:active { transform: translateY(0.5px); filter: brightness(0.95); }
+.lh-url-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: saturate(0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
 
 /* ══════════════════════════════════════════════════════════
    LANDING INGESTION — the journey
@@ -4497,6 +4617,9 @@ html.is-revealing .app-view-host {
   opacity: 0.65;
   flex-shrink: 0;
   font-family: var(--mono);
+  /* Tabular nums so "5m ago" / "12m ago" / "2h ago" align consistently
+     down the session list — same craft signal as .repo-count. */
+  font-variant-numeric: tabular-nums;
 }
 
 .session-delete {
