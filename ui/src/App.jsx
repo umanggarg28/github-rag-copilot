@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import posthog from "posthog-js";
 import Sidebar from "./components/Sidebar";
 import Message from "./components/Message";
@@ -34,12 +35,48 @@ const ICONS = {
 };
 
 export default function App() {
+  // ── URL-driven state ─────────────────────────────────────────────────
+  // activeRepo + view used to be local React state; they're now derived
+  // from the URL so refreshing preserves position, links are shareable,
+  // and browser back/forward works without bespoke history shims. The
+  // setActiveRepo / setView functions wrap useNavigate so existing call
+  // sites don't change — they just push to history instead of mutating
+  // local state.
+  const params         = useParams();
+  const navigate       = useNavigate();
+  const location       = useLocation();
+
+  const activeRepo = useMemo(() => {
+    return (params.owner && params.repo) ? `${params.owner}/${params.repo}` : null;
+  }, [params.owner, params.repo]);
+
+  // View is determined by the trailing path segment:
+  //   /r/owner/repo            → graph (default — diagram is the richer landing)
+  //   /r/owner/repo/diagram    → graph
+  //   /r/owner/repo/chat       → chat
+  // Without a repo, view is irrelevant; we report "chat" so the empty
+  // landing state stays unchanged.
+  const view = useMemo(() => {
+    if (!activeRepo) return "chat";
+    if (location.pathname.endsWith("/chat")) return "chat";
+    return "graph";  // /r/owner/repo and /r/owner/repo/diagram both land here
+  }, [activeRepo, location.pathname]);
+
+  const setActiveRepo = useCallback((slug) => {
+    if (!slug) navigate("/");
+    else        navigate(`/r/${slug}`);
+  }, [navigate]);
+
+  const setView = useCallback((nextView) => {
+    if (!activeRepo) return;  // no repo selected — nothing to switch on
+    if (nextView === "chat")  navigate(`/r/${activeRepo}/chat`);
+    else                      navigate(`/r/${activeRepo}/diagram`);
+  }, [activeRepo, navigate]);
+
   const [repos, setRepos]           = useState([]);
   const [reposLoading, setReposLoading] = useState(true);
-  const [activeRepo, setActiveRepo] = useState(null);
   const [mode, setMode]             = useState("hybrid");
   const [agentMode, setAgentMode]   = useState(() => localStorage.getItem('ghrc_agentMode') === 'true');
-  const [view, setView]             = useState("chat");  // "chat" | "graph"
   const [messages, setMessages]     = useState([]);
   const [sessions, setSessions]     = useState([]);      // recent sessions for active repo
   const [lastSources, setLastSources] = useState([]); // sources from last RAG query (kept for future use)

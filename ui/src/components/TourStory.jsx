@@ -43,13 +43,22 @@ function ExternalIcon() {
   );
 }
 
-export default function TourStory({ data, repo, onAskAbout }) {
+export default function TourStory({ data, repo, onAskAbout, initialConceptId = null }) {
   // Concepts are indexed by reading_order so ← / → match the author's intended sequence
   const concepts = [...(data.concepts || [])].sort(
     (a, b) => (a.reading_order ?? 999) - (b.reading_order ?? 999)
   );
 
-  const [idx, setIdx] = useState(0);
+  // When opened from a Canvas card click, jump straight to that concept's
+  // index. Falls back to 0 if the id isn't found (e.g. tour regenerated and
+  // the concept no longer exists). useState's initializer form runs once;
+  // subsequent mode toggles don't re-jump because Canvas only sets a fresh
+  // initialConceptId on click.
+  const [idx, setIdx] = useState(() => {
+    if (!initialConceptId) return 0;
+    const found = concepts.findIndex(c => c.id === initialConceptId);
+    return found >= 0 ? found : 0;
+  });
   // Bump a key on index change so the card remounts — CSS animation replays
   // without needing to toggle className off then on.
   const [animKey, setAnimKey] = useState(0);

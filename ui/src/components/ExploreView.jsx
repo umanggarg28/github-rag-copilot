@@ -69,31 +69,26 @@ function styleFor(type) {
 }
 
 // ── Card geometry ─────────────────────────────────────────────────────────────
+// Cards no longer grow on click (description moved to Story mode). The
+// at-rest size covers name + subtitle + file + ask button only — key
+// items and the "Builds on" row are revealed on hover via CSS max-height
+// transitions. Hovering a card expands it AND its dependency neighbours
+// (so context shows up alongside the focal concept). The lower rows are
+// pushed down by EXPANSION_H below to keep the expansion from clipping
+// into them.
 const CARD_W      = 220;  // card width in canvas px
-const CARD_H      = 172;  // collapsed card height
+const CARD_H      = 142;  // at-rest card height
 const COL_GAP     = 100;  // horizontal gap between cards in the same row
 const ROW_GAP     = 72;   // vertical gap between rows
-const EXPANSION_H = 195;  // extra px a card grows when expanded (desc + items + padding)
+// Approximate height the card grows when hovered (key items row + builds-on
+// row + paddings). Used to offset rows below a hovered card so the expansion
+// has room to land. Slightly conservative — under-shooting causes overlap,
+// over-shooting wastes a bit of vertical canvas during the hover.
+const EXPANSION_H = 180;
 
 // How many concepts appear in each horizontal row.
 // With 12 concepts and PER_ROW=4: 3 rows of 4, reads like a book.
 const PER_ROW = 4;
-
-// When a card is expanded, push all cards in rows BELOW it down by EXPANSION_H
-// so the expanded content doesn't overlap them. Returns { [id]: yOffset }.
-function expansionOffsets(selectedId, concepts, basePositions) {
-  if (selectedId === null) return {};
-  const sel = basePositions[selectedId];
-  if (!sel) return {};
-  const offsets = {};
-  concepts.forEach(c => {
-    if (c.id === selectedId) return;
-    const p = basePositions[c.id];
-    // Any card in a row strictly below the expanded card's row
-    if (p && p.y > sel.y) offsets[c.id] = EXPANSION_H;
-  });
-  return offsets;
-}
 
 // ── Layout: row-major reading order ───────────────────────────────────────────
 // Concepts are placed left-to-right by reading_order, wrapping to the next row
@@ -146,28 +141,40 @@ function bezierPath(fromPos, toPos) {
 }
 
 // ── ConceptCard ────────────────────────────────────────────────────────────────
-function ConceptCard({ concept, visualNum, isEntry, isSelected, isHovered, isDimmed, pos, onSelect, onHover, onAsk, onDragStart, wasDragged }) {
+//
+// Canvas cards used to embed the full description here when selected, which
+// duplicated content with Story mode. The split now is:
+//   • Canvas cards = relational view: name, file, key items, what this
+//     depends on. A clicked card jumps the viewer to Story mode for the
+//     deeper read.
+//   • Story mode = the reader: long-form description, code link, depends-on
+//     pills with cross-references.
+// Each view does one job well; we no longer maintain the same prose in two
+// places.
+function ConceptCard({
+  concept, visualNum, isEntry, isHovered, isDimmed, pos,
+  onOpenStory, onHover, onAsk, onDragStart, wasDragged,
+  dependsOnNames,  // [{id, name}] — resolved neighbours for the "Connects to" row
+}) {
   const s = styleFor(concept.type);
 
   return (
     <div
-      className={`ec-card${isSelected ? " ec-selected" : ""}${isDimmed ? " ec-dimmed" : ""}`}
+      className={`ec-card${isHovered ? " ec-hover" : ""}${isDimmed ? " ec-dimmed" : ""}`}
       style={{
         position: "absolute",
-        zIndex: isSelected ? 10 : 1,
+        zIndex: isHovered ? 10 : 1,
         left: pos.x,
         top: pos.y,
         width: CARD_W,
         cursor: "grab",
-        borderColor: isSelected ? s.border : isHovered ? s.border : undefined,
-        boxShadow: isSelected
-          ? `0 0 0 2px ${s.border}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
-          : isHovered
+        borderColor: isHovered ? s.border : undefined,
+        boxShadow: isHovered
           ? `0 0 0 2px ${s.border}, 0 0 20px ${s.glow.replace(/[\d.]+\)$/, '0.60)')}, 0 20px 60px ${s.glow.replace(/[\d.]+\)$/, '0.45)')}`
           : undefined,
       }}
       onMouseDown={(e) => onDragStart?.(e, concept, pos)}
-      onClick={() => { if (!wasDragged?.current) onSelect(concept.id); }}
+      onClick={() => { if (!wasDragged?.current) onOpenStory(concept.id); }}
       onMouseEnter={() => onHover(concept.id)}
       onMouseLeave={() => onHover(null)}
     >
@@ -194,21 +201,40 @@ function ConceptCard({ concept, visualNum, isEntry, isSelected, isHovered, isDim
         {concept.file}
       </div>
 
-      {/* Expanded: description + key methods */}
-      {isSelected && (
-        <div className="ec-expanded">
-          <p className="ec-desc">{concept.description}</p>
-          {concept.key_items?.length > 0 && (
-            <div className="ec-items">
-              {concept.key_items.map(item => (
-                <code key={item} className="ec-item">{item}</code>
-              ))}
-            </div>
+      {/* Key items — always visible. These are the named methods/functions
+          inside the concept, the relational hook readers care about most
+          when scanning the canvas ("what's IN this thing?"). */}
+      {concept.key_items?.length > 0 && (
+        <div className="ec-items">
+          {concept.key_items.slice(0, 4).map(item => (
+            <code key={item} className="ec-item">{item}</code>
+          ))}
+          {concept.key_items.length > 4 && (
+            <span className="ec-item-more">+{concept.key_items.length - 4}</span>
           )}
         </div>
       )}
 
-      {/* Ask button */}
+      {/* Connects to — surfaces the dependency edges as readable text so
+          users can scan a card and see where exploration leads next without
+          tracing arrows visually. Mirrors the depends_on data already used
+          to draw the blue connection arrows on the canvas. */}
+      {dependsOnNames?.length > 0 && (
+        <div className="ec-connects">
+          <span className="ec-connects-label">Builds on</span>
+          <div className="ec-connects-list">
+            {dependsOnNames.slice(0, 3).map(d => (
+              <span key={d.id} className="ec-connects-item">{d.name}</span>
+            ))}
+            {dependsOnNames.length > 3 && (
+              <span className="ec-connects-more">+{dependsOnNames.length - 3}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Ask button — separate path from "Read in Story" (card body click).
+          Story = read; Ask = converse. Two intents, two affordances. */}
       <button
         className="ec-ask"
         onClick={e => { e.stopPropagation(); onAsk(concept); }}
@@ -338,14 +364,26 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   const [traceLog, setTrace]    = useState([]);      // agent investigation steps
   const [traceOpen, setTrOpen]  = useState(true);   // trace panel expanded?
   const [error, setError]       = useState(null);
-  const [selectedId, setSelected] = useState(null);
   const [hoveredId, setHovered]   = useState(null);
+  // Tracks which concept Story mode should jump to when launched from a
+  // Canvas card click. Bumped each click so TourStory remounts to that
+  // concept; null means "open Story at the start" (e.g. via the mode tab).
+  const [storyInitialId, setStoryInitialId] = useState(null);
   // "canvas" = scatter of cards + arrows; "story" = focused one-at-a-time reading.
   // Persist so the user's chosen mode survives page reloads.
   const [mode, setMode] = useState(
     () => localStorage.getItem("ghrc_tourMode") === "story" ? "story" : "canvas"
   );
   useEffect(() => { localStorage.setItem("ghrc_tourMode", mode); }, [mode]);
+
+  // Open Story mode focused on a specific concept. Used by Canvas card
+  // clicks: the card is the entry point, Story is the reader. Resetting
+  // storyInitialId before bumping ensures the same-concept second click
+  // still triggers a remount via the React key on TourStory below.
+  function openStoryFor(conceptId) {
+    setStoryInitialId(conceptId);
+    setMode("story");
+  }
   const [xform, setXform]       = useState({ x: 0, y: 0, scale: window.innerWidth < 768 ? 0.5 : 0.85 });
   const dragging   = useRef(false);
   const drag0      = useRef({});
@@ -389,7 +427,6 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     setTrOpen(true);
     setError(null);
     setData(null);
-    setSelected(null);
     setXform({ x: 0, y: 0, scale: window.innerWidth < 768 ? 0.5 : 0.85 });
     const cancel = streamTour(repo, {
       force,
@@ -624,9 +661,28 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
     .sort(([, a], [, b]) => a.y !== b.y ? a.y - b.y : a.x - b.x)
     .forEach(([id], i) => { visualNumber[Number(id)] = i + 1; });
 
-  // When a card is expanded push the cards below it in the same column down
-  // so the expanded content doesn't overlap them.
-  const yOffsets  = expansionOffsets(selectedId, concepts, basePositions);
+  // When a card is hovered, push every card in a row strictly BELOW the
+  // hovered card's row down by EXPANSION_H so the expansion has room. The
+  // lower rows reflow smoothly because positions feed into a CSS transform
+  // with a transition on the `top` property — visually the lower rows
+  // glide down rather than jumping.
+  //
+  // We use the HOVERED row, not the connected-set row: the connected
+  // neighbours are usually in the same row as the hovered card (left/right
+  // of it), so pushing only the hovered row's lower neighbours is correct.
+  // If a connected neighbour is in a different row, the offset still
+  // applies via the hovered card's row check below.
+  const yOffsets = (() => {
+    if (hoveredId === null) return {};
+    const hoverPos = basePositions[hoveredId];
+    if (!hoverPos) return {};
+    const offsets = {};
+    concepts.forEach(c => {
+      const p = basePositions[c.id];
+      if (p && p.y > hoverPos.y) offsets[c.id] = EXPANSION_H;
+    });
+    return offsets;
+  })();
   const positions = Object.fromEntries(
     Object.entries(basePositions).map(([id, pos]) => [
       id,
@@ -637,13 +693,16 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
   // Dragged position overrides static layout — falls back to positions[id]
   const getPosFor = (id) => nodePos[id] ?? positions[id];
 
-  // Canvas bounding box — account for potential expansion
+  // Canvas bounding box — accounts for the maximum offset that any card
+  // could pick up if a top-row card is hovered (push amount = EXPANSION_H).
   const allX = Object.values(positions).map(p => p.x + CARD_W + 80);
-  const allY = Object.values(positions).map(p => p.y + CARD_H + (selectedId !== null ? EXPANSION_H : 0) + 80);
+  const allY = Object.values(positions).map(p => p.y + CARD_H + EXPANSION_H + 80);
   const canvasW = Math.max(...allX, 700);
   const canvasH = Math.max(...allY, 500);
 
-  // Connected set for hover dimming: selected node + its direct neighbors
+  // Connected set for hover dimming: hovered node + its direct neighbors
+  // (concepts that depend on it AND concepts it depends on). Other cards
+  // get the .ec-dimmed class so the relational structure pops on hover.
   const connectedIds = hoveredId !== null
     ? new Set([
         hoveredId,
@@ -651,6 +710,21 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
         ...(concepts.find(c => c.id === hoveredId)?.depends_on ?? []),
       ])
     : null;
+
+  // Resolve depends_on ids → concept names for the "Builds on" row on each
+  // card. Done once per render so cards don't each re-walk the concepts
+  // array. Missing ids are filtered out (the LLM occasionally references
+  // concepts that didn't make the final cut).
+  const conceptById = Object.fromEntries(concepts.map(c => [c.id, c]));
+  const dependsOnByCard = Object.fromEntries(
+    concepts.map(c => [
+      c.id,
+      (c.depends_on ?? [])
+        .map(depId => conceptById[depId])
+        .filter(Boolean)
+        .map(dep => ({ id: dep.id, name: dep.name })),
+    ])
+  );
 
   return (
     <div className="ec-container">
@@ -707,7 +781,17 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
         style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}
       >
       {mode === "story" ? (
-        <TourStory data={data} repo={repo} onAskAbout={onAskAbout} />
+        // Key on storyInitialId so opening Story for a new concept remounts
+        // and re-runs the initializer that picks the starting index. Without
+        // the key, a second card click while already in Story mode wouldn't
+        // jump to the new concept (useState initializer fires once).
+        <TourStory
+          key={`story-${storyInitialId ?? "start"}`}
+          data={data}
+          repo={repo}
+          onAskAbout={onAskAbout}
+          initialConceptId={storyInitialId}
+        />
       ) : (
       <>
       {/* ── Canvas ── */}
@@ -852,11 +936,11 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
                 concept={c}
                 visualNum={visualNumber[c.id]}
                 isEntry={isEntry}
-                isSelected={selectedId === c.id}
                 isHovered={hoveredId === c.id || (!!connectedIds && connectedIds.has(c.id))}
                 isDimmed={!!connectedIds && !connectedIds.has(c.id)}
                 pos={pos}
-                onSelect={id => setSelected(v => v === id ? null : id)}
+                dependsOnNames={dependsOnByCard[c.id]}
+                onOpenStory={openStoryFor}
                 onHover={setHovered}
                 onAsk={handleAsk}
                 onDragStart={onNodeDragStart}
@@ -876,7 +960,7 @@ export default function ExploreView({ repo, onAskAbout, onRegenerateRef }) {
           </span>
         ))}
         <span className="ec-legend-hint">
-          {concepts.length} concepts · scroll to zoom · drag canvas or cards · click to expand
+          {concepts.length} concepts · scroll to zoom · drag to pan · hover for detail · click to read
         </span>
       </div>
       </>

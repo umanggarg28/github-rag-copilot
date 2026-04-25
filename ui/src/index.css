@@ -5406,7 +5406,14 @@ html.is-revealing .app-view-host {
   flex-direction: column;
   gap: 4px;
   backdrop-filter: blur(12px);
-  transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
+  /* `top` transitions so cards in lower rows glide down when an upper-row
+     card is hovered (instead of jumping). The same easing curve as the
+     content-expansion transitions, so the whole reflow reads as one motion. */
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    opacity 0.15s,
+    top 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ec-card:hover {
@@ -5497,27 +5504,30 @@ html.is-revealing .app-view-host {
   white-space: nowrap;
 }
 
-/* Expanded section: description + key items */
-.ec-expanded {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255,0.06);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.ec-desc {
-  font-size: 12px;
-  color: var(--text-2);
-  line-height: 1.65;
-  margin: 0;
-}
-
+/* Key items — collapsed by default, revealed on hover. The card stays
+   minimal at rest (name + subtitle + file + ask button) and reveals its
+   relational details on cursor approach. The combination of max-height
+   transition + opacity gives a smooth grow/fade rather than a hard show.
+   .ec-card raises z-index when hovered (set inline by ConceptCard), so
+   the expanded card pops above its neighbours instead of pushing them. */
 .ec-items {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  max-height: 0;
+  margin-top: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin-top 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
+}
+.ec-card:hover .ec-items,
+.ec-card.ec-hover .ec-items {
+  max-height: 80px;
+  margin-top: 6px;
+  opacity: 1;
 }
 
 .ec-item {
@@ -5528,6 +5538,79 @@ html.is-revealing .app-view-host {
   padding: 2px 7px;
   color: var(--accent-soft);
   font-family: var(--mono);
+}
+.ec-item-more {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  align-self: center;
+  padding-left: 2px;
+}
+
+/* Builds-on row — surfaces dependency edges as readable text so the user
+   can scan a card and see where to navigate next without tracing arrows
+   visually. Mirrors the depends_on data already used to draw the blue
+   connection arrows on the canvas. Sits between key items and the Ask
+   button — last "real content" before the action affordance. */
+/* Builds-on row — same hover-to-reveal pattern as .ec-items, so the card
+   has a single "expanded vs at-rest" mode rather than mixing always-on
+   and on-hover content. */
+.ec-connects {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 0;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 1px solid transparent;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    max-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin-top 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding-top 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-top-color 240ms ease,
+    opacity 180ms ease;
+}
+.ec-card:hover .ec-connects,
+.ec-card.ec-hover .ec-connects {
+  max-height: 96px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top-color: rgba(255, 255, 255, 0.05);
+  opacity: 1;
+}
+.ec-connects-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+}
+.ec-connects-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ec-connects-item {
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 1px 6px;
+  /* Truncate so a long neighbour name doesn't blow the card width */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ec-connects-more {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  align-self: center;
+  padding-left: 2px;
 }
 
 /* Ask button */
