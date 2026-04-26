@@ -34,25 +34,26 @@ LLM annotates structure it couldn't have invented; it doesn't invent structure.
 """
 
 import json
-from pathlib import Path
-
 from backend.services.generation import GenerationService
 from backend.services.repo_map_service import RepoMapService
+from ingestion.qdrant_store import QdrantStore
 
 
-_CACHE_DIR = Path(__file__).parent.parent / "readmes"
-_CACHE_DIR.mkdir(exist_ok=True)
-
-
-def _cache_path(repo: str) -> Path:
-    slug = repo.replace("/", "_")
-    return _CACHE_DIR / f"{slug}_readme.md"
-
+# README content is stored under (repo, kind="readme") in the shared
+# Qdrant artifacts collection — see QdrantStore.save_artifact. No more
+# disk caching: HF Spaces filesystem is ephemeral, so disk reads after
+# every container restart returned a miss and triggered re-generation.
 
 class ReadmeService:
-    def __init__(self, repo_map_svc: RepoMapService, gen: GenerationService):
+    def __init__(
+        self,
+        repo_map_svc: RepoMapService,
+        gen:          GenerationService,
+        store:        QdrantStore,
+    ):
         self._repo_map = repo_map_svc
         self._gen      = gen
+        self._store    = store
 
     def build_readme_stream(self, repo: str, force: bool = False):
         """
@@ -67,14 +68,13 @@ class ReadmeService:
         The final "done" event carries the full markdown as `content`.
         All preceding events are progress updates for the UI progress bar.
         """
-        cache = _cache_path(repo)
-
         # ── Cache hit ─────────────────────────────────────────────────────────
-        if not force and cache.exists():
-            yield {"stage": "loading", "progress": 0.1, "message": "Loading cached README…"}
-            content = cache.read_text(encoding="utf-8")
-            yield {"stage": "done", "progress": 1.0, "content": content, "from_cache": True}
-            return
+        if not force:
+            cached = self._store.load_artifact(repo, "readme")
+            if cached and isinstance(cached, dict) and cached.get("content"):
+                yield {"stage": "loading", "progress": 0.1, "message": "Loading cached README…"}
+                yield {"stage": "done", "progress": 1.0, "content": cached["content"], "from_cache": True}
+                return
 
         # ── Build repo map ────────────────────────────────────────────────────
         yield {"stage": "loading", "progress": 0.15, "message": "Analysing repository structure…"}
@@ -216,11 +216,9 @@ Output ONLY the markdown. No preamble, no "Here is the README", no trailing comm
         content = _re.sub(r'^(#+ .+?)`+\s*$', r'\1', content, flags=_re.MULTILINE)
 
         # ── Cache + emit ──────────────────────────────────────────────────────
-        cache.write_text(content, encoding="utf-8")
+        self._store.save_artifact(repo, "readme", {"content": content})
         yield {"stage": "done", "progress": 1.0, "content": content, "from_cache": False}
 
     def invalidate(self, repo: str) -> None:
         """Remove cached README so the next request regenerates it."""
-        p = _cache_path(repo)
-        if p.exists():
-            p.unlink()
+        self._store.delete_artifact(repo, "readme")

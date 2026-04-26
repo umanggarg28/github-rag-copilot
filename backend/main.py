@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
     )
     services.diagram    = DiagramService(_qdrant_store, services.generation)
     services.repo_map   = RepoMapService(_qdrant_store)
-    services.readme     = ReadmeService(services.repo_map, services.generation)
+    services.readme     = ReadmeService(services.repo_map, services.generation, _qdrant_store)
 
     init_mcp_services(services.retrieval, _qdrant_store)
 

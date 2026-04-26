@@ -675,6 +675,139 @@ class QdrantStore:
             if p.payload and "key" in p.payload and "value" in p.payload
         }
 
+    # ── Persistent artifact cache ─────────────────────────────────────────────
+    # Tour, diagram, and README artifacts used to live on disk under
+    # backend/diagrams/ and backend/readmes/. HF Spaces filesystem is
+    # ephemeral — every container restart wiped them and the next visitor
+    # paid the cost of regenerating. Storing them in a Qdrant sidecar
+    # collection makes them durable and shared across all users by default.
+    #
+    # The collection is keyed by (repo, kind) where kind is one of:
+    #   "tour", "diagram_architecture", "diagram_class", "readme"
+    # The point id is a deterministic hash so re-saving overwrites in place.
+
+    @property
+    def _artifacts_collection(self) -> str:
+        return f"{self.collection}_artifacts"
+
+    def _ensure_artifacts_collection(self) -> None:
+        existing = [c.name for c in self.client.get_collections().collections]
+        if self._artifacts_collection not in existing:
+            self.client.create_collection(
+                collection_name=self._artifacts_collection,
+                vectors_config=VectorParams(size=1, distance=Distance.DOT),
+            )
+            for field in ["repo", "kind"]:
+                try:
+                    self.client.create_payload_index(
+                        collection_name=self._artifacts_collection,
+                        field_name=field,
+                        field_schema=PayloadSchemaType.KEYWORD,
+                    )
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _artifact_point_id(repo: str, kind: str) -> str:
+        """Deterministic point id from (repo, kind) so upsert is idempotent."""
+        return hashlib.md5(f"{repo}::{kind}".encode()).hexdigest()
+
+    def save_artifact(
+        self,
+        repo: str,
+        kind: str,
+        data: dict,
+        generated_by_model: str | None = None,
+    ) -> None:
+        """Upsert a generated artifact for a repo. Stores the data plus
+        provenance fields (timestamp + which model produced it) so an
+        operator can later audit how each cached artifact was made."""
+        import datetime
+        self._ensure_artifacts_collection()
+        payload = {
+            "repo":               repo,
+            "kind":               kind,
+            "data":               data,
+            "generated_by_model": generated_by_model or "unknown",
+            "generated_at":       datetime.datetime.utcnow().isoformat(),
+        }
+        self.client.upsert(
+            collection_name=self._artifacts_collection,
+            points=[PointStruct(
+                id=self._artifact_point_id(repo, kind),
+                vector=[0.0],
+                payload=payload,
+            )],
+        )
+
+    def load_artifact(self, repo: str, kind: str) -> dict | None:
+        """Return the stored data for (repo, kind) or None if missing."""
+        self._ensure_artifacts_collection()
+        try:
+            points = self.client.retrieve(
+                collection_name=self._artifacts_collection,
+                ids=[self._artifact_point_id(repo, kind)],
+                with_payload=True,
+                with_vectors=False,
+            )
+        except Exception:
+            return None
+        if not points or not points[0].payload:
+            return None
+        return points[0].payload.get("data")
+
+    def load_artifact_meta(self, repo: str, kind: str) -> dict | None:
+        """Return the full payload (data + provenance) — used by the
+        debug endpoint to surface which model produced what."""
+        self._ensure_artifacts_collection()
+        try:
+            points = self.client.retrieve(
+                collection_name=self._artifacts_collection,
+                ids=[self._artifact_point_id(repo, kind)],
+                with_payload=True,
+                with_vectors=False,
+            )
+        except Exception:
+            return None
+        if not points or not points[0].payload:
+            return None
+        return points[0].payload
+
+    def delete_artifact(self, repo: str, kind: str) -> bool:
+        """Drop a single (repo, kind) entry. Used when --force is passed
+        to the prebake CLI to ensure regeneration."""
+        self._ensure_artifacts_collection()
+        try:
+            self.client.delete(
+                collection_name=self._artifacts_collection,
+                points_selector=[self._artifact_point_id(repo, kind)],
+            )
+            return True
+        except Exception:
+            return False
+
+    def list_artifacts(self, repo: str) -> list[dict]:
+        """List all artifacts for a repo with their provenance — feeds
+        the GET /repos/:owner/:repo/artifacts/info debug endpoint."""
+        self._ensure_artifacts_collection()
+        results, _ = self.client.scroll(
+            collection_name=self._artifacts_collection,
+            scroll_filter=Filter(must=[
+                FieldCondition(key="repo", match=MatchValue(value=repo))
+            ]),
+            limit=50,
+            with_payload=True,
+            with_vectors=False,
+        )
+        return [
+            {
+                "kind":               p.payload.get("kind"),
+                "generated_by_model": p.payload.get("generated_by_model"),
+                "generated_at":       p.payload.get("generated_at"),
+            }
+            for p in results if p.payload
+        ]
+
     # ── Persistent chat sessions ──────────────────────────────────────────────
     # Sidecar collection storing user chat conversations so they survive
     # page reloads and are shareable via /r/:owner/:repo/c/:sessionId URLs.

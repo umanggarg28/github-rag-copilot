@@ -25,9 +25,6 @@ Call invalidate(repo) after re-ingestion to force a rebuild.
 
 import json
 from datetime import datetime
-from pathlib import Path
-
-_MAPS_DIR = Path(__file__).parent.parent / "repo_maps"
 
 # Filenames that strongly suggest entry points
 _ENTRY_NAMES = {
@@ -37,31 +34,26 @@ _ENTRY_NAMES = {
 
 
 class RepoMapService:
-    """Builds, caches, and formats compact repo metadata maps from Qdrant."""
+    """Builds, caches, and formats compact repo metadata maps from Qdrant.
+
+    The map is stored as an artifact under (repo, kind="repo_map") in the
+    shared Qdrant artifacts collection — durable across container restarts
+    and visible to every instance, since the data is derived from Qdrant
+    payloads anyway."""
 
     def __init__(self, qdrant_store):
         self._store = qdrant_store
-        _MAPS_DIR.mkdir(exist_ok=True)
-
-    def _map_path(self, repo: str) -> Path:
-        safe = repo.replace("/", "_").replace(" ", "_")
-        return _MAPS_DIR / f"{safe}.json"
 
     def get_or_build(self, repo: str) -> dict:
         """Return cached map if it exists; otherwise scan Qdrant and build one."""
-        path = self._map_path(repo)
-        if path.exists():
-            try:
-                return json.loads(path.read_text())
-            except Exception:
-                pass  # corrupt file — rebuild
+        cached = self._store.load_artifact(repo, "repo_map")
+        if isinstance(cached, dict) and cached:
+            return cached
         return self._build_and_save(repo)
 
     def invalidate(self, repo: str) -> None:
         """Delete the cached map — call after re-ingestion so stale data isn't served."""
-        path = self._map_path(repo)
-        if path.exists():
-            path.unlink()
+        self._store.delete_artifact(repo, "repo_map")
 
     def _build_and_save(self, repo: str) -> dict:
         """
@@ -157,7 +149,7 @@ class RepoMapService:
         }
 
         try:
-            self._map_path(repo).write_text(json.dumps(repo_map, indent=2))
+            self._store.save_artifact(repo, "repo_map", repo_map)
         except Exception as e:
             print(f"RepoMapService: could not save map for {repo}: {e}")
 

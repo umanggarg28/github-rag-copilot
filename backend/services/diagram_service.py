@@ -351,63 +351,58 @@ class DiagramService:
     grounded with real function names from the AST.
     """
 
-    # Disk cache directory — diagrams are expensive LLM calls, persist them
-    # across server restarts so users never wait twice for the same repo.
-    _CACHE_DIR = Path(__file__).parent.parent / "diagrams"
-
     def __init__(self, store: QdrantStore, generation_svc: GenerationService):
         self._store = store
         self._gen   = generation_svc
+        # In-memory hot cache. The durable persistent cache lives in Qdrant
+        # via store.save_artifact / store.load_artifact (see methods below).
         self._cache: dict[tuple[str, str], dict] = {}  # (repo, type) → parsed JSON dict
         self._tour_cache: dict[str, dict] = {}          # repo → tour JSON
-        self._CACHE_DIR.mkdir(exist_ok=True)
 
-    # ── Disk helpers ──────────────────────────────────────────────────────────
-
-    def _diagram_path(self, repo: str, diagram_type: str) -> Path:
-        slug = repo.replace("/", "_")
-        return self._CACHE_DIR / f"{slug}_{diagram_type}.json"
-
-    def _tour_path(self, repo: str) -> Path:
-        slug = repo.replace("/", "_")
-        return self._CACHE_DIR / f"{slug}_tour.json"
+    # ── Persistent cache helpers ──────────────────────────────────────────────
+    # Diagrams and tours are expensive LLM-generated artifacts. We keep them
+    # in Qdrant (shared across instances + survives container restarts) plus
+    # an in-memory hot cache for fast repeat reads within a process.
 
     def _load_diagram(self, repo: str, diagram_type: str) -> dict | None:
-        """Load a cached diagram from disk into memory. Returns None if not found."""
-        import json as _json
-        path = self._diagram_path(repo, diagram_type)
-        if path.exists():
-            try:
-                data = _json.loads(path.read_text())
-                self._cache[(repo, diagram_type)] = data
-                return data
-            except Exception:
-                path.unlink(missing_ok=True)  # delete corrupt file
+        data = self._store.load_artifact(repo, f"diagram_{diagram_type}")
+        if data is not None:
+            self._cache[(repo, diagram_type)] = data
+            return data
         return None
 
-    def _save_diagram(self, repo: str, diagram_type: str, data: dict) -> None:
-        import json as _json
+    def _save_diagram(
+        self,
+        repo: str,
+        diagram_type: str,
+        data: dict,
+        model: str | None = None,
+    ) -> None:
         try:
-            self._diagram_path(repo, diagram_type).write_text(_json.dumps(data))
+            self._store.save_artifact(
+                repo=repo,
+                kind=f"diagram_{diagram_type}",
+                data=data,
+                generated_by_model=model,
+            )
         except Exception:
-            pass  # disk write failure is non-fatal — memory cache still works
+            pass  # persistence failure is non-fatal — memory cache still works
 
     def _load_tour(self, repo: str) -> dict | None:
-        import json as _json
-        path = self._tour_path(repo)
-        if path.exists():
-            try:
-                data = _json.loads(path.read_text())
-                self._tour_cache[repo] = data
-                return data
-            except Exception:
-                path.unlink(missing_ok=True)
+        data = self._store.load_artifact(repo, "tour")
+        if data is not None:
+            self._tour_cache[repo] = data
+            return data
         return None
 
-    def _save_tour(self, repo: str, data: dict) -> None:
-        import json as _json
+    def _save_tour(self, repo: str, data: dict, model: str | None = None) -> None:
         try:
-            self._tour_path(repo).write_text(_json.dumps(data))
+            self._store.save_artifact(
+                repo=repo,
+                kind="tour",
+                data=data,
+                generated_by_model=model,
+            )
         except Exception:
             pass
 
