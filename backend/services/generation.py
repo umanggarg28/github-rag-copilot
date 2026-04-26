@@ -273,6 +273,38 @@ class GenerationService:
 
     def __init__(self):
         self.provider = self._init_provider()
+        self._init_premium()
+        # Process-global premium override. False at runtime; the prebake CLI
+        # flips this on so every downstream `gen.generate()` call routes to
+        # the premium client without needing a `premium=True` kwarg threaded
+        # through every service layer.
+        self.premium_mode = False
+
+    def _init_premium(self) -> None:
+        """Initialise the optional premium client (Claude Sonnet 4.6) used
+        for one-time generation of cached artifacts (tour, README, diagrams,
+        contextual descriptions). Default runtime traffic still goes through
+        the cascade — premium is opt-in per call via `premium=True`.
+
+        If ANTHROPIC_API_KEY is not set, premium is disabled and `premium=True`
+        callers fall through to the cascade with a one-time warning."""
+        self._premium_client = None
+        self._premium_model  = None
+        if not settings.anthropic_api_key:
+            return
+        try:
+            import anthropic
+            self._premium_client = anthropic.Anthropic(
+                api_key=settings.anthropic_api_key,
+                max_retries=0,
+                timeout=120,  # premium artifact generation can be long; allow it
+            )
+            self._premium_model  = getattr(settings, "anthropic_premium_model", None) or "claude-sonnet-4-6"
+            print(f"Generation: premium tier ready ({self._premium_model})")
+        except Exception as e:
+            print(f"Generation: premium tier disabled ({e})")
+            self._premium_client = None
+            self._premium_model  = None
 
     def _init_provider(self) -> str:
         """Pick the best available provider.
@@ -755,7 +787,7 @@ class GenerationService:
 
     def generate(self, system: str, prompt: str, temperature: float = 0.2,
                  json_mode: bool = False, max_tokens: int = 2048,
-                 fast: bool = False) -> str:
+                 fast: bool = False, premium: bool = False) -> str:
         """
         One-shot generation with a custom system prompt — no RAG context, no history.
         Used for structured tasks like diagram/tour generation where we control
@@ -771,12 +803,32 @@ class GenerationService:
           Thread-safe: model selection is passed through the params dict (created
           fresh per call) rather than mutating self._model.
 
+        premium=True: route to the premium client (Claude Sonnet 4.6) instead
+          of the cascade. Used when generating artifacts that get cached and
+          reused indefinitely — paying once for top quality is worth it. If
+          ANTHROPIC_API_KEY is not configured, falls through to the cascade
+          with a one-line warning so callers don't fail silently.
+
         json_mode=True: tells the provider to output valid JSON.
           - OpenAI-compatible (Groq, Gemini, OpenRouter): sets response_format=json_object
             which FORCES the model to output valid JSON — no markdown fences, no preamble.
           - Anthropic: no separate flag needed; the system prompt already says "Return ONLY
             valid JSON". Prompt caching (see _anthropic_complete) keeps this cheap to repeat.
         """
+        # Premium path — bypass the cascade and use the dedicated client.
+        # `premium=True` per call OR self.premium_mode set at process scope
+        # both qualify; the prebake CLI uses the latter to flip everything
+        # at once without threading the kwarg through every service layer.
+        wants_premium = premium or self.premium_mode
+        if wants_premium and self._premium_client:
+            print(f"  [generate] premium={self._premium_model} max_tokens={max_tokens} json={json_mode}")
+            messages = [{"role": "user", "content": prompt}]
+            params   = {"temperature": temperature, "max_tokens": max_tokens,
+                        "json_mode": json_mode, "model": self._premium_model}
+            return self._premium_complete(system, messages, params)
+        if wants_premium and not self._premium_client:
+            print("  [generate] premium requested but ANTHROPIC_API_KEY missing — falling back to cascade")
+
         # Only reset to primary on the first call, not on fallback retries.
         # Without this guard, the recursive retry call resets back to Groq,
         # which 429s again, which retries again — infinite recursion.
@@ -808,6 +860,17 @@ class GenerationService:
                     "Please wait a few minutes and try again."
                 ) from None
             raise
+
+    def current_model(self, premium: bool = False, fast: bool = False) -> str:
+        """Return the model id that a `generate(premium=..., fast=...)` call
+        would currently use. Surfaced so callers can persist it as the
+        `generated_by_model` field on cached artifacts without inspecting
+        internal state. Honours the process-global premium_mode flag too."""
+        if (premium or self.premium_mode) and self._premium_model:
+            return self._premium_model
+        if fast and getattr(self, "_fast_model", None):
+            return self._fast_model
+        return self._model
 
     def answer(self, question: str, context: str, query_type: str, history: list[dict] | None = None) -> str:
         """
@@ -977,6 +1040,24 @@ class GenerationService:
         system_block = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
         response = self._client.messages.create(
             model=self._model,
+            system=system_block,
+            messages=messages,
+            temperature=params["temperature"],
+            max_tokens=params["max_tokens"],
+        )
+        return response.content[0].text
+
+    def _premium_complete(self, system: str, messages: list[dict], params: dict) -> str:
+        """Run a single Anthropic call against the premium client/model
+        (kept separate from the cascade's primary `_client` so the regular
+        runtime path is unaffected). Used by callers that pass `premium=True`
+        to `generate()` for one-time generation of artifacts that get cached
+        and reused (tour, README, diagrams)."""
+        if not self._premium_client:
+            raise RuntimeError("premium client not initialised")
+        system_block = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        response = self._premium_client.messages.create(
+            model=self._premium_model,
             system=system_block,
             messages=messages,
             temperature=params["temperature"],
