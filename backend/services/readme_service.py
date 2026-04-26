@@ -70,10 +70,12 @@ class ReadmeService:
         """
         # ── Cache hit ─────────────────────────────────────────────────────────
         if not force:
-            cached = self._store.load_artifact(repo, "readme")
-            if cached and isinstance(cached, dict) and cached.get("content"):
+            meta = self._store.load_artifact_meta(repo, "readme")
+            if meta and meta.get("data") and meta["data"].get("content"):
+                print(f"[cache hit] readme for {repo} ({meta.get('generated_by_model', 'unknown')})")
                 yield {"stage": "loading", "progress": 0.1, "message": "Loading cached README…"}
-                yield {"stage": "done", "progress": 1.0, "content": cached["content"], "from_cache": True}
+                yield {"stage": "done", "progress": 1.0,
+                       "content": meta["data"]["content"], "from_cache": True}
                 return
 
         # ── Build repo map ────────────────────────────────────────────────────
@@ -216,7 +218,10 @@ Output ONLY the markdown. No preamble, no "Here is the README", no trailing comm
         content = _re.sub(r'^(#+ .+?)`+\s*$', r'\1', content, flags=_re.MULTILINE)
 
         # ── Cache + emit ──────────────────────────────────────────────────────
-        self._store.save_artifact(repo, "readme", {"content": content})
+        self._store.save_artifact(
+            repo, "readme", {"content": content},
+            generated_by_model=self._gen.current_model(),
+        )
         yield {"stage": "done", "progress": 1.0, "content": content, "from_cache": False}
 
     def invalidate(self, repo: str) -> None:

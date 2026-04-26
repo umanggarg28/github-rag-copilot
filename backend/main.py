@@ -135,6 +135,7 @@ app.include_router(agent.router)
 app.include_router(diagrams.router)
 app.include_router(mcp_routes.router)
 app.include_router(sessions.router)
+app.include_router(sessions.artifacts_router)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────

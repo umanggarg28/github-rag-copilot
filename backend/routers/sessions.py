@@ -107,3 +107,27 @@ def delete_session(
     """Delete a session. Idempotent — non-existent ids return ok=True."""
     store.delete_session(session_id)
     return {"ok": True}
+
+
+# ── Artifact provenance (debug-only inspection path) ──────────────────────
+# Returns which model produced each cached artifact for a repo. Not linked
+# from the UI; intended as a curl target so the project owner can audit
+# cache contents (e.g. "is the nanoGPT tour using the premium model yet?").
+
+artifacts_router = APIRouter(tags=["artifacts"])
+
+
+@artifacts_router.get("/repos/{owner}/{name}/artifacts/info")
+def list_artifact_info(
+    owner: str,
+    name:  str,
+    store: Annotated[QdrantStore, Depends(get_qdrant_store)],
+):
+    """Return the kind / generated_by_model / generated_at of every cached
+    artifact for this repo. Used to audit pre-bake runs without touching
+    the live UI."""
+    repo = f"{owner}/{name}"
+    return {
+        "repo":      repo,
+        "artifacts": store.list_artifacts(repo),
+    }

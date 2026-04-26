@@ -365,10 +365,11 @@ class DiagramService:
     # an in-memory hot cache for fast repeat reads within a process.
 
     def _load_diagram(self, repo: str, diagram_type: str) -> dict | None:
-        data = self._store.load_artifact(repo, f"diagram_{diagram_type}")
-        if data is not None:
-            self._cache[(repo, diagram_type)] = data
-            return data
+        meta = self._store.load_artifact_meta(repo, f"diagram_{diagram_type}")
+        if meta and meta.get("data") is not None:
+            print(f"[cache hit] diagram_{diagram_type} for {repo} ({meta.get('generated_by_model','unknown')})")
+            self._cache[(repo, diagram_type)] = meta["data"]
+            return meta["data"]
         return None
 
     def _save_diagram(
@@ -389,10 +390,11 @@ class DiagramService:
             pass  # persistence failure is non-fatal — memory cache still works
 
     def _load_tour(self, repo: str) -> dict | None:
-        data = self._store.load_artifact(repo, "tour")
-        if data is not None:
-            self._tour_cache[repo] = data
-            return data
+        meta = self._store.load_artifact_meta(repo, "tour")
+        if meta and meta.get("data") is not None:
+            print(f"[cache hit] tour for {repo} ({meta.get('generated_by_model','unknown')})")
+            self._tour_cache[repo] = meta["data"]
+            return meta["data"]
         return None
 
     def _save_tour(self, repo: str, data: dict, model: str | None = None) -> None:
@@ -453,7 +455,7 @@ class DiagramService:
             return {"error": "Could not generate diagram. Try regenerating."}
 
         self._cache[cache_key] = data
-        self._save_diagram(repo, diagram_type, data)
+        self._save_diagram(repo, diagram_type, data, model=self._gen.current_model())
         return {"diagram": data, "type": diagram_type}
 
     def build_tour(self, repo: str) -> dict:
@@ -554,7 +556,7 @@ class DiagramService:
             c["depends_on"] = [d for d in c.get("depends_on", []) if d in valid_ids and d != c["id"]]
 
         self._tour_cache[repo] = tour
-        self._save_tour(repo, tour)
+        self._save_tour(repo, tour, model=self._gen.current_model())
         return tour
 
     def build_tour_stream(self, repo: str, force: bool = False):
@@ -602,7 +604,7 @@ class DiagramService:
                 tour = {k: v for k, v in event.items()
                         if k not in ("stage", "progress", "message", "trace")}
                 self._tour_cache[repo] = tour
-                self._save_tour(repo, tour)  # overwrites old disk file on success
+                self._save_tour(repo, tour, model=self._gen.current_model())
             elif event.get("stage") == "error" and force:
                 # Generation failed — fall back to the old disk cache if available
                 # so the user sees stale-but-valid data instead of a hard error
@@ -676,7 +678,7 @@ class DiagramService:
             return
 
         self._cache[cache_key] = data
-        self._save_diagram(repo, diagram_type, data)
+        self._save_diagram(repo, diagram_type, data, model=self._gen.current_model())
         yield {"stage": "done", "progress": 1.0, "diagram": data, "type": diagram_type}
 
     def invalidate(self, repo: str):
