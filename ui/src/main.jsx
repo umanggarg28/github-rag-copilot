@@ -38,11 +38,12 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <Routes>
-        <Route path="/"                       element={<App />} />
-        <Route path="/r/:owner/:repo"         element={<App />} />
-        <Route path="/r/:owner/:repo/diagram" element={<App />} />
-        <Route path="/r/:owner/:repo/chat"    element={<App />} />
-        <Route path="*"                       element={<Navigate to="/" replace />} />
+        <Route path="/"                                element={<App />} />
+        <Route path="/r/:owner/:repo"                  element={<App />} />
+        <Route path="/r/:owner/:repo/diagram"          element={<App />} />
+        <Route path="/r/:owner/:repo/chat"             element={<App />} />
+        <Route path="/r/:owner/:repo/c/:sessionId"     element={<App />} />
+        <Route path="*"                                element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
     <Analytics />

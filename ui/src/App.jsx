@@ -8,7 +8,7 @@ import ReadmeView from "./components/ReadmeView";
 import LandingHero from "./components/LandingHero";
 import LandingIngestion from "./components/LandingIngestion";
 import CustomCursor from "./components/CustomCursor";
-import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpPrompt, fetchAgentModels } from "./api";
+import { fetchRepos, streamQuery, streamAgentQuery, fetchMcpStatus, fetchMcpPrompt, fetchAgentModels, fetchSessions, fetchSession, saveSession, deleteSession } from "./api";
 
 // ── Suggestion card icons ────────────────────────────────────────────────────
 // Simple 16×16 line-art SVGs for each suggestion category.
@@ -50,16 +50,22 @@ export default function App() {
     return (params.owner && params.repo) ? `${params.owner}/${params.repo}` : null;
   }, [params.owner, params.repo]);
 
+  // Session id from /r/:owner/:repo/c/:sessionId — drives which conversation
+  // is loaded into the chat panel. Null when the user is on a fresh chat.
+  const sessionIdFromUrl = params.sessionId || null;
+
   // View is determined by the trailing path segment:
-  //   /r/owner/repo            → graph (default — diagram is the richer landing)
-  //   /r/owner/repo/diagram    → graph
-  //   /r/owner/repo/chat       → chat
+  //   /r/owner/repo                → graph (default — diagram is the richer landing)
+  //   /r/owner/repo/diagram        → graph
+  //   /r/owner/repo/chat           → chat
+  //   /r/owner/repo/c/:sessionId   → chat (a session is always a chat)
   // Without a repo, view is irrelevant; we report "chat" so the empty
   // landing state stays unchanged.
   const view = useMemo(() => {
     if (!activeRepo) return "chat";
     if (location.pathname.endsWith("/chat")) return "chat";
-    return "graph";  // /r/owner/repo and /r/owner/repo/diagram both land here
+    if (location.pathname.includes("/c/")) return "chat";
+    return "graph";
   }, [activeRepo, location.pathname]);
 
   const setActiveRepo = useCallback((slug) => {
@@ -131,35 +137,33 @@ export default function App() {
   // question truncated to 55 chars), messages array, and ISO timestamp.
   // Sessions are stored as `ghrc_sessions_{repo}` → JSON array, newest first.
 
-  // null = landing page (no repo chosen yet). Per-repo sessions are keyed by slug;
-  // landing-mode sessions fall back to the "all" key for historical compat with
-  // any existing localStorage data from previous versions.
-  function sessionsKey(repo) { return `ghrc_sessions_${repo || "all"}`; }
-
-  function readSessions(repo) {
-    try { return JSON.parse(localStorage.getItem(sessionsKey(repo)) || "[]"); } catch { return []; }
-  }
-
-  function writeSessions(repo, list) {
-    try { localStorage.setItem(sessionsKey(repo), JSON.stringify(list)); } catch {}
-  }
-
   // Strip transient streaming fields before saving so reloaded messages are clean
   function cleanMsgs(msgs) {
     return msgs.map(({ streaming: _s, currentTool: _ct, phase: _p, ...m }) => m);
   }
 
+  // Build the session record, mirror it into local state immediately, and
+  // persist to the backend in the background. Optimistic updates keep the
+  // sidebar responsive even on slow networks; a failed save logs but doesn't
+  // surface a UI error since the local state is already correct.
   function upsertSession(repo, sessionId, msgs, isAgentMode = false) {
-    if (!repo || !sessionId || msgs.length === 0) return;
+    if (!repo || !sessionId || msgs.length === 0) return null;
     const title = msgs.find(m => m.role === "user")?.content?.slice(0, 55) ?? "Untitled";
-    const session = { id: sessionId, title, messages: cleanMsgs(msgs), timestamp: new Date().toISOString(), agentMode: isAgentMode };
-    const prev = readSessions(repo);
-    const exists = prev.some(s => s.id === sessionId);
-    const next = exists
-      ? prev.map(s => s.id === sessionId ? session : s)
-      : [session, ...prev].slice(0, 10);
-    writeSessions(repo, next);
-    return next;
+    const session = {
+      id:        sessionId,
+      repo,
+      title,
+      messages:  cleanMsgs(msgs),
+      timestamp: new Date().toISOString(),
+      agentMode: isAgentMode,
+    };
+    setSessions(prev => {
+      const exists = prev.some(s => s.id === sessionId);
+      if (exists) return prev.map(s => s.id === sessionId ? session : s);
+      return [session, ...prev].slice(0, 50);
+    });
+    saveSession(session).catch(err => console.warn("session save failed:", err));
+    return session;
   }
 
   // Keep refs in sync so event handlers always read the latest values
@@ -199,25 +203,79 @@ export default function App() {
   // We update it on every render so it always has the current state in scope.
   useEffect(() => { handleSubmitRef.current = (q) => handleSubmit(null, q); });
 
-  // Load sessions list whenever active repo changes
+  // Load sessions list whenever active repo changes. Sessions live in a
+  // backend Qdrant collection; the first time a user with pre-existing
+  // localStorage data hits the new app for a given repo we push those
+  // records up so nothing is lost in the transition.
   useEffect(() => {
     // Save the current session for the old repo before switching
     if (prevRepoRef.current && prevRepoRef.current !== activeRepo && sessionIdRef.current) {
       upsertSession(prevRepoRef.current, sessionIdRef.current, messagesRef.current, agentMode);
     }
     prevRepoRef.current = activeRepo;
+
+    // Reset chat state. sessionIdRef is set later by the sessionId-from-URL
+    // effect below if the user landed on /r/owner/repo/c/:id.
     sessionIdRef.current = null;
     setCurrentSessionId(null);
     setMessages([]);
     setLastSources([]);
     setFocusFiles(null);
-    setSessions(readSessions(activeRepo));
-    // Auto-navigate to Explore view when a specific repo is selected.
-    // Reset to chat for the landing page — the diagram needs a single repo.
-    if (activeRepo) setView("graph");
-    else setView("chat");
+
+    if (!activeRepo) {
+      setSessions([]);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      // One-time migration: drain any localStorage records for this repo
+      // into the backend, then clear the local key. Idempotent — repeat
+      // calls are no-ops because the localStorage key is gone.
+      try {
+        const localKey = `ghrc_sessions_${activeRepo}`;
+        const localRaw = localStorage.getItem(localKey);
+        if (localRaw) {
+          const local = JSON.parse(localRaw) || [];
+          if (Array.isArray(local) && local.length > 0) {
+            await Promise.all(local.map(s => saveSession({
+              ...s,
+              id:   String(s.id),         // legacy IDs were numbers; backend expects strings
+              repo: activeRepo,
+            })));
+          }
+          localStorage.removeItem(localKey);
+        }
+      } catch (e) {
+        console.warn("session migration failed:", e);
+      }
+
+      const remote = await fetchSessions(activeRepo);
+      if (!cancelled) setSessions(remote);
+    })();
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRepo]);
+
+  // When the URL carries a session id, hydrate the chat panel from that
+  // session. Skips the fetch if the id matches what's already loaded so
+  // unrelated re-renders don't cause flicker.
+  useEffect(() => {
+    if (!activeRepo || !sessionIdFromUrl) return;
+    if (sessionIdFromUrl === sessionIdRef.current) return;
+    let cancelled = false;
+    (async () => {
+      const s = await fetchSession(sessionIdFromUrl);
+      if (cancelled || !s) return;
+      sessionIdRef.current = s.id;
+      setCurrentSessionId(s.id);
+      setMessages(s.messages || []);
+      setLastSources([]);
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "instant" }), 50);
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRepo, sessionIdFromUrl]);
 
   // Auto-save current session after each complete streaming exchange
   const prevStreaming = useRef(false);
@@ -235,37 +293,39 @@ export default function App() {
     if (streaming) return;
     // Save whatever is currently open before switching
     if (sessionIdRef.current && messagesRef.current.length > 0) {
-      const next = upsertSession(activeRepo, sessionIdRef.current, messagesRef.current, agentMode);
-      if (next) setSessions(next);
+      upsertSession(activeRepo, sessionIdRef.current, messagesRef.current, agentMode);
     }
-    sessionIdRef.current = session.id;
-    setCurrentSessionId(session.id);
-    setMessages(session.messages);
-    setLastSources([]);
-    setView("chat");
+    // Navigate to the session URL — the sessionIdFromUrl effect picks up
+    // and hydrates the chat panel from the session record.
+    if (activeRepo) navigate(`/r/${activeRepo}/c/${session.id}`);
     setShowReadme(false);
-    // Scroll to the last message after the messages render
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "instant" }), 50);
   }
 
   function handleDeleteSession(sessionId) {
-    const next = readSessions(activeRepo).filter(s => s.id !== sessionId);
-    writeSessions(activeRepo, next);
-    setSessions(next);
-    // If we deleted the open session, clear the chat
+    setSessions(prev => prev.filter(s => s.id !== sessionId));
+    deleteSession(sessionId).catch(err => console.warn("session delete failed:", err));
+    // If we deleted the open session, clear the chat and drop the /c/:id
+    // segment from the URL so the user lands back on a fresh chat.
     if (sessionIdRef.current === sessionId) {
       sessionIdRef.current = null;
       setCurrentSessionId(null);
       setMessages([]);
       setFocusFiles(null);
+      if (activeRepo) navigate(`/r/${activeRepo}/chat`);
     }
   }
 
   function handleRenameSession(sessionId, newTitle) {
-    const prev = readSessions(activeRepo);
-    const next = prev.map(s => s.id === sessionId ? { ...s, title: newTitle } : s);
-    writeSessions(activeRepo, next);
-    setSessions(next);
+    // Optimistic local update + persist via the same upsert path so a
+    // rename is identical to any other session edit on the wire.
+    setSessions(prev => {
+      const target = prev.find(s => s.id === sessionId);
+      if (target) {
+        saveSession({ ...target, title: newTitle, repo: activeRepo })
+          .catch(err => console.warn("session rename failed:", err));
+      }
+      return prev.map(s => s.id === sessionId ? { ...s, title: newTitle } : s);
+    });
   }
 
   function toggleSidebarCollapse() {
@@ -390,11 +450,17 @@ export default function App() {
     if (!question || streaming) return;
     if (!retryQuestion) setInput(""); // only clear the box on a fresh submit
 
-    // Assign a session ID on the first message of a new conversation
+    // Assign a session ID on the first message of a new conversation, then
+    // reflect it in the URL so the chat is bookmarkable / shareable from
+    // its very first message. UUIDs are URL-safe and globally unique so
+    // two users starting fresh chats don't collide.
     if (!sessionIdRef.current) {
-      const id = Date.now();
+      const id = (typeof crypto !== "undefined" && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `s-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       sessionIdRef.current = id;
       setCurrentSessionId(id);
+      if (activeRepo) navigate(`/r/${activeRepo}/c/${id}`, { replace: true });
     }
 
     // Build conversation history from completed exchanges (not the current one).
@@ -669,14 +735,16 @@ export default function App() {
     if (countdownTimer.current) { clearInterval(countdownTimer.current); countdownTimer.current = null; }
     // Save the current session before starting a new one
     if (sessionIdRef.current && messagesRef.current.length > 0) {
-      const next = upsertSession(activeRepo, sessionIdRef.current, messagesRef.current, agentMode);
-      if (next) setSessions(next);
+      upsertSession(activeRepo, sessionIdRef.current, messagesRef.current, agentMode);
     }
     sessionIdRef.current = null;
     setCurrentSessionId(null);
     setMessages([]);
     setFocusFiles(null);
     setStreaming(false);
+    // Drop the /c/:sessionId segment from the URL so the next message
+    // gets its own fresh id (and shareable link).
+    if (activeRepo && sessionIdFromUrl) navigate(`/r/${activeRepo}/chat`);
   }
 
   // "/" triggers MCP prompt autocomplete — surface this in the placeholder so

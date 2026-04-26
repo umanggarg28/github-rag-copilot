@@ -31,6 +31,42 @@ export async function fetchRepos() {
   return res.json();
 }
 
+// ── Sessions (Tier 2 — shareable chat URLs) ──────────────────────────────────
+// Sessions used to live in localStorage; they're now backed by Qdrant so
+// they survive across machines and are linkable via /r/owner/repo/c/:id.
+// Each helper is fire-and-await — callers handle errors at the call site
+// (typically by falling back to a fresh chat or showing a toast).
+
+export async function fetchSessions(repo) {
+  const res = await fetch(`${BASE}/sessions?repo=${encodeURIComponent(repo)}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.sessions || [];
+}
+
+export async function fetchSession(sessionId) {
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function saveSession(session) {
+  // Fire-and-forget from the caller's POV — we still await so transient
+  // network errors surface, but the UI doesn't gate on the response (the
+  // local state was already updated optimistically before this call).
+  await fetch(`${BASE}/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...phHeaders() },
+    body: JSON.stringify(session),
+  });
+}
+
+export async function deleteSession(sessionId) {
+  await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function ingestRepo(repoUrl, force = false) {
   const res = await fetch(`${BASE}/ingest`, {
     method: "POST",

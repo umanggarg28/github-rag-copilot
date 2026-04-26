@@ -93,6 +93,15 @@ def get_agent_service() -> "AgentService":
         )
     return services.agent
 
+def get_qdrant_store():
+    """Direct access to the shared QdrantStore for routes that don't go
+    through a service (sessions sidecar, simple CRUD). Pulled off the
+    ingestion service since both share the same connection-pooled instance
+    initialised once at startup."""
+    if services.ingestion is None:
+        raise RuntimeError("QdrantStore not initialised")
+    return services.ingestion.store
+
 
 # ── Rate limiter ───────────────────────────────────────────────────────────────
 # Sliding window per IP — no external dependency needed for a single process.

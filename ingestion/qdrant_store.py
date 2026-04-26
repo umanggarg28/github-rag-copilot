@@ -675,6 +675,111 @@ class QdrantStore:
             if p.payload and "key" in p.payload and "value" in p.payload
         }
 
+    # ── Persistent chat sessions ──────────────────────────────────────────────
+    # Sidecar collection storing user chat conversations so they survive
+    # page reloads and are shareable via /r/:owner/:repo/c/:sessionId URLs.
+    # Same pattern as notes/feedback — a 1-dim dummy vector to satisfy
+    # Qdrant's schema requirement, then exact-match lookup by session id.
+
+    @property
+    def _sessions_collection(self) -> str:
+        return f"{self.collection}_sessions"
+
+    def _ensure_sessions_collection(self) -> None:
+        """Create the sessions sidecar collection if missing (idempotent)."""
+        existing = [c.name for c in self.client.get_collections().collections]
+        if self._sessions_collection not in existing:
+            self.client.create_collection(
+                collection_name=self._sessions_collection,
+                vectors_config=VectorParams(size=1, distance=Distance.DOT),
+            )
+            for field in ["repo", "session_id"]:
+                try:
+                    self.client.create_payload_index(
+                        collection_name=self._sessions_collection,
+                        field_name=field,
+                        field_schema=PayloadSchemaType.KEYWORD,
+                    )
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _session_point_id(session_id: str) -> str:
+        """Deterministic point id for a session — md5 of the session_id so
+        the same session always maps to the same point regardless of
+        repo (a session is unique by id alone; the repo is payload). This
+        also makes upsert idempotent."""
+        return hashlib.md5(session_id.encode()).hexdigest()
+
+    def save_session(self, session: dict) -> None:
+        """Upsert a session. `session` must have at least an `id`; everything
+        else (repo, title, messages, agent_mode, timestamp) is stored in
+        the payload as-is. Updating an existing session simply re-upserts
+        with the same id, overwriting the previous payload."""
+        self._ensure_sessions_collection()
+        sid = session.get("id")
+        if not sid:
+            raise ValueError("session must include an 'id' field")
+        self.client.upsert(
+            collection_name=self._sessions_collection,
+            points=[PointStruct(
+                id=self._session_point_id(sid),
+                vector=[0.0],
+                payload={
+                    "session_id": sid,
+                    **session,
+                },
+            )],
+        )
+
+    def list_sessions(self, repo: str, limit: int = 50) -> list[dict]:
+        """Return all sessions for a repo, newest-first by timestamp.
+        Used to populate the sidebar's recent-chats list."""
+        self._ensure_sessions_collection()
+        results, _ = self.client.scroll(
+            collection_name=self._sessions_collection,
+            scroll_filter=Filter(must=[
+                FieldCondition(key="repo", match=MatchValue(value=repo))
+            ]),
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+        sessions = [p.payload for p in results if p.payload]
+        sessions.sort(key=lambda s: s.get("timestamp", ""), reverse=True)
+        return sessions
+
+    def get_session(self, session_id: str) -> dict | None:
+        """Fetch one session by id. Returns None if not found.
+        The point id is deterministic from the session_id, so this is a
+        single point retrieve — no scan/filter needed."""
+        self._ensure_sessions_collection()
+        try:
+            points = self.client.retrieve(
+                collection_name=self._sessions_collection,
+                ids=[self._session_point_id(session_id)],
+                with_payload=True,
+                with_vectors=False,
+            )
+        except Exception:
+            return None
+        if not points:
+            return None
+        return points[0].payload or None
+
+    def delete_session(self, session_id: str) -> bool:
+        """Delete a session by id. Returns True if a point was deleted.
+        Idempotent — calling on a non-existent id is a no-op."""
+        self._ensure_sessions_collection()
+        try:
+            self.client.delete(
+                collection_name=self._sessions_collection,
+                points_selector=[self._session_point_id(session_id)],
+            )
+            return True
+        except Exception:
+            return False
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

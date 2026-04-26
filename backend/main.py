@@ -36,7 +36,7 @@ from retrieval.retrieval import RetrievalService, Reranker
 from ingestion.qdrant_store import QdrantStore
 from ingestion.embedder import Embedder
 
-from backend.routers import ingestion, query, agent, diagrams, mcp_routes
+from backend.routers import ingestion, query, agent, diagrams, mcp_routes, sessions
 
 
 @asynccontextmanager
@@ -134,6 +134,7 @@ app.include_router(query.router)
 app.include_router(agent.router)
 app.include_router(diagrams.router)
 app.include_router(mcp_routes.router)
+app.include_router(sessions.router)
 
 
 # ── Health check ───────────────────────────────────────────────────────────────
