@@ -1095,18 +1095,86 @@ class GenerationService:
         (kept separate from the cascade's primary `_client` so the regular
         runtime path is unaffected). Used by callers that pass `premium=True`
         to `generate()` for one-time generation of artifacts that get cached
-        and reused (tour, README, diagrams)."""
+        and reused (tour, README, diagrams).
+
+        Includes 429 retry-with-backoff. Anthropic returns the rate-limit
+        reset time on the response (in `retry-after` seconds or in
+        `anthropic-ratelimit-output-tokens-reset` ISO timestamp). We sleep
+        until the bucket refills and retry, capped at MAX_RETRIES so a
+        broken account state doesn't loop forever. Self-paces the prebake
+        within whatever Anthropic tier limit applies — no quality loss when
+        rate-limited, just slower wall time."""
         if not self._premium_client:
             raise RuntimeError("premium client not initialised")
+
+        MAX_RETRIES = 4
         system_block = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
-        response = self._premium_client.messages.create(
-            model=self._premium_model,
-            system=system_block,
-            messages=messages,
-            temperature=params["temperature"],
-            max_tokens=params["max_tokens"],
-        )
-        return response.content[0].text
+
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = self._premium_client.messages.create(
+                    model=self._premium_model,
+                    system=system_block,
+                    messages=messages,
+                    temperature=params["temperature"],
+                    max_tokens=params["max_tokens"],
+                )
+                return response.content[0].text
+            except Exception as e:
+                # Anthropic SDK exposes the response on rate-limit / status errors.
+                # Try several places the wait hint might live:
+                #   1. response.headers["retry-after"]            (seconds)
+                #   2. response.headers["anthropic-ratelimit-..."] (ISO timestamp)
+                #   3. exponential backoff fallback
+                status = getattr(e, "status_code", None)
+                is_429 = status == 429 or "rate_limit" in str(e).lower() or "429" in str(e)
+                if not is_429 or attempt >= MAX_RETRIES:
+                    raise
+
+                wait_s = self._anthropic_retry_seconds(e, attempt)
+                # Add a small fudge factor so we land just past the reset boundary
+                wait_s = max(1.0, wait_s + 1.0)
+                print(f"  [premium] rate limited; sleeping {wait_s:.1f}s before retry {attempt + 1}/{MAX_RETRIES}")
+                time.sleep(wait_s)
+
+        # Defensive — loop above should always either return or raise.
+        raise RuntimeError("premium retry loop exited without resolution")
+
+    @staticmethod
+    def _anthropic_retry_seconds(err: Exception, attempt: int) -> float:
+        """Best-effort parse of how long to wait before retrying an Anthropic
+        429. Falls back to exponential backoff (5, 10, 20, 40 s) if no header
+        information is available."""
+        from datetime import datetime, timezone
+        headers = {}
+        # The SDK attaches the underlying response on httpx.HTTPStatusError-like errors.
+        for attr in ("response", "_response", "http_response"):
+            r = getattr(err, attr, None)
+            if r is not None:
+                headers = dict(getattr(r, "headers", {}) or {})
+                if headers:
+                    break
+        # Normalise to lowercase keys so capitalised variants don't slip past.
+        headers = {k.lower(): v for k, v in headers.items()}
+
+        retry_after = headers.get("retry-after")
+        if retry_after:
+            try:
+                return float(retry_after)
+            except (TypeError, ValueError):
+                pass
+
+        reset_iso = headers.get("anthropic-ratelimit-output-tokens-reset")
+        if reset_iso:
+            try:
+                reset_dt = datetime.fromisoformat(reset_iso.replace("Z", "+00:00"))
+                now      = datetime.now(timezone.utc)
+                return max(1.0, (reset_dt - now).total_seconds())
+            except Exception:
+                pass
+
+        # Exponential backoff fallback: 5, 10, 20, 40 s
+        return min(60.0, 5.0 * (2 ** attempt))
 
     def _anthropic_stream(self, system: str, messages: list[dict], params: dict) -> Iterator[str]:
         system_block = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
