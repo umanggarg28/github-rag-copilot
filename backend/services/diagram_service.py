@@ -92,6 +92,29 @@ def _parse_json(raw: str) -> dict:
     raise ValueError(f"No JSON found in LLM response: {raw[:200]}")
 
 
+def _would_demote_premium(store, repo: str, kind: str, new_model: str | None) -> bool:
+    """Check whether persisting `new_model`'s output for (repo, kind) would
+    demote a premium-baked artifact down to a free-tier one.
+
+    Used by the artifact save sites to refuse runtime-cascade overwrites of
+    Claude-produced cache entries. Returns False on any unexpected payload
+    shape so persistence stays robust — protection is best-effort, not a
+    correctness invariant. Premium-to-premium and premium-to-free-on-empty
+    cases both return False (i.e. allow the save).
+    """
+    try:
+        meta = store.load_artifact_meta(repo, kind)
+    except Exception:
+        return False
+    if not meta:
+        return False
+    existing_model = str(meta.get("generated_by_model") or "")
+    new_str        = str(new_model or "")
+    existing_is_premium = existing_model.lower().startswith("claude")
+    new_is_premium      = new_str.lower().startswith("claude")
+    return existing_is_premium and not new_is_premium
+
+
 _DIAGRAM_SYSTEM = (
     "You are an expert software architect who maps the structure of real production codebases. "
     "Your diagrams are grounded entirely in what the source code actually contains. "
@@ -379,10 +402,14 @@ class DiagramService:
         data: dict,
         model: str | None = None,
     ) -> None:
+        kind = f"diagram_{diagram_type}"
+        if _would_demote_premium(self._store, repo, kind, model):
+            print(f"[protect] not overwriting premium {kind} for {repo} with {model}")
+            return
         try:
             self._store.save_artifact(
                 repo=repo,
-                kind=f"diagram_{diagram_type}",
+                kind=kind,
                 data=data,
                 generated_by_model=model,
             )
@@ -398,6 +425,9 @@ class DiagramService:
         return None
 
     def _save_tour(self, repo: str, data: dict, model: str | None = None) -> None:
+        if _would_demote_premium(self._store, repo, "tour", model):
+            print(f"[protect] not overwriting premium tour for {repo} with {model}")
+            return
         try:
             self._store.save_artifact(
                 repo=repo,

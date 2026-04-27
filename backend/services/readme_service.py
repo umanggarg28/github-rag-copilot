@@ -218,10 +218,19 @@ Output ONLY the markdown. No preamble, no "Here is the README", no trailing comm
         content = _re.sub(r'^(#+ .+?)`+\s*$', r'\1', content, flags=_re.MULTILINE)
 
         # ── Cache + emit ──────────────────────────────────────────────────────
-        self._store.save_artifact(
-            repo, "readme", {"content": content},
-            generated_by_model=self._gen.current_model(),
-        )
+        # Refuse to overwrite a premium-baked README with a runtime
+        # free-tier regeneration; the user still gets the new content
+        # in this response, but the cache stays premium for everyone else.
+        new_model = self._gen.current_model()
+        existing  = self._store.load_artifact_meta(repo, "readme") or {}
+        ex_model  = str(existing.get("generated_by_model") or "")
+        if ex_model.lower().startswith("claude") and not (new_model or "").lower().startswith("claude"):
+            print(f"[protect] not overwriting premium readme for {repo} with {new_model}")
+        else:
+            self._store.save_artifact(
+                repo, "readme", {"content": content},
+                generated_by_model=new_model,
+            )
         yield {"stage": "done", "progress": 1.0, "content": content, "from_cache": False}
 
     def invalidate(self, repo: str) -> None:
