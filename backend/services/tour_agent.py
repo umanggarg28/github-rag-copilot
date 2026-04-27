@@ -802,7 +802,8 @@ class TourAgent:
         for round_n in range(max_rounds):
             raw = self._gen.generate(
                 self._AGENTIC_MAP_SYSTEM, transcript,
-                temperature=0.0, max_tokens=700,  # Gemma 4 needs ~700 for verbose THINK+TOOL
+                temperature=0.0,
+                max_tokens=self._gen.cap("react_round_tokens", 700),
             )
 
             # Parse THINK + TOOL or DONE from the LLM's response
@@ -883,7 +884,8 @@ class TourAgent:
         transcript += "\nROUND LIMIT REACHED. Output DONE: now with what you have found.\n"
         raw = self._gen.generate_non_thinking(
             self._AGENTIC_MAP_SYSTEM, transcript,
-            temperature=0.0, max_tokens=700,
+            temperature=0.0,
+            max_tokens=self._gen.cap("react_done_tokens", 700),
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
@@ -999,7 +1001,8 @@ Rules:
   authors considered important enough to document
 """
         raw = self._gen.generate(_MAP_SYSTEM, prompt, temperature=0.0,
-                                  json_mode=True, max_tokens=1024)
+                                  json_mode=True,
+                                  max_tokens=self._gen.cap("phase_map_tokens", 1024))
         try:
             result = _parse_json(raw)
             if "pipeline_stages" not in result or not result["pipeline_stages"]:
@@ -1112,7 +1115,8 @@ Rules:
             # investigation from RuntimeError is better than a hallucinated one.
             raw = self._gen.generate_quality(
                 self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-                temperature=0.0, max_tokens=700,  # Gemma 4 needs ~700 for verbose THINK+TOOL
+                temperature=0.0,
+                max_tokens=self._gen.cap("react_round_tokens", 700),
             )
 
             # Parse THINK + TOOL or DONE
@@ -1195,7 +1199,8 @@ Rules:
         # to ensure the summary is grounded in actual tool call results.
         raw = self._gen.generate_quality(
             self._AGENTIC_INVESTIGATE_SYSTEM, transcript,
-            temperature=0.0, max_tokens=600,
+            temperature=0.0,
+            max_tokens=self._gen.cap("react_done_tokens", 600),
         )
         done_m = _re.search(r'DONE:\s*(\{.+)', raw, _re.DOTALL)
         try:
@@ -1268,7 +1273,7 @@ Rules:
         # Guard: 12 primary × 700 chars + 8 related × 700 = up to 14 000 chars.
         # Cap at ~3 000 tokens (12 000 chars) so we stay within context budgets
         # on free-tier models with 8K context windows.
-        code_text = _token_budget(code_text, max_tokens=3000)
+        code_text = _token_budget(code_text, max_tokens=self._gen.cap("phase3_code_chars", 3000))
 
         prompt = f"""Repository: {repo}
 Concept to investigate: {stage_name}
@@ -1314,7 +1319,8 @@ Rules:
         # The agentic loop already required quality — when it falls back to static,
         # the same quality requirement applies.
         raw = self._gen.generate_quality(_INVESTIGATE_SYSTEM, prompt, temperature=0.0,
-                                         json_mode=True, max_tokens=900)
+                                         json_mode=True,
+                                         max_tokens=self._gen.cap("concept_desc_tokens", 900))
         try:
             result = _parse_json(raw)
             result.setdefault("name",          stage_name)
@@ -1654,7 +1660,8 @@ Rules:
         # budget). This ensures synthesis always gets Gemini 2.5 Flash or DeepSeek-V3.1,
         # never the Cerebras 8B model that would otherwise receive it after quota is spent.
         raw = self._gen.generate_synthesis(_SYNTHESIZE_SYSTEM, prompt,
-                                           temperature=0.0, json_mode=True, max_tokens=3000)
+                                           temperature=0.0, json_mode=True,
+                                           max_tokens=self._gen.cap("tour_synthesis_tokens", 3000))
         try:
             tour = _parse_json(raw)
         except Exception as e:

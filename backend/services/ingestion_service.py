@@ -320,7 +320,8 @@ def _chunk_importance(c: dict) -> int:
 
 
 def _anthropic_contextualise(
-    client, model: str, system: str, doc_text: str, chunk_question: str
+    client, model: str, system: str, doc_text: str, chunk_question: str,
+    max_tokens: int = 200,
 ) -> str:
     """
     Call Anthropic with prompt caching on the document block.
@@ -341,7 +342,7 @@ def _anthropic_contextualise(
     """
     resp = client.messages.create(
         model=model,
-        max_tokens=200,
+        max_tokens=max_tokens,
         system=system,
         messages=[{
             "role": "user",
@@ -430,18 +431,25 @@ def _add_context(
     # are 200-6000 tokens, so most will qualify.
     _use_anthropic_cache = getattr(gen, 'provider', None) == 'anthropic'
 
+    # Tunable caps — bumped automatically when gen.premium_mode is on so a
+    # premium prebake includes more of each chunk and surrounding file context
+    # than the free-tier defaults allow.
+    _doc_chars      = gen.cap("context_doc_chars",   6000)
+    _chunk_chars    = gen.cap("context_chunk_chars",  800)
+    _ctx_max_tokens = gen.cap("context_chunk_tokens", 200)
+
     # Worker function for a single chunk — called from multiple threads.
     # Returns (idx, updated_chunk) or (idx, None) on failure.
     def _enrich_one(idx: int, chunk: dict) -> tuple[int, dict | None]:
         filepath   = chunk.get("filepath", "")
         chunk_text = chunk.get("text", "")
-        doc_text   = file_content_map.get(filepath, "")[:6000]
+        doc_text   = file_content_map.get(filepath, "")[:_doc_chars]
         if not chunk_text or not doc_text:
             return idx, None
 
         chunk_question = (
             f"Here is the chunk we want to situate within the document above:\n"
-            f"<chunk>\n{chunk_text[:800]}\n</chunk>\n\n"
+            f"<chunk>\n{chunk_text[:_chunk_chars]}\n</chunk>\n\n"
             "Please give a short succinct context to situate this chunk within the overall "
             "document for the purpose of improving search retrieval of the chunk. "
             "Name the function/class/block, its role in the file's pipeline, and the key "
@@ -459,7 +467,7 @@ def _add_context(
                 # processing into O(N_files) full-cost calls.
                 sentence = _anthropic_contextualise(
                     gen._client, gen._model, _CONTEXT_SYSTEM,
-                    doc_text, chunk_question,
+                    doc_text, chunk_question, max_tokens=_ctx_max_tokens,
                 )
             else:
                 prompt = (

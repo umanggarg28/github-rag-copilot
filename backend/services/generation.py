@@ -280,6 +280,49 @@ class GenerationService:
         # through every service layer.
         self.premium_mode = False
 
+    # ── Premium-mode cap overrides ─────────────────────────────────────────
+    # The artifact-generation pipeline has many small caps — max_tokens for
+    # ReAct rounds, character limits on chunks shown to the model, README
+    # length budgets, etc. They were tuned for free-tier providers (Cerebras
+    # 8B, Gemini Flash) which have shorter context windows and verbose
+    # reasoning patterns. Applied to a Sonnet 4.6 prebake, those defaults
+    # leave quality on the table — long classes get truncated, agent
+    # reasoning is cut mid-thought, READMEs run short.
+    #
+    # When premium_mode is True, cap() returns the entry from PREMIUM_CAPS
+    # below if one exists; otherwise the caller's default. Per-callsite
+    # invocation looks like:
+    #     max_tokens = self._gen.cap("react_round_tokens", 700)
+    # Free-tier runtime paths (premium_mode=False) get the default unchanged.
+    PREMIUM_CAPS = {
+        # ── Tour generation (TourAgent) ──
+        "react_round_tokens":      1500,   # was 700  — let Sonnet reason fully per round
+        "react_done_tokens":       1200,   # was 600  — richer forced-DONE summaries
+        "phase_map_tokens":        2048,   # was 1024 — more concept candidates surfaced
+        "concept_desc_tokens":     1800,   # was 900  — deeper per-concept descriptions
+        "tour_synthesis_tokens":   16384,  # was 8192 — full Sonnet output budget
+        "tool_result_tokens":       800,   # was 400  — give the agent more of each tool result
+        "phase3_code_chars":       6000,   # was 3000 — include more code per concept
+        # ── Diagrams ──
+        "diagram_tokens":          4096,   # was 2048 — JSON output room for richer node lists
+        # ── README ──
+        "readme_tokens":           4096,   # was 1800 — comprehensive README budget
+        # ── Contextual retrieval (ingestion) ──
+        "context_chunk_tokens":     400,   # was 200  — longer contextual descriptions
+        "context_chunk_chars":     2000,   # was 800  — model sees more of each chunk
+        "context_doc_chars":      12000,   # was 6000 — model sees more surrounding file
+    }
+
+    def cap(self, name: str, default: int) -> int:
+        """Resolve a tunable cap. In premium_mode, returns the override from
+        PREMIUM_CAPS if present; otherwise returns the caller's default.
+        Lets every cap site stay readable as a single line:
+            max_tokens=self._gen.cap("react_round_tokens", 700)
+        """
+        if self.premium_mode and name in self.PREMIUM_CAPS:
+            return self.PREMIUM_CAPS[name]
+        return default
+
     def _init_premium(self) -> None:
         """Initialise the optional premium client (Claude Sonnet 4.6) used
         for one-time generation of cached artifacts (tour, README, diagrams,

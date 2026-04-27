@@ -102,6 +102,32 @@ Every `OpenAI(...)` client instantiation MUST have `timeout=30` (or use `_TIMEOU
 A client without a timeout will hang indefinitely on a slow/unresponsive provider — verified incident with Gemma 4.
 OpenRouter uses its own helper `_openrouter_client()` which already sets `timeout=45`.
 
+## Pre-baked Artifact Cache
+
+Tour, diagram (architecture/class), README, and repo-map outputs are persisted in a Qdrant sidecar collection (`<collection>_artifacts`) so they survive container restarts and are shared across all users. Reads go through `QdrantStore.load_artifact(repo, kind)`; writes through `save_artifact(repo, kind, data, generated_by_model)`.
+
+A canonical set of repos can be pre-generated at premium quality with:
+
+```bash
+.venv/bin/python -m scripts.prebake_repos                     # default Karpathy set
+.venv/bin/python -m scripts.prebake_repos owner1/repo1 ...    # specific repos
+.venv/bin/python -m scripts.prebake_repos --force ...         # rebuild
+```
+
+The script flips `gen.premium_mode = True` for the entire run, which:
+- Routes every `gen.generate(...)` call to the Claude Sonnet 4.6 client (`ANTHROPIC_API_KEY` required).
+- Activates `PREMIUM_CAPS` overrides in `GenerationService` — every `gen.cap(name, default)` call returns the larger premium value (longer ReAct rounds, fuller chunk previews in contextual retrieval, larger README budget, etc.).
+
+Runtime requests from the deployed app keep the original (smaller) caps so free-tier providers don't drown.
+
+To inspect what's been baked for a repo:
+
+```bash
+curl https://<host>/repos/<owner>/<name>/artifacts/info
+```
+
+returns `kind / generated_by_model / generated_at` per cached artifact. HF Spaces logs also print `[cache hit] kind for repo (model)` on every served artifact.
+
 ## Runtime Data — always gitignore, never commit
 
 Directories written at runtime must be in `.gitignore`. Check before first commit of any new feature:

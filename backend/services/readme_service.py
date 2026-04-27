@@ -183,7 +183,7 @@ Output ONLY the markdown. No preamble, no "Here is the README", no trailing comm
                 system=system,
                 prompt=prompt,
                 temperature=0.3,
-                max_tokens=1800,
+                max_tokens=self._gen.cap("readme_tokens", 1800),
             )
         except Exception as e:
             yield {"stage": "error", "progress": 1.0, "error": f"Generation failed: {e}"}

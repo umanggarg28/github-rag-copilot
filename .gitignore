@@ -42,3 +42,4 @@ LEARN.md
 /*.png
 .playwright-mcp/
 posthog-setup-report.md
+.claude/
