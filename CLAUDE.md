@@ -118,6 +118,10 @@ The script flips `gen.premium_mode = True` for the entire run, which:
 - Routes every `gen.generate(...)` call to the Claude Sonnet 4.6 client (`ANTHROPIC_API_KEY` required).
 - Activates `PREMIUM_CAPS` overrides in `GenerationService` — every `gen.cap(name, default)` call returns the larger premium value (longer ReAct rounds, fuller chunk previews in contextual retrieval, larger README budget, etc.).
 
+The script always force-re-ingests each repo, even when already indexed, so contextual retrieval re-runs with the premium model. Without this, chat retrieval stays on free-tier (or non-existent) contextual descriptions. The "Contextual retrieval applied" sparkle in the sidebar is the visible proof that this ran.
+
+**Save sites refuse to demote premium artifacts.** When the runtime UI's Regenerate button fires a free-tier generation, `_save_tour` / `_save_diagram` / the README cache write detect the existing payload's `generated_by_model` starts with `claude-` and skip the persist with a `[protect] not overwriting premium` log line. The user's session shows their regenerated content (in-memory cache updates) but the durable cache stays at premium quality.
+
 Runtime requests from the deployed app keep the original (smaller) caps so free-tier providers don't drown.
 
 To inspect what's been baked for a repo:
